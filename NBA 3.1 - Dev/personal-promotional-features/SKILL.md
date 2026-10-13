@@ -105,11 +105,11 @@ schema evolution from new pivot values requires `overwriteSchema`.
 
 ## 1. Channel Inventory
 
-| # | Channel | Notebook | Source System | Output Rows | Feature Count | Distinct HCPs | Sparsity (% zeros) |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | F2F Sales Rep Calls | `25_promotional_features_call` | `CPH_DB_PROD.MODEL_V2.FACT_CALL` + `MAP_CUSTOMER_XREF` | 2,086,597 | 212 | 129,787 | 94.3% |
-| 2 | iRep Emails | `16_promotional_features_irep` | `PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_IREP` | 966,322 | 86 | 79,627 | 97.2% |
-| 3 | ClickStream/CLM | `18_promotional_ClickStream_features` | `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLKSTRM` + `FACT_CALL` | 191,214 | 26 | 18,804 | 67.2% |
+| Channel | Source System | Feature Count |
+| --- | --- | --- |
+| F2F Sales Rep Calls | `CPH_DB_PROD.MODEL_V2.FACT_CALL` + `MAP_CUSTOMER_XREF` | 212 |
+| iRep Emails | `PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_IREP` | 86 |
+| ClickStream/CLM | `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLKSTRM` + `FACT_CALL` | 26 |
 
 All channels share:
 - **Grain:** HCP-level via `BHID` (Bayer Healthcare ID)
@@ -153,7 +153,7 @@ def step2_fill_missing_dates(df):
     return df_filled
 ```
 
-**Critical note:** This expands each HCP-cohort to ~395 rows (one per day in the 13-month
+**Critical note:** This expands each HCP-cohort to ~365 rows (one per day in the 365-day
 lookback). With 26 cohorts and ~130K HCPs, this can produce billions of rows. See Section 7
 for memory implications.
 
@@ -191,7 +191,7 @@ Loaded from:
 
 | Column | Type | Description |
 | --- | --- | --- |
-| `LOOKBACK_START_DATE` | date | Start of 13-month lookback window |
+| `LOOKBACK_START_DATE` | date | Start of 365-day lookback window |
 | `LOOKBACK_END_DATE` | date | End of lookback / anchor date |
 | `COHORT` | string | Cohort label (C01–C26) |
 
@@ -282,15 +282,30 @@ WHERE UPPER(STAT) = 'SUBMITTED_VOD'
 | --- | --- | --- |
 | `CALL_PURPOSE_PROMOTIONAL_ACTIVITY` | `CALL_PRPSE == 'Promotional Activity'` | Standard promotion |
 | `CALL_PURPOSE_PROMOTIONAL_ACTIVITY_WITH_MEAL` | `CALL_PRPSE == 'Promotional Activity with meal'` | Promotion with meal |
-| `CALL_PURPOSE_EVENT_RELATED_PROMOTIONAL_ACTIVITY` | `CALL_PRPSE == 'Event Related Promotional Activity'` | Event-tied promotion |
-| `CALL_PURPOSE_NON_PROMOTIONAL_ACTIVITY` | `CALL_PRPSE == 'Non-Promotional Activity'` | Admin / non-promotional |
+| `CALL_PURPOSE_EVENT_RELATED_PROMOTIONAL_ACTIVITY` | `CALL_PRPSE == 'Event related Promotional Activity'` | Event-tied promotion (note: lowercase 'r' in source data) |
+| `CALL_PURPOSE_NON_PROMOTIONAL_ACTIVITY` | `CALL_PRPSE == 'Other non-promotional Activity'` | Admin / non-promotional (note: actual source value is 'Other non-promotional Activity', not 'Non-Promotional Activity') |
 | `CALL_PURPOSE_MISCELLANEOUS` | `CALL_PRPSE` not in above | Catch-all |
 
 **Dimension 4 — Call Duration (1 numeric):**
 
 | Feature | Formula | Notes |
 | --- | --- | --- |
-| `CALL_DURATION` | `WHEN CAST(CALL_DURTN AS FLOAT) > 0 THEN CAST(CALL_DURTN AS FLOAT) ELSE 0` | Guards against historical DQ issues (negative/non-numeric durations). Do not remove the cast+guard. |
+| `CALL_DURATION` | See safe-cast pattern below | Guards against empty strings (45% of CALL_DUR values), nulls (10%), and non-numeric durations. **Must** filter empty strings before casting — `.cast(FloatType())` throws `CAST_INVALID_INPUT` on `''` in ANSI mode (Spark 3.4+/DBR 13+). |
+
+**Safe-cast pattern for CALL_DURATION:**
+```python
+.withColumn("CALL_DURATION",
+    when(
+        (col("CALL_DURTN").isNotNull()) & (F.trim(col("CALL_DURTN")) != lit("")),
+        col("CALL_DURTN").cast(FloatType())
+    ).otherwise(lit(0.0))
+)
+.withColumn("CALL_DURATION",
+    when(col("CALL_DURATION") > 0, col("CALL_DURATION")).otherwise(lit(0.0))
+)
+```
+Do **not** use the shorter `when(col(...).cast(FloatType()) > 0, ...)` pattern — the cast
+evaluates eagerly on all rows including empty strings, causing `NumberFormatException`.
 
 ### Cross-Product Features
 
@@ -394,11 +409,26 @@ WHERE acct_idntfr NOT LIKE 'BHO%'
 | `IREP_APPRVD_DOC_NM_TRIAL` | `APPRVD_DOC_NM.isin("Kerendia Free Trial Conversion iRep Email")` |
 | `IREP_APPRVD_DOC_NM_MISCELLANEOUS` | `APPRVD_DOC_NM.isin("Kerendia Speaker Program Thank You iRep Email", "MAC-FINE-US-0036-1 Adding Kerendia to Preference List for Epic", "MAC-FINE-US-0052-1 iRep Adding Kerendia to Favorite List for Cerner")` |
 
-**Note on zero-variance categories:** Several doc-name categories (FDA, PSP_PRESCRIBING,
-BRANDED_ASSET, NATIONAL_BROADCAST) show all-zero values in current data. These are
-historical/inactive categories that may repopulate with future data. They are present but may
-be zero. Zero-variance filtering is a model-training concern, not handled in feature
-engineering.
+**Note on low-volume categories:** Some doc-name categories may show zero or near-zero
+values within a specific lookback window (e.g., if the email campaign was inactive during that
+period). These categories are retained because they may repopulate with future data.
+Zero-variance filtering is a model-training concern, not handled in feature engineering.
+
+**TODO — Doc-name classification is known-incomplete:** Current 11 buckets capture only
+**42.5%** of total `APPRVD_DOC_NM` volume (228,855 of 538,161 delivered records). 49
+uncategorized values exist, primarily: (a) PP-code-prefixed variants of existing categories
+(e.g., `PP-KER-US-1244-1 SLU 2022 Kerendia HCP Branded Content Share iRep Template` —
+53,087 records, likely BRANDED_ASSET), (b) announcement/broadcast variants not in existing
+buckets (e.g., `PP-KER-US-0274-1 Kerendia ADA Announcement iRep Email 1` — 38,325), and
+(c) many BACC/Access date-stamped variants not in the BACC_ACCESS list (e.g.,
+`BACC - Kerendia - Medicare` — 6,378). Top 5 uncategorized by volume:
+`PP-KER-US-1244-1 SLU 2022 Kerendia HCP Branded Content Share iRep Template` (53,087),
+`PP-KER-US-0274-1 Kerendia ADA Announcement iRep Email 1` (38,325),
+`PP-KER-US-0712-1 Kerendia Medicare Part D Announcement iRep Email` (24,711),
+`SLU 2022 Kerendia Figaro Announcement iRep Email Template` (19,557),
+`PP-KER-US-1244-2 SLU 2022 Kerendia HCP Branded Content Share iRep Template` (17,708).
+Domain team should decide whether to expand existing buckets or create new ones.
+Regeneration should wait for domain team bucketing decisions.
 
 ### Aggregation
 
@@ -545,11 +575,11 @@ intermediates to Parquet instead.
 
 ### 7.2 Day-Level Spine Expansion Memory
 
-The `step2_fill_missing_dates` function creates ~395 rows per HCP-cohort (one per day in
-the 13-month lookback). With 26 cohorts and 130K HCPs:
+The `step2_fill_missing_dates` function creates ~365 rows per HCP-cohort (one per day in
+the 365-day lookback). With 26 cohorts and 130K HCPs:
 
-- Calls: 130K × 26 × 395 ≈ **1.3B rows** in the dense spine
-- ClickStream: 19K × 26 × 395 ≈ **195M rows**
+- Calls: 130K × 26 × 365 ≈ **1.2B rows** in the dense spine
+- ClickStream: 19K × 26 × 365 ≈ **180M rows**
 
 Limit to necessary cohorts when running partial recomputation. The full spine is the primary
 memory bottleneck.
@@ -591,6 +621,75 @@ evolution:
 ```python
 df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(path)
 ```
+
+### 7.7 Chained `.withColumn()` / `.withColumnRenamed()` in Loops — RecursionError
+
+**Symptom:** `RecursionError: maximum recursion depth exceeded` during plan serialization,
+or notebooks that hang indefinitely (never complete, appear to run forever with no error).
+
+**Root cause:** Each `.withColumn()` or `.withColumnRenamed()` call adds a nested node to
+the Spark logical plan. When called in a loop over hundreds of columns, the plan reaches
+1,000+ levels deep. Spark Connect (DBR 18.x) cannot serialize a plan this deep — Python's
+default recursion limit is 1,000.
+
+**Required patterns:**
+
+For **column renaming** (bulk prefix/suffix), use `.toDF()`:
+```python
+# CORRECT — single plan node
+new_names = [f"PREFIX_{c}" if c not in key_cols else c for c in df.columns]
+df = df.toDF(*new_names)
+```
+
+For **column addition** (flag/feature creation in a loop), use `.withColumns({})`:
+```python
+# CORRECT — single plan node
+new_cols = {f"{ch}_AND_{ct}": least(col(ch), col(ct))
+            for ch in channel_flags for ct in call_type_flags}
+df = df.withColumns(new_cols)
+```
+
+**Where this applies:** Calls cross-product loop (channel × call_type), any prefix/rename
+loop, and any future notebook that adds columns in a loop.
+
+**Related anti-patterns:** Chained `.join()` in a loop and chained `.withColumnRenamed()`
+in a loop have the same plan-depth risk.
+
+### 7.8 CALL_DURATION Empty-String Safe-Cast
+
+**Symptom:** `CAST_INVALID_INPUT` when casting `CALL_DUR` to float, or silent NULLs that
+propagate as zeros.
+
+**Root cause:** \~45% of `CALL_DUR` values are empty strings (`""`), \~10% are NULL. A direct
+`.cast(FloatType())` on an empty string produces NULL in some Spark versions or throws an
+error in strict mode.
+
+**Required pattern:**
+```python
+df = df.withColumn("CALL_DURATION",
+    when(
+        (col("CALL_DURTN").isNotNull()) & (F.trim(col("CALL_DURTN")) != lit("")),
+        col("CALL_DURTN").cast(FloatType())
+    ).otherwise(lit(0.0))
+)
+```
+Filter empty strings BEFORE casting. Do not rely on `.cast()` to handle empty strings.
+
+### 7.9 Case-Sensitive Filter Values in Veeva Sources
+
+**Symptom:** Zero-variance features (all zeros) despite data being present in the source.
+
+**Root cause:** Veeva/Snowflake sources use mixed case: `'Speaker Program'` (not
+`'SPEAKER PROGRAMS'`), `'Promotional Activity'` (not `'PROMOTIONAL_ACTIVITY'`), `'Detail
+Only'` (not `'DETAIL_ONLY'`). Using wrong casing or plurality in `.isin()` / `==` filters
+produces all-zero flag columns.
+
+**Required pattern:** Always verify exact values against the source table before coding
+binary flags:
+```python
+df.select("CALL_PRPSE").distinct().show(50, False)
+```
+Do not assume ALL_CAPS even if upstream documentation uses uppercase labels.
 
 ---
 

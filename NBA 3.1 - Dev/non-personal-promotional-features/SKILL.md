@@ -57,15 +57,15 @@ cumulative count up to the anchor date.
 
 ## 1. Channel Inventory
 
-| # | Channel | Notebook | Source System | Output Rows | Feature Count | Distinct Entities | Sparsity | Grain |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Digital Engagement | `24_Features_Digital` | `PHCDW.PHCDW_CDM.MMX_FNL_COMBINED_AGGR_TAB` | 17,296,750 | 665 | 402,250 | 99.1% | HCP (NPI) |
-| 2 | HQ Emails | `15_promotional_features_HQ_Emails` | `PHCDW.PHCDW_CDM.HCP_EMAIL_LIST` | 2,476,618 | 32 | 190,860 | 76.9% | HCP (BHID) |
-| 3 | DTC Direct Buy | `34_promotional_features_DTC` (Direct Buy cells) | Parquet (Healthline, HealthUnion, ShareCare, WebMD) | 7,052 | 8 | DMA-level | 36.9% | DMA |
-| 4 | Meta/Instagram Ads | `34_promotional_features_DTC` (Social cells) | Parquet (`kerendia_nba_3_0_hcp_model_social.parquet`) | (part of 7,052) | 2 | DMA-level | 36.9% | DMA |
-| 5 | Samples | `17_promotional_features_samples` | `PHCDW.PHCDW_DSAA.VIEW_KERENDIA_SAMPLES_DROPPED_SHIPPED` | 519,959 | 56 | 35,546 | 84.1% | HCP (NPI→BHID) |
-| 6 | Speaker Programs | `14_promotional_features_speaker_program` | `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM` | 156,677 | 68 | 17,151 | 96.9% | HCP (BHID) |
-| 7 | Free Trial Program | `19_ftp_features` | `PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_VOUCHER_FTP` | 718,520 | 9 | NPI→BHID | 80.7% | HCP (NPI→BHID) |
+| Channel | Source System | Feature Count |
+| --- | --- | --- |
+| Digital Engagement | `PHCDW.PHCDW_CDM.MMX_FNL_COMBINED_AGGR_TAB` (via `sfOptionscdpread`) | 665 |
+| HQ Emails | `PHCDW.PHCDW_CDM.HCP_EMAIL_LIST` | 32 |
+| DTC Direct Buy | Delta: `kerendia_nba_3_0_hcp_model_DirectBuys` | 8 |
+| Meta/Instagram Ads | Delta: `kerendia_nba_3_0_hcp_model_social` | 2 |
+| Samples | `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_KERENDIA_SAMPLES_SHIPPED_DROPPED_KER` | 122 |
+| Speaker Programs | `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM` | 68 |
+| Free Trial Program | `PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_VOUCHER_FTP` | 9 |
 
 **Null/zero convention:** All channels use `fillna(0)` — zeros, not nulls, for missing
 promotional activity. Downstream models interpret 0 as "HCP was not promoted via this channel."
@@ -141,7 +141,7 @@ Loaded from:
 
 | Column | Type | Description |
 | --- | --- | --- |
-| `LOOKBACK_START_DATE` | date | Start of 13-month lookback window |
+| `LOOKBACK_START_DATE` | date | Start of 365-day lookback window |
 | `LOOKBACK_END_DATE` | date | End of lookback / anchor date |
 | `COHORT` | string | Cohort label (C01–C26) |
 
@@ -150,7 +150,7 @@ time-alignment patterns (see respective channel sections).
 
 ### NPI-to-BHID Crosswalk
 
-Used by Samples and FTP (which start with NPI from their source systems):
+Used by FTP (which starts with NPI from its source system):
 ```
 /Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_volume/
   hcp_level_features/query_output/kerendia_nba_3_0_npi_bhid_mapping.parquet
@@ -306,7 +306,7 @@ No rep involvement — these are centrally orchestrated marketing emails.
 ### Source Query
 
 ```sql
-SELECT BHID, EVENTDATE, EVENTTYPE
+SELECT BH_ID AS BHID, EVENTDATE, EVENTTYPE
 FROM PHCDW.PHCDW_CDM.HCP_EMAIL_LIST
 WHERE UPPER(EMAILPRODUCTTYPE) LIKE '%KERENDIA%'
 ```
@@ -470,46 +470,161 @@ output has 10 features: 8 Direct Buy + 2 Meta/IG = **10 total features**.
 
 ### What It Measures
 
-Frequency and type of drug sample distribution to HCPs, including dosage variants and
-delivery status (hand-delivered vs mailed).
+Frequency, type, and quantity of drug sample distribution to HCPs, including dosage
+variants and delivery status (hand-delivered vs mailed). NBA 3.1 produces **both** binary
+indicator flags (did an event of this type occur?) **and** quantity sums (how many units?)
+for every sample dimension.
 
-### Source Query
+### Source Table
 
 ```sql
-SELECT NPI_NUMBER, SAMPLE_DATE, SAMPLE_FLAG, SAMPLE_NAME
-FROM PHCDW.PHCDW_DSAA.VIEW_KERENDIA_SAMPLES_DROPPED_SHIPPED
+SELECT DISTINCT BHID,
+       SMPLE_CALL_DT,
+       SMPLE_CALL_DT AS MONTH_ID,
+       SMPLE_CALL_NM,
+       UPPER(SMPLE_NM) AS UPPER_SMPLE_NM,
+       SMPLE_QTY,
+       SAMPLE_FLAG
+FROM CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_KERENDIA_SAMPLES_SHIPPED_DROPPED_KER
 ```
+
+**Source table change (Dec 2025):** The NBA 3.0 ops pipeline originally used
+`PHCDW.PHCDW_DSAA.VIEW_KERENDIA_SAMPLES_DROPPED_SHIPPED`, then briefly
+`PHCDW.PHCDW_DSAA.KERENDIA_SAMPLES_DROPPED_SHIPPED_TEST`. The current production table is
+`CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_KERENDIA_SAMPLES_SHIPPED_DROPPED_KER`
+(updated 2025-12-19). Same schema; both provide `BHID` directly.
+
+**Required columns:** `BHID`, `SMPLE_CALL_DT`, `SMPLE_NM`, `SMPLE_QTY`, `SAMPLE_FLAG`.
+`SMPLE_CALL_NM` is carried through for traceability but not used in feature logic.
 
 ### ID Resolution
 
-Samples uses NPI_NUMBER in the source. Mapped to BHID via the NPI-to-BHID crosswalk
-parquet before cross-joining with cohort dates.
+Samples uses `BHID` directly from the source table. No NPI-to-BHID crosswalk is needed.
 
-### Binary Flag Definitions
+### Shortname Convention
 
-**Delivery Status (2 flags):**
+Every sample-name feature is derived from `UPPER(SMPLE_NM)` by replacing spaces with
+underscores. The `KERENDIA` brand prefix is **retained** in the shortname:
 
-| Flag | Condition | Meaning |
-| --- | --- | --- |
-| `SAMPLE_DROPPED` | `SAMPLE_FLAG == 'DROPPED'` | Sample hand-delivered by rep |
-| `SAMPLE_SHIPPED` | `SAMPLE_FLAG == 'SHIPPED'` | Sample mailed to HCP |
-
-Both states exist and represent an operational distinction (hand-delivery vs mailed). Both
-are counted in `TOTAL_OVERALL_SAMPLE`.
-
-**Sample Name Categories (7 flags + 1 aggregate):**
-
-| Flag | Condition |
+| Source `UPPER(SMPLE_NM)` | Shortname |
 | --- | --- |
-| `TOTAL_SAMPLE_KERENDIA_20MG` | `SAMPLE_NAME == 'KERENDIA 20MG'` |
-| `TOTAL_SAMPLE_KERENDIA_10MG` | `SAMPLE_NAME == 'KERENDIA 10MG'` |
-| `TOTAL_SAMPLE_KERENDIA_10MG_BRC` | `SAMPLE_NAME == 'KERENDIA 10MG BRC'` |
-| `TOTAL_SAMPLE_KERENDIA_20MG_BRC` | `SAMPLE_NAME == 'KERENDIA 20MG BRC'` |
-| `TOTAL_SAMPLE_KERENDIA_SAMPLING_KIT_BRC` | `SAMPLE_NAME == 'KERENDIA SAMPLING KIT BRC'` |
-| `TOTAL_SAMPLE_KERENDIA_SAMPLE_HOUSING_BOX_BRC` | `SAMPLE_NAME == 'KERENDIA SAMPLE HOUSING BOX BRC'` |
-| `TOTAL_OVERALL_SAMPLE` | Count of all samples (any name) |
+| `KERENDIA 20MG` | `KERENDIA_20MG` |
+| `KERENDIA 10MG` | `KERENDIA_10MG` |
+| `KERENDIA 10MG BRC` | `KERENDIA_10MG_BRC` |
+| `KERENDIA 20MG BRC` | `KERENDIA_20MG_BRC` |
+| `KERENDIA 40MG BRC` | `KERENDIA_40MG_BRC` |
+| `KERENDIA SAMPLING KIT BRC` | `KERENDIA_SAMPLING_KIT_BRC` |
+| `KERENDIA SAMPLE HOUSING BOX BRC` | `KERENDIA_SAMPLE_HOUSING_BOX_BRC` |
 
-**Excluded:** `KERENDIA PATIENT BROCHURES BRC` is explicitly excluded from sample counts.
+**Note:** Source values are Title Case (e.g., `'Kerendia 10mg BRC'`) — always apply
+`UPPER()` before matching.
+
+**New in 3.1:** `KERENDIA 40MG BRC` (4,364 records) — new sample type not present in
+NBA 3.0.
+
+**Excluded:** `KERENDIA PATIENT BROCHURES BRC` (2,371 records) is explicitly excluded from
+all feature computation — both flags and quantities.
+
+### Feature Definitions — Two Types
+
+**Type A — Binary Flags** (`SAMPLE_FLAG_*`): 1 if an event of that type occurred on this
+HCP-day, 0 otherwise. After aggregation with `SUM`, these become **event counts**.
+
+**Type B — Quantity Sums** (`SAMPLE_QTY_*`): `SMPLE_QTY` if the event matches, 0 otherwise.
+After aggregation with `SUM`, these become **total units distributed**.
+
+#### Per Sample Name (7 names × 2 types = 14 features)
+
+| Binary Flag | Quantity Sum | Condition (`UPPER(SMPLE_NM)`) |
+| --- | --- | --- |
+| `SAMPLE_FLAG_KERENDIA_20MG` | `SAMPLE_QTY_KERENDIA_20MG` | `== 'KERENDIA 20MG'` |
+| `SAMPLE_FLAG_KERENDIA_10MG` | `SAMPLE_QTY_KERENDIA_10MG` | `== 'KERENDIA 10MG'` |
+| `SAMPLE_FLAG_KERENDIA_10MG_BRC` | `SAMPLE_QTY_KERENDIA_10MG_BRC` | `== 'KERENDIA 10MG BRC'` |
+| `SAMPLE_FLAG_KERENDIA_20MG_BRC` | `SAMPLE_QTY_KERENDIA_20MG_BRC` | `== 'KERENDIA 20MG BRC'` |
+| `SAMPLE_FLAG_KERENDIA_40MG_BRC` | `SAMPLE_QTY_KERENDIA_40MG_BRC` | `== 'KERENDIA 40MG BRC'` |
+| `SAMPLE_FLAG_KERENDIA_SAMPLING_KIT_BRC` | `SAMPLE_QTY_KERENDIA_SAMPLING_KIT_BRC` | `== 'KERENDIA SAMPLING KIT BRC'` |
+| `SAMPLE_FLAG_KERENDIA_SAMPLE_HOUSING_BOX_BRC` | `SAMPLE_QTY_KERENDIA_SAMPLE_HOUSING_BOX_BRC` | `== 'KERENDIA SAMPLE HOUSING BOX BRC'` |
+
+#### Delivery Status (2 statuses × 2 types = 4 features)
+
+| Binary Flag | Quantity Sum | Condition |
+| --- | --- | --- |
+| `SAMPLE_FLAG_DROPPED` | `SAMPLE_QTY_DROPPED` | `SAMPLE_FLAG == 'DROPPED'` AND not brochure |
+| `SAMPLE_FLAG_SHIPPED` | `SAMPLE_QTY_SHIPPED` | `SAMPLE_FLAG == 'SHIPPED'` AND not brochure |
+
+#### Overall Aggregates (1 × 2 types = 2 features)
+
+| Binary Flag | Quantity Sum | Condition |
+| --- | --- | --- |
+| `SAMPLE_FLAG_OVERALL` | `SAMPLE_QTY_OVERALL` | Any non-brochure sample event |
+
+### Aggregation Pseudocode
+
+```python
+# --- Step 1: Create dual columns per sample name ---
+for smple_nm, shortname in sample_name_map.items():
+    # Binary flag: 1 if event matches, 0 otherwise
+    df = df.withColumn(
+        f"SAMPLE_FLAG_{shortname}",
+        when(
+            (col("UPPER_SMPLE_NM") == smple_nm)
+            & (col("UPPER_SMPLE_NM") != "KERENDIA PATIENT BROCHURES BRC"),
+            lit(1)
+        ).otherwise(lit(0))
+    )
+    # Quantity sum: SMPLE_QTY if event matches
+    df = df.withColumn(
+        f"SAMPLE_QTY_{shortname}",
+        when(
+            (col("UPPER_SMPLE_NM") == smple_nm)
+            & (col("UPPER_SMPLE_NM") != "KERENDIA PATIENT BROCHURES BRC"),
+            col("SMPLE_QTY")
+        ).otherwise(lit(0))
+    )
+
+# --- Step 1b: Delivery status (dual) ---
+for status in ["DROPPED", "SHIPPED"]:
+    df = df.withColumn(
+        f"SAMPLE_FLAG_{status}",
+        when(
+            (col("SAMPLE_FLAG") == status)
+            & (col("UPPER_SMPLE_NM") != "KERENDIA PATIENT BROCHURES BRC"),
+            lit(1)
+        ).otherwise(lit(0))
+    )
+    df = df.withColumn(
+        f"SAMPLE_QTY_{status}",
+        when(
+            (col("SAMPLE_FLAG") == status)
+            & (col("UPPER_SMPLE_NM") != "KERENDIA PATIENT BROCHURES BRC"),
+            col("SMPLE_QTY")
+        ).otherwise(lit(0))
+    )
+
+# --- Step 1c: Overall aggregates (dual) ---
+df = df.withColumn(
+    "SAMPLE_FLAG_OVERALL",
+    when(col("UPPER_SMPLE_NM") != "KERENDIA PATIENT BROCHURES BRC", lit(1)).otherwise(lit(0))
+)
+df = df.withColumn(
+    "SAMPLE_QTY_OVERALL",
+    when(col("UPPER_SMPLE_NM") != "KERENDIA PATIENT BROCHURES BRC", col("SMPLE_QTY")).otherwise(lit(0))
+)
+
+# --- Step 2: Aggregation ---
+all_feature_cols = [c for c in df.columns if c.startswith("SAMPLE_FLAG_") or c.startswith("SAMPLE_QTY_")]
+agg_exprs = [F.sum(c).alias(f"TOTAL_{c}") for c in all_feature_cols]
+
+df_agg = df.groupBy("HCP_COHORT_ID", "LOOKBACK_START_DATE", "LOOKBACK_END_DATE", "MONTH_ID").agg(*agg_exprs)
+```
+
+**Key:** After aggregation, `TOTAL_SAMPLE_FLAG_KERENDIA_10MG` = count of 10mg sample
+events; `TOTAL_SAMPLE_QTY_KERENDIA_10MG` = total 10mg units distributed. Both are
+meaningful and non-redundant — an HCP could receive 1 event delivering 5 units.
+
+**Production note:** NBA 3.0 production computed only the quantity-sum variants
+(equivalent to `SAMPLE_QTY_*`). The binary-flag variants (`SAMPLE_FLAG_*`) are new in
+NBA 3.1.
 
 ### Pipeline
 
@@ -517,13 +632,21 @@ Uses Variant A (day-level spine) with `[30, 60, 90, 120, 150, 180]` day windows.
 
 ### Output
 
-~9 base features × 6 windows = **54 lag features** + `HCP_COHORT_ID` + `SVC_DT` = **56 columns**
+20 base features × 6 windows = **120 lag features** + `HCP_COHORT_ID` + `SVC_DT` =
+**122 columns**
 
-Max sample value observed: 290 (for a single HCP in a single window).
+Breakdown: 7 name flags + 7 name quantities + 2 delivery flags + 2 delivery quantities +
+1 overall flag + 1 overall quantity = **20 base**.
 
 ### Output Column Naming
 
-`TOTAL_{SAMPLE_FLAG/NAME}_IN_LAST_{N}_MONTH`
+Pattern: `TOTAL_SAMPLE_{TYPE}_{shortname}_IN_LAST_{N}_MONTH`
+
+Examples:
+- `TOTAL_SAMPLE_FLAG_KERENDIA_10MG_BRC_IN_LAST_1_MONTH` (count of 10mg BRC events in last 30 days)
+- `TOTAL_SAMPLE_QTY_KERENDIA_20MG_IN_LAST_3_MONTH` (total 20mg units in last 90 days)
+- `TOTAL_SAMPLE_FLAG_DROPPED_IN_LAST_6_MONTH` (count of hand-delivered events in 180 days)
+- `TOTAL_SAMPLE_QTY_OVERALL_IN_LAST_1_MONTH` (total units of any sample in 30 days)
 
 ### Output Path
 
@@ -543,12 +666,12 @@ and topic.
 ### Source Query
 
 ```sql
-SELECT BAYER_HCP_ID AS BHID, EVNT_STRT_DT AS MONTH_ID,
+SELECT BAYER_HCP_ID AS BHID, EVNT_START_DATE AS MONTH_ID,
        EVNT_FMT, EVNT_TYP, EVNT_TPIC_NM, ATND
 FROM CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM
 WHERE UPPER(ATND) = 'ATTENDED'
   AND UPPER(PROD_BRAND_NM) = 'KERENDIA'
-  AND EVNT_STRT_DT BETWEEN '2022-03-17' AND '2025-04-16'
+  AND EVNT_START_DATE BETWEEN '2022-03-17' AND '2025-04-16'
 ```
 
 ### Binary Flag Definitions
@@ -567,14 +690,16 @@ WHERE UPPER(ATND) = 'ATTENDED'
 
 | Flag | Condition |
 | --- | --- |
-| `SPKR_EVNT_TYP_SPKR_PRGM` | `EVNT_TYP.isin("SPEAKER PROGRAMS")` |
-| `SPKR_EVNT_TYP_NON_SPKR_PRGM` | `EVNT_TYP.isin("NON-SPEAKER PROGRAMS")` |
+| `SPKR_EVNT_TYP_SPKR_PRGM` | `EVNT_TYP == 'Speaker Program'` |
+| `SPKR_EVNT_TYP_NON_SPKR_PRGM` | `EVNT_TYP NOT IN ('Speaker Program')` (catch-all for the 13 other event types) |
 
-**Note:** Event type values are uppercase in the source data.
-
-**Note on zero-variance features:** Both `SPKR_EVNT_TYP_SPKR_PRGM` and
-`SPKR_EVNT_TYP_NON_SPKR_PRGM` show stddev=0, max=0 in the current output. These features
-currently carry no signal. Zero-variance filtering is a model-training concern.
+**CRITICAL — Case mismatch fixed (Oct 2026):** The NBA 3.0 code used `"SPEAKER PROGRAMS"`
+(ALL CAPS), but the actual source data uses Title Case: `"Speaker Program"` (singular, no 's').
+This was the **root cause** of the zero-variance bug — the flags matched nothing. The
+corrected values above match the live data. There are 14 distinct `EVNT_TYP` values;
+`"Speaker Program"` accounts for 93% of records. All non-"Speaker Program" types (Scientific
+Presentation, Sponsorship, Scientific Round Tables, Group Meeting, etc.) should map to
+`SPKR_EVNT_TYP_NON_SPKR_PRGM`.
 
 **Dimension 3 — Event Topic (4 flags):**
 
@@ -587,6 +712,20 @@ currently carry no signal. Zero-variance filtering is a model-training concern.
 
 **Note:** Topic flag names use `SPKR_TOPIC_` prefix (not `SPKR_EVNT_TPIC_`).
 The matching uses exact `.isin()` — these are Veeva document PP-codes, not free text.
+
+**TODO — Topic classification is known-incomplete:** Current buckets capture only **50.2%**
+of total `EVNT_TPIC_NM` volume (28,065 of 55,962 records). 49 uncategorized values exist,
+primarily: (a) asterisk-prefixed (`**`/`***`) variants of existing PP-codes that fail exact
+`.isin()` match, and (b) entirely new topics not yet bucketed (Dual Dilemma, HF/LVEF≥40%,
+Guideline Directed Therapy, Underscoring Early Patient ID, etc.). Top 5 uncategorized:
+`***KERENDIA Cardiorenal Connection PP-KER-US-1038-1` (3,019),
+`**Recognizing The Gap… PP-KER-US-02241` (2,411),
+`***KERENDIA Recognizing The Gap PP-KER-US-1039-2` (2,221),
+`***KERENDIA Heart of the Matter PP-KER-US-0743-1` (1,636),
+`**KERENDIA Stage 2 The Dual Dilemma PP-KER-US-2179-2` (1,581).
+Domain team should decide: (1) whether to strip `**`/`***` prefixes before matching (would
+recapture \~10% more volume), and (2) how to bucket the new HF, Dual Dilemma, and Guideline
+topics. Regeneration should wait for domain team bucketing decisions.
 
 ### Pipeline
 
@@ -622,10 +761,20 @@ Captures how many FTP prescriptions an HCP has written over rolling windows.
 ### Source Query
 
 ```sql
-SELECT PROVIDER_ID, MONTH_ID, DAY_SUPPLY, ROW_COUNT, ORGN_CLM_AUTH_NUM
+SELECT PRSC_NPI AS PROVIDER_ID,
+       RX_FILL_DT AS MONTH_ID,
+       DAY_SUPPLY,
+       CLAIM_COUNT_NBR AS ROW_COUNT,
+       ORGN_CLM_AUTH_NUM
 FROM PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_VOUCHER_FTP
 WHERE USE_SLS = 'Y'
 ```
+
+**Column mapping (Oct 2026):** The view's actual column names differ from earlier
+documentation: `PRSC_NPI` (not `PROVIDER_ID`), `RX_FILL_DT` (not `MONTH_ID`),
+`CLAIM_COUNT_NBR` (not `ROW_COUNT`). The query above aliases them to the canonical names
+used downstream. `DAY_SUPPLY` and `ORGN_CLM_AUTH_NUM` match directly. All columns are string
+type in the view — cast `DAY_SUPPLY` and `ROW_COUNT` to int before aggregation.
 
 ### Reversal Handling
 
@@ -807,6 +956,142 @@ Use the sanitization function from Section 4 before any Delta write.
 
 FTP already uses `F.count(F.lit(1))` for its `TOTAL_RX_FTP` aggregation. Use this pattern
 consistently across all channels.
+
+### 12.7 Chained `.withColumn()` / `.withColumnRenamed()` in Loops — RecursionError
+
+**Symptom:** `RecursionError: maximum recursion depth exceeded` during plan serialization,
+or notebooks that hang indefinitely (never complete, appear to run forever with no error).
+
+**Root cause:** Each `.withColumn()` or `.withColumnRenamed()` call adds a nested node to
+the Spark logical plan. When called in a loop over hundreds of columns, the plan reaches
+1,000+ levels deep. Spark Connect (DBR 18.x) cannot serialize a plan this deep — Python's
+default recursion limit is 1,000.
+
+**Required patterns:**
+
+For **column renaming** (bulk prefix/suffix/sanitize), use `.toDF()`:
+```python
+# CORRECT — single plan node
+new_names = [f"DIGITAL_{c}" if c not in key_cols else c for c in df.columns]
+df = df.toDF(*new_names)
+```
+
+For **column addition** (flag/feature creation in a loop), use `.withColumns({})`:
+```python
+# CORRECT — single plan node
+new_cols = {}
+for name, condition in flag_definitions.items():
+    new_cols[name] = when(condition, lit(1)).otherwise(lit(0))
+df = df.withColumns(new_cols)
+```
+
+**Where this applies in the pipeline:**
+- Digital: `prefix_pivot_cols()` renaming after each pivot, `DIGITAL_` prefix in final output
+- Samples: dual FLAG+QTY loop over sample_name_map
+- DTC: `DTC_PROMOTION_` prefix after vendor pivot
+- Any future notebook that adds columns in a loop
+
+**Related anti-patterns:** Chained `.join()` in a loop and chained `.withColumnRenamed()`
+in a loop have the same plan-depth risk. Prefer `.toDF()` for bulk renames and
+`.withColumns()` for bulk additions.
+
+### 12.8 FTP Date Format: `MM/dd/yyyy HH:mm:ss`
+
+**Symptom:** `CAST_INVALID_INPUT: The value '01/25/2022 00:00:00' cannot be cast to "DATE"`
+or `CANNOT_PARSE_TIMESTAMP: unparsed text found at index 10`
+
+**Root cause:** FTP view `VIEW_RB_KERENDIA_VOUCHER_FTP` returns `RX_FILL_DT` as a string in
+`MM/dd/yyyy HH:mm:ss` format (not ISO 8601). A bare `.cast(DateType())` or
+`to_date(col, "MM/dd/yyyy")` fails because of the trailing time portion.
+
+**Required pattern:**
+```python
+.withColumn("MONTH_ID", to_date(col("MONTH_ID"), "MM/dd/yyyy HH:mm:ss"))
+```
+
+### 12.9 Digital: NULL Values in `.pivot()` Value Lists
+
+**Symptom:** `[NOT_EXPECTED_TYPE] Argument 'value' should be bool, float, int or str, got NoneType`
+
+**Root cause:** MMX data contains NULL values in `CHANNEL`, `SRC_SYS_CD`, and
+`TACTIC_NAME`. When collecting distinct values for `.pivot(col, values)`, Python `None`
+ends up in the list and crashes the pivot.
+
+**Required pattern:**
+```python
+values = [row.COL for row in df.select("COL").distinct().collect() if row.COL is not None]
+```
+
+### 12.10 Digital: Snowflake Timestamp-to-Date Cast for `sequence()`
+
+**Symptom:** `DATATYPE_MISMATCH.SEQUENCE_WRONG_INPUT_TYPES: Cannot resolve "sequence(…)"`
+
+**Root cause:** Snowflake returns `SVC_DT_M` (from `DATE_TRUNC('MONTH', DATE_ACT)`) as a
+TIMESTAMP, not a DATE. The `sequence(start, end, interval 1 month)` function requires
+DATE-type arguments.
+
+**Required pattern:**
+```python
+date_range = df.select(
+    F.min(F.col(date_col).cast("date")),
+    F.max(F.col(date_col).cast("date"))
+).first()
+all_months = spark.range(1).select(
+    F.explode(F.expr(f"sequence(CAST('{date_range[0]}' AS DATE), "
+                     f"CAST('{date_range[1]}' AS DATE), interval 1 month)")).alias(date_col)
+)
+```
+
+### 12.11 Digital: Ambiguous Column References from Triple-Pivot Join
+
+**Symptom:** `AMBIGUOUS_REFERENCE: Reference 'CALL_DEEP_ENGAGEMENT' is ambiguous`
+
+**Root cause:** When three pivots share overlapping metric names (DEEP_ENGAGEMENT, etc.)
+and are outer-joined, Spark sees duplicate column names. Any downstream `col("name")`
+reference is ambiguous.
+
+**Required pattern:** Prefix each pivot's non-key columns with a dimension tag **before**
+joining:
+```python
+def prefix_pivot_cols(df, prefix, key_cols=("NPI_NUMBER", "SVC_DT_M")):
+    new_names = [c if c in key_cols else f"{prefix}_{c}" for c in df.columns]
+    return df.toDF(*new_names)   # batch rename, not chained loop
+
+pivot1 = prefix_pivot_cols(pivot1, "CH")   # Channel
+pivot2 = prefix_pivot_cols(pivot2, "SRC")  # Source system
+pivot3 = prefix_pivot_cols(pivot3, "TAC")  # Tactic
+```
+
+### 12.12 Speaker Program: Case-Sensitive Filter Values
+
+**Symptom:** Zero-variance features (all zeros) despite data being present in the source.
+
+**Root cause:** NBA 3.0 used `UPPER(EVNT_TYP) = 'SPEAKER PROGRAMS'` (all caps, plural).
+The actual source value is `'Speaker Program'` (Title Case, singular). Mismatched case or
+plurality in `.isin()` / `==` filters produces all-zero flag columns.
+
+**Required pattern:** Always verify exact casing of filter values against the source table
+before creating binary flags. Use `df.select("COL").distinct().show(50, False)` to inspect
+actual values. Do not assume ALL_CAPS — Veeva/Snowflake sources frequently use Title Case.
+
+### 12.13 FTP View: Actual Column Names vs Documentation
+
+**Symptom:** `SQL compilation error: invalid identifier 'PROVIDER_ID'`
+
+**Root cause:** The FTP view `VIEW_RB_KERENDIA_VOUCHER_FTP` uses actual column names
+`PRSC_NPI`, `RX_FILL_DT`, `CLAIM_COUNT_NBR` — not the logical names `PROVIDER_ID`,
+`MONTH_ID`, `ROW_COUNT` used in earlier documentation.
+
+**Required pattern:** Always alias to canonical names in the SQL query:
+```sql
+SELECT PRSC_NPI AS PROVIDER_ID, RX_FILL_DT AS MONTH_ID,
+       DAY_SUPPLY, CLAIM_COUNT_NBR AS ROW_COUNT, ORGN_CLM_AUTH_NUM
+FROM PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_VOUCHER_FTP
+WHERE USE_SLS = 'Y'
+```
+All non-numeric columns from this view are STRING type and must be explicitly cast
+(`DAY_SUPPLY` → int, `ROW_COUNT` → int, `MONTH_ID` → date with format
+`"MM/dd/yyyy HH:mm:ss"`).
 
 ---
 

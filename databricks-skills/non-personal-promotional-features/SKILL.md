@@ -292,7 +292,7 @@ def sanitize(name):
 .../notebook_output/kerendia_nba_3_0_hcp_model_paid_search_features.parquet
 ```
 
-**665 output columns** (highest dimensionality of any promotional channel)
+**~896 output columns** (as of 2026-10-14; drifts as MMX source adds categories) (highest dimensionality of any promotional channel)
 
 ---
 

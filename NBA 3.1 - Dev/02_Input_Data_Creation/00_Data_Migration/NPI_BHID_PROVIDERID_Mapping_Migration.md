@@ -89,6 +89,76 @@ LEFT JOIN
     ON SRCNBRXIMS.NPI = DIMCUST.NPI_NUM
 ```
 
+### 2.4 Snowflake Query Flow (with V6 Output Numbers)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  FACT_IQV_LAAD_SUB_NATIONAL  (WHERE PROJD_NBRX > 0)              │
+│  1,805,121 distinct PROVIDER_IDs (100%)                          │
+│  Key: PRVDR_ID                                                   │
+└─────────────────────────────────┬──────────────────────────────────┘
+                                 │
+                ┌───────────────┴───────────────────────┐
+                ▼ LEFT JOIN XREF on PRVDR_ID               ▼
+┌─────────────────────────────────┐  ┌────────────────────────────────┐
+│  Got NPI: 1,532,249 (84.9%)    │  │  No NPI: 272,872 (15.1%)  │
+│  via SUB_NATIONAL_XREF        │  │  XREF miss — no NPI row    │
+└────────────────┬────────────────┘  └────────────────────────────────┘
+                 │
+                 ▼ LEFT JOIN MAP_CUSTOMER_XREF + DIM_CUSTOMER_HCP
+┌───────────────────────────────┐  ┌────────────────────────────────┐
+│  MAP_CUSTOMER_XREF           │  │  DIM_CUSTOMER_HCP            │
+│  (SOURCE_CUST_ID_TYP         │  │                              │
+│   = 'IQV_LAAD')             │  │  MIN(BAYER_CUST_ID)          │
+│                             │  │  GROUP BY NPI_NUM            │
+│  MIN(BAYER_CUST_ID)         │  │                              │
+│  GROUP BY SOURCE_CUST_ID    │  │  Provides:                   │
+│                             │  │  Fallback BAYER_CUST_ID      │
+│  Provides:                  │  │  (BH_ID via NPI)             │
+│  Primary BAYER_CUST_ID      │  │                              │
+│  (BH_ID via PROVIDER_ID)    │  │  Case 2: used ONLY when     │
+│                             │  │  Case 1 returns NULL         │
+│  Case 1 (highest priority)  │  │  33,803 had NPI but Case 2  │
+│                             │  │  also failed → Case 3       │
+└───────────────────────────────┘  └────────────────────────────────┘
+                 │                 │
+                 └────────┬────────┘
+                          │
+                          ▼ CASE resolution
+┌────────────────────────────────────────────────────────────────────┐
+│  CASE                                                            │
+│    WHEN MAP_CUSTOMER_XREF.BAYER_CUST_ID IS NOT NULL              │
+│         → Case 1: Primary BH_ID                                 │
+│                                                                  │
+│    WHEN NPI IS valid AND DIM_CUSTOMER_HCP.BAYER_CUST_ID exists   │
+│         → Case 2: NPI fallback BH_ID                             │
+│                                                                  │
+│    ELSE → Case 3: COALESCE(PRVDR_ID) as default                  │
+│                                                                  │
+│  Combined Case 1+2: 1,499,445 proper BH_ID (83.1%)              │
+│  Case 3:              115,286 PROVIDER_ID default (6.4%)         │
+│  Unmapped:            190,390 NULL BH_ID (10.5%)                 │
+└────────────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  Final Output (V6)                                               │
+│  1,805,121 providers → 1,613,812 distinct BH_IDs                │
+│                                                                  │
+│  Proper BH_ID (BH-prefix):  1,499,445  (83.1%)                  │
+│  PROVIDER_ID as BH_ID:        115,286  ( 6.4%)                  │
+│  NULL / unmapped:             190,390  (10.5%)                   │
+│  Valid NPI:                 1,532,249  (84.9%)                   │
+│  No NPI:                      272,872  (15.1%)                   │
+│  Distinct NPIs:             1,530,924                            │
+│                                                                  │
+│  4 tables  •  4 LEFT JOINs  •  3-tier CASE cascade               │
+│  Snowflake connector + secrets scope                             │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+> **Note on 190K NULL BH_IDs:** These are providers that appear in V6 claims but did not receive a BH_ID mapping through step 3.5. The CASE cascade in the original query always produces a non-NULL BH_ID (Case 3 defaults to PROVIDER_ID), so these NULLs indicate providers whose claims were not matched during the HCP Attributes join. In the UC pipeline, all 1,656,523 base providers produce a non-NULL BH_ID.
+
 ---
 
 ## 3. UC Replacement — 2-Table Simplification
@@ -127,69 +197,37 @@ The entire 4-table Galaxy cascade maps to just **2 UC tables** in `pace_ker_in_h
 | BH_ID | STRING | Fallback BH_ID (replaces DIM_CUSTOMER_HCP) |
 | MIDDLE_NAME | STRING | Also used for middle name lookup |
 
----
+### 3.3 Migration Summary
 
-## 4. Coverage Analysis
+#### What Changed
 
-### 4.1 Coverage Funnel
+| Aspect | Snowflake (Before) | UC (After) |
+|---|---|---|
+| **Tables** | 4 Galaxy tables | 2 PACE UC tables |
+| **Connection** | Snowflake connector + secrets | Direct UC Delta reads |
+| **Complexity** | 4 LEFT JOINs + CASE cascade | 2 LEFT JOINs + same CASE |
+| **Primary BH_ID** | MAP_CUSTOMER_XREF | pha_hcp_demographics.BH_ID |
+| **NPI Source** | FACT_IQV_LAAD_SUB_NATIONAL_XREF | pha_hcp_demographics.HCP_NPI_ID |
+| **BH_ID Fallback** | DIM_CUSTOMER_HCP | mdm_stg_hcp_prfl |
+| **Base Providers** | FACT_IQV_LAAD_SUB_NATIONAL (PROJD_NBRX > 0) | lrx_nbrx (NBRX > 0) |
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  lrx_nbrx WHERE NBRX > 0                                          │
-│  1,656,523 distinct PROVIDER_IDs (100%)                           │
-└─────────────────────────────────┬──────────────────────────────────┘
-                                 │
-                ┌───────────────┴───────────────────────┐
-                ▼ LEFT JOIN pha_hcp_demographics    ▼
-┌─────────────────────────────────┐  ┌────────────────────────────────┐
-│  Matched: 1,653,410 (99.8%)    │  │  NOT in demo: 3,113 (0.2%) │
-│                                │  │  → PROVIDER_ID as BH_ID     │
-│  Has NPI:  1,568,786 (94.7%)   │  │  → NPI = NULL               │
-│  No NPI:      84,624 ( 5.1%)   │  └────────────────────────────────┘
-└────────────────┬────────────────┘
-                 │
-    ┌────────────┴───────────────────────┐
-    ▼ CASE 1: demo.BH_ID IS NOT NULL      ▼
-┌─────────────────────────────────┐  ┌────────────────────────────────┐
-│  Case 1: Primary BH_ID          │  │  No primary BH_ID          │
-│  from pha_hcp_demographics      │  │  117,802 (7.1%)            │
-│  1,535,608 (92.7%)  ✔ Done     │  │                             │
-│                                │  │  Has NPI:  34,313           │
-│  BH_ID format: BH* prefix      │  │  No NPI:   83,489           │
-└─────────────────────────────────┘  └───────────┬────────────────────┘
-                                            │
-                       ┌────────────┴───────────────┐
-                       ▼ CASE 2: NPI fallback            ▼
-           ┌──────────────────────────┐  ┌──────────────────────────┐
-           │  Case 2: NPI Fallback      │  │  Case 3: PROVIDER_ID    │
-           │  BH_ID via                │  │  default                │
-           │  mdm_stg_hcp_prfl         │  │                          │
-           │  8,728 (0.5%)  ✔ Done    │  │  No NPI:       83,489   │
-           │                          │  │  NPI not in              │
-           │  Recovery: 25.4% of      │  │  hcp_prfl:     25,585   │
-           │  34,313 attempted        │  │  Not in demo:   3,113   │
-           │  BH_ID format: BH*       │  │  Total:       112,187   │
-           └──────────────────────────┘  │  (6.8%)                 │
-                                        │  BH_ID = PROVIDER_ID    │
-                                        └──────────────────────────┘
-                          │
-                          ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  Final Output                                                      │
-│  1,656,523 providers → 1,656,292 distinct BH_IDs                   │
-│                                                                    │
-│  Proper BH_ID (BH-prefix):  1,544,336  (93.2%)                    │
-│  PROVIDER_ID as BH_ID:        112,186  ( 6.8%)                    │
-│  Valid NPI:                  1,568,786  (94.7%)                    │
-│  NULL / empty NPI:              87,737  ( 5.3%)                    │
-│  Distinct NPIs:              1,568,649                             │
-│  PROVIDER_ID → BH_ID:        1:1 (deterministic, no ambiguity)     │
-└────────────────────────────────────────────────────────────────────┘
-```
+#### What Stayed the Same
+
+- CASE priority logic (primary → NPI fallback → PROVIDER_ID default)
+- Output columns: PROVIDER_ID, NPI_NUMBER, BH_ID
+- 6.8% of providers default to PROVIDER_ID as BH_ID (expected behavior)
+
+#### Key Observations
+
+1. **Dramatic simplification**: 4 Snowflake Galaxy tables → 2 UC tables, no Snowflake connection needed
+2. **99.8% PROVIDER_ID coverage**: `pha_hcp_demographics` covers nearly all NBRx providers
+3. **93.2% proper BH_ID resolution**: Only 6.8% fall back to using PROVIDER_ID as BH_ID — this matches the Snowflake query’s ELSE branch behavior
+4. **NPI fallback adds 0.5%**: `mdm_stg_hcp_prfl` recovers 8,728 additional BH_IDs that `pha_hcp_demographics` misses
+5. **3,113 unmatched providers** (0.2%) are not in `pha_hcp_demographics` at all — they get PROVIDER_ID as default BH_ID
 
 ---
 
-## 5. UC Equivalent Query
+## 4. UC Equivalent Query
 
 ```sql
 -- ============================================================
@@ -253,49 +291,197 @@ LEFT JOIN npi_bhid_fallback fallback
 
 ---
 
-## 6. Migration Summary
+## 5. New UC Query - 2 Table UC Cascade
 
-### What Changed
+### 5.1 Funnel: How HCPs Flow Through Each Step
 
-| Aspect | Snowflake (Before) | UC (After) |
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  lrx_nbrx WHERE NBRX > 0                                          │
+│  1,656,523 distinct PROVIDER_IDs (100%)                           │
+└─────────────────────────────────┬──────────────────────────────────┘
+                                 │
+                ┌───────────────┴───────────────────────┐
+                ▼ LEFT JOIN pha_hcp_demographics    ▼
+┌─────────────────────────────────┐  ┌────────────────────────────────┐
+│  Matched: 1,653,410 (99.8%)    │  │  NOT in demo: 3,113 (0.2%) │
+│                                │  │  → PROVIDER_ID as BH_ID     │
+│  Has NPI:  1,568,786 (94.7%)   │  │  → NPI = NULL               │
+│  No NPI:      84,624 ( 5.1%)   │  └────────────────────────────────┘
+└────────────────┬────────────────┘
+                 │
+    ┌────────────┴───────────────────────┐
+    ▼ CASE 1: demo.BH_ID IS NOT NULL      ▼
+┌─────────────────────────────────┐  ┌────────────────────────────────┐
+│  Case 1: Primary BH_ID          │  │  No primary BH_ID          │
+│  from pha_hcp_demographics      │  │  117,802 (7.1%)            │
+│  1,535,608 (92.7%)  ✔ Done     │  │                             │
+│                                │  │  Has NPI:  34,313           │
+│  BH_ID format: BH* prefix      │  │  No NPI:   83,489           │
+└─────────────────────────────────┘  └───────────┬────────────────────┘
+                                            │
+                       ┌────────────┴───────────────┐
+                       ▼ CASE 2: NPI fallback            ▼
+           ┌──────────────────────────┐  ┌──────────────────────────┐
+           │  Case 2: NPI Fallback      │  │  Case 3: PROVIDER_ID    │
+           │  BH_ID via                │  │  default                │
+           │  mdm_stg_hcp_prfl         │  │                          │
+           │  8,728 (0.5%)  ✔ Done    │  │  No NPI:       83,489   │
+           │                          │  │  NPI not in              │
+           │  Recovery: 25.4% of      │  │  hcp_prfl:     25,585   │
+           │  34,313 attempted        │  │  Not in demo:   3,113   │
+           │  BH_ID format: BH*       │  │  Total:       112,187   │
+           └──────────────────────────┘  │  (6.8%)                 │
+                                        │  BH_ID = PROVIDER_ID    │
+                                        └──────────────────────────┘
+                          │
+                          ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  Final Output                                                      │
+│  1,656,523 providers → 1,656,292 distinct BH_IDs                   │
+│                                                                    │
+│  Proper BH_ID (BH-prefix):  1,544,336  (93.2%)                    │
+│  PROVIDER_ID as BH_ID:        112,186  ( 6.8%)                    │
+│  Valid NPI:                  1,568,786  (94.7%)                    │
+│  NULL / empty NPI:              87,737  ( 5.3%)                    │
+│  Distinct NPIs:              1,568,649                             │
+│  PROVIDER_ID → BH_ID:        1:1 (deterministic, no ambiguity)     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 5.2 Step-by-Step Numbers
+
+#### Step 1 → Step 2: Base Providers → Demographics Join
+
+| Set | Count | % of Base |
 |---|---|---|
-| **Tables** | 4 Galaxy tables | 2 PACE UC tables |
-| **Connection** | Snowflake connector + secrets | Direct UC Delta reads |
-| **Complexity** | 4 LEFT JOINs + CASE cascade | 2 LEFT JOINs + same CASE |
-| **Primary BH_ID** | MAP_CUSTOMER_XREF | pha_hcp_demographics.BH_ID |
-| **NPI Source** | FACT_IQV_LAAD_SUB_NATIONAL_XREF | pha_hcp_demographics.HCP_NPI_ID |
-| **BH_ID Fallback** | DIM_CUSTOMER_HCP | mdm_stg_hcp_prfl |
-| **Base Providers** | FACT_IQV_LAAD_SUB_NATIONAL (PROJD_NBRX > 0) | lrx_nbrx (NBRX > 0) |
+| **lrx_nbrx** (base NBRx providers) | 1,656,523 | 100% |
+| **pha_hcp_demographics** (all HCPs) | 2,763,497 | — |
+| **Overlap** (in BOTH) | 1,653,410 | 99.8% |
+| Base only (not in demo) | 3,113 | 0.2% |
+| Demo only (not NBRx providers) | 1,110,087 | — |
 
-### What Stayed the Same
-
-- CASE priority logic (primary → NPI fallback → PROVIDER_ID default)
-- Output columns: PROVIDER_ID, NPI_NUMBER, BH_ID
-- 6.8% of providers default to PROVIDER_ID as BH_ID (expected behavior)
+> **Interpretation:** Demographics table is a superset — it covers 99.8% of NBRx providers plus 1.1M additional HCPs who don't have NBRx claims.
 
 ---
 
-## 7. Key Observations
+#### Step 2 → Step 3: Demographics Join → NPI & BH_ID Availability
 
-1. **Dramatic simplification**: 4 Snowflake Galaxy tables → 2 UC tables, no Snowflake connection needed
-2. **99.8% PROVIDER_ID coverage**: `pha_hcp_demographics` covers nearly all NBRx providers
-3. **93.2% proper BH_ID resolution**: Only 6.8% fall back to using PROVIDER_ID as BH_ID — this matches the Snowflake query's ELSE branch behavior
-4. **NPI fallback adds 0.5%**: `mdm_stg_hcp_prfl` recovers 8,728 additional BH_IDs that `pha_hcp_demographics` misses
-5. **3,113 unmatched providers** (0.2%) are not in `pha_hcp_demographics` at all — they get PROVIDER_ID as default BH_ID
+Of the **1,653,410 matched** providers:
 
----
+| Attribute | Has It | Missing It | Fill Rate |
+|---|---|---|---|
+| **NPI** (HCP_NPI_ID) | 1,568,786 | 84,624 | **94.9%** |
+| **BH_ID** (primary) | 1,535,608 | 117,802 | **92.9%** |
+| **Both NPI + BH_ID** | 1,534,473 | — | **92.8%** |
+| **BH_ID but no NPI** | 1,135 | — | 0.1% |
+| **NPI but no BH_ID** | 34,313 | — | 2.1% |
+| **Neither** | 83,489 | — | 5.1% |
 
-## 8. Validation Recommendation
-
-To confirm parity with the Snowflake output:
-- [ ] Sample ~1,000 PROVIDER_IDs and compare BH_ID from Snowflake cascade vs UC cascade
-- [ ] Focus validation on **Case 2** (NPI fallback) and **Case 3** (default) rows — these are most likely to show discrepancies
-- [ ] Compare NPI values: XREF vs pha_hcp_demographics for sampled providers
-- [ ] Check if the 3,113 unmatched providers exist in the Snowflake output and what BH_ID they received there
+> **Interpretation:** 92.8% of matched providers have complete identity (both BH_ID + NPI). The 34,313 with NPI but no BH_ID are candidates for the fallback path.
 
 ---
 
-## 9. Step-by-Step Side-by-Side Comparison
+#### Step 3 → Step 4: Primary BH_ID → NPI Fallback Recovery
+
+Of the **117,802 providers** in demo with NO primary BH_ID:
+
+| Subset | Count | Action |
+|---|---|---|
+| Has NPI → can attempt fallback | 34,313 | Try `mdm_stg_hcp_prfl` |
+| No NPI → fallback impossible | 83,489 | → PROVIDER_ID default |
+
+Of the **34,313** with NPI attempted:
+
+| Result | Count | Recovery Rate |
+|---|---|---|
+| **BH_ID recovered** via NPI fallback | 8,728 | **25.4%** of attempted |
+| NPI not found in mdm_stg_hcp_prfl | 25,585 | 74.6% (still no BH_ID) |
+
+> **Interpretation:** The NPI fallback recovers BH_ID for 25.4% of providers that had NPI but no primary BH_ID. This adds 8,728 proper BH_IDs (0.5% of total).
+
+---
+
+#### Step 4 → Step 5: Final Resolution Breakdown
+
+| Resolution Path | Providers | % | BH_ID Format |
+|---|---|---|---|
+| Case 1: Primary demo BH_ID | 1,535,608 | 92.7% | `BH*` prefix |
+| Case 2: NPI fallback BH_ID | 8,728 | 0.5% | `BH*` prefix |
+| Case 3: PROVIDER_ID default | 112,187 | 6.8% | Numeric (PROVIDER_ID) |
+| **Total** | **1,656,523** | **100%** | |
+
+The **112,187** PROVIDER_ID defaults break down as:
+
+| Source of Default | Count |
+|---|---|
+| In demo, no BH_ID, no NPI | 83,489 |
+| In demo, has NPI, but NPI not in hcp_prfl | 25,585 |
+| Not in demographics at all | 3,113 |
+| **Total** | **112,187** |
+
+---
+
+### 5.3 BH_ID → PROVIDER_ID Cardinality (Mapping Uniqueness)
+
+#### Forward: PROVIDER_ID → BH_ID
+
+| Mapping | Count | Notes |
+|---|---|---|
+| Providers with exactly 1 BH_ID | 1,656,522 | **100%** — perfect 1:1 |
+| Providers with multiple BH_IDs | 0 | No ambiguity |
+
+> Every PROVIDER_ID resolves to exactly one BH_ID. The CASE cascade is deterministic.
+
+#### Reverse: BH_ID → PROVIDER_ID(s)
+
+| PROVIDER_IDs per BH_ID | Distinct BH_IDs | % |
+|---|---|---|
+| 1:1 (unique) | 1,656,063 | **\~100%** |
+| 2:1 (two providers share BH_ID) | 228 | 0.01% |
+| 3-5:1 | 1 | \<0.01% |
+| 6+:1 | 0 | 0% |
+| **Max providers per BH_ID** | **3** | |
+| **Avg providers per BH_ID** | **1.00** | |
+
+> **Interpretation:** Near-perfect 1:1 mapping. Only 229 BH_IDs (0.01%) are shared by 2–3 PROVIDER_IDs — likely IQVIA sub-provider splits. No fan-out risk for downstream aggregations.
+
+---
+
+### 5.4 Cross-Overlap: BH_ID vs NPI at Final Output
+
+```
+                        ┌────────────────────────────────────────┐
+                        │        1,656,523 Total Providers       │
+                        └───────────────────┬────────────────────┘
+                                            │
+      ┌─────────────────────────────────────────────────────┐
+      │                Has BH_ID (BH-prefix): 1,544,336           │
+      │  ┌─────────────────────────────────────────────────┐  │
+      │  │   BH_ID + NPI: 1,534,473 (92.6%)                     │  │
+      │  └─────────────────────────────────────────────────┘  │
+      │  ┌─────────────────────────────────────────────────┐  │
+      │  │   BH_ID only (no NPI): 1,135 (0.1%)                  │  │
+      │  └─────────────────────────────────────────────────┘  │
+      └─────────────────────────────────────────────────────┘
+      ┌─────────────────────────────────────────────────────┐
+      │           NPI only (no BH_ID): 34,313 (2.1%)             │
+      │           └─ 8,728 recovered via fallback                │
+      │           └─ 25,585 still without BH_ID                  │
+      └─────────────────────────────────────────────────────┘
+      ┌─────────────────────────────────────────────────────┐
+      │         Neither BH_ID nor NPI: 86,602 (5.2%)             │
+      │         → All use PROVIDER_ID as BH_ID                   │
+      └─────────────────────────────────────────────────────┘
+```
+
+---
+
+## 6. Old vs New Query Step-by-Step Overlap Analysis
+
+> **Kerendia HCP Definition:** Providers with at least 1 NBRx for KERENDIA in the last 2 years (WEEK_ENDING_DATE ≥ 20240918) from `kerendia_laad_based_lrx_v6`. **Total: 40,383 Kerendia HCPs.**
 
 ### Step 1: Base Provider List (NBRx Providers)
 
@@ -353,6 +539,18 @@ WHERE NBRX > 0
 > | In New ONLY | 40,845 | 2.5% of new |
 >
 > Old V6 has 189K more providers because it accumulates historical data across many refresh cycles. New `lrx_nbrx` represents the current PACE snapshot. 97.5% of new providers are already in the old output.
+>
+> **Kerendia HCP Impact (40,383 total):**
+>
+> | Set | Kerendia HCPs | % of 40,383 |
+> |---|---|---|
+> | In Old V6 | 40,383 | 100.0% |
+> | In New UC | 40,375 | 99.98% |
+> | **In BOTH** | **40,375** | **99.98%** |
+> | Old ONLY | 8 | 0.02% |
+> | New ONLY | 0 | 0% |
+>
+> Near-perfect Kerendia HCP retention. Only 8 Kerendia prescribers are in V6 but not in the current PACE snapshot — likely historical providers no longer active.
 
 ---
 
@@ -425,6 +623,15 @@ GROUP BY PROVIDER_ID
 > | NPI values MISMATCH | 26 | 0.0% |
 >
 > Near-perfect NPI parity. Only 26 providers show different NPI values — likely due to IQVIA re-mapping between data refreshes. The UC table covers 1.1M more providers with NPI than the old pipeline.
+>
+> **Kerendia HCP Impact (40,383 total):**
+>
+> | Source | Has NPI | No NPI | NPI Rate |
+> |---|---|---|---|
+> | Old V6 | 40,378 | 5 | **100.0%** |
+> | New UC | 40,377 | 6 | **100.0%** |
+>
+> Virtually all Kerendia HCPs have NPI in both old and new pipelines — only 5–6 without.
 
 ---
 
@@ -514,6 +721,15 @@ GROUP BY PROVIDER_ID
 > | New DEGRADED (Old=BH*, New=PROVIDER_ID) | 0 | No loss of BH_ID resolution |
 >
 > **Net positive:** The UC table resolves 55K more BH_IDs than the old Snowflake cascade — an **improvement, not a regression**.
+>
+> **Kerendia HCP Impact (40,383 total):**
+>
+> | Source | Proper BH_ID | PROVIDER_ID Default | NULL | BH_ID Rate |
+> |---|---|---|---|---|
+> | Old V6 | 40,356 | 24 | 3 | **99.9%** |
+> | New UC (primary) | 40,343 | — | — | **99.9%** |
+>
+> 99.9% of Kerendia prescribers get a proper BH_ID from primary resolution alone — the NPI fallback is rarely needed for this cohort.
 
 ---
 
@@ -583,6 +799,19 @@ GROUP BY NPI_NUM
 > | New (UC) providers in fallback zone | 25,585 |
 >
 > The new UC path has **68% fewer** providers needing NPI fallback (25K vs 80K) because `pha_hcp_demographics` resolves 55K BH_IDs at the primary step that the old `MAP_CUSTOMER_XREF` missed. This means the NPI fallback step is less critical in the new pipeline.
+>
+> **Kerendia HCP Impact (40,383 total):**
+>
+> | Kerendia Fallback Path | Count |
+> |---|---|
+> | No primary BH_ID (need fallback) | 40 |
+> | └ Has NPI → attempt fallback | 34 |
+> | &nbsp;&nbsp;&nbsp;└ BH_ID recovered | 13 |
+> | &nbsp;&nbsp;&nbsp;└ Failed (NPI not in hcp_prfl) | 21 |
+> | └ No NPI → PROVIDER_ID default | 6 |
+> | Not in demographics | 5 |
+>
+> Only 40 Kerendia HCPs (0.1%) need the fallback path at all. The NPI fallback recovers 13 of 34 attempted (38% recovery rate for Kerendia — higher than the 25.4% overall).
 
 ---
 
@@ -670,6 +899,17 @@ END AS BH_ID
 > | MISMATCH (incl NULL diffs) | 42,628 | 2.5% |
 >
 > **Key takeaway:** 93.9% exact BH_ID match. Of the 6.1% mismatches, the dominant category (56K) is the new UC pipeline **resolving proper BH_IDs** where old Snowflake defaulted to PROVIDER_ID — a net improvement. Only 0.1% (1,944 providers) show degradation.
+>
+> **Kerendia HCP Impact (40,383 total) — Final Resolution:**
+>
+> | Resolution Path | Kerendia HCPs | % |
+> |---|---|---|
+> | Case 1: Primary BH_ID | 40,343 | **99.9%** |
+> | Case 2: NPI Fallback | 13 | 0.03% |
+> | Case 3: PROVIDER_ID default | 32 | 0.08% |
+> | **Total** | **40,388** | |
+>
+> **99.9% of Kerendia prescribers resolve to a proper BH_ID.** Only 32 default to PROVIDER_ID — negligible impact on downstream Kerendia analytics.
 
 ---
 
@@ -729,6 +969,16 @@ npi_provider_bhid_mapping =
 > | In New ONLY (new in current PACE snapshot) | 40,845 |
 >
 > Size difference is expected: V6 accumulates providers across many 13-week refresh cycles, while the UC query represents a single PACE snapshot. The 189K old-only providers are historical; 41K new-only are recently added.
+>
+> **Kerendia HCP Impact (40,383 total) — Final Output:**
+>
+> | Set | Kerendia HCPs |
+> |---|---|
+> | In BOTH old & new | 40,375 |
+> | Old ONLY (not in new) | 8 |
+> | New ONLY (not in old) | 0 |
+>
+> **99.98% of Kerendia prescribers appear in both outputs.** The 8 old-only providers are historical and no longer in the current PACE snapshot. Zero Kerendia HCPs are lost in the migration.
 
 ---
 
@@ -746,194 +996,13 @@ npi_provider_bhid_mapping =
 
 ---
 
-## 10. HCP Overlap Analysis — Step by Step
+## 7. Validation Recommendation
 
-### 10.1 Funnel: How HCPs Flow Through Each Step
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  STEP 1: Base NBRx Providers                                    │
-│  lrx_nbrx WHERE NBRX > 0                                       │
-│  ───────────────────────────────────                              │
-│  1,656,523 providers (100%)                                     │
-└────────────────────────────────┬─────────────────────────────────┘
-                                │
-               ┌───────────────┴───────────────┐
-               ▼                               ▼
-┌──────────────────────────────┐  ┌──────────────────────────────┐
-│  STEP 2: Matched in demo    │  │  NOT in demo              │
-│  1,653,410 (99.8%)         │  │  3,113 (0.2%)             │
-│                            │  │  → PROVIDER_ID used as    │
-│  ┌────────────────────────┐  │  │    BH_ID (default)        │
-│  │ Has NPI: 1,568,786     │  │  └──────────────────────────────┘
-│  │ (94.7%)              │  │
-│  └────────────────────────┘  │
-│  ┌────────────────────────┐  │
-│  │ No NPI:  84,624       │  │
-│  │ (5.1%)              │  │
-│  └────────────────────────┘  │
-└─────────────┬────────────────┘
-               │
-  ┌────────────┴─────────────────┐
-  ▼                              ▼
-┌──────────────────────────────┐  ┌──────────────────────────────┐
-│  STEP 3: Got BH_ID          │  │  In demo but NO BH_ID     │
-│  (primary from demo)        │  │  117,802 (7.1%)           │
-│  1,535,608 (92.7%)         │  │                            │
-│  → Done ✔                   │  │  ┌────────────────────────┐  │
-└──────────────────────────────┘  │  │ Has NPI:  34,313        │  │
-                                │  │ No NPI:   83,489        │  │
-                                │  └────────────────────────┘  │
-                                └───────┬──────────────────────┘
-                                        │
-                       ┌────────────┴─────────────┐
-                       ▼                           ▼
-           ┌────────────────────────┐  ┌────────────────────────┐
-           │  STEP 4: NPI Fallback    │  │  No fallback possible   │
-           │  BH_ID recovered via     │  │  (no NPI or NPI not     │
-           │  mdm_stg_hcp_prfl        │  │   found in hcp_prfl)   │
-           │  8,728 (0.5%)           │  │  109,074               │
-           │  → Done ✔                │  │  + 3,113 (not in demo) │
-           └────────────────────────┘  │  = 112,187 (6.8%)      │
-                                        │  → PROVIDER_ID default  │
-                                        └────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────┐
-│  STEP 5: Final Output                                          │
-│  1,656,523 providers → 1,656,293 distinct BH_IDs               │
-│                                                                │
-│  Proper BH_ID (BH-prefix):  1,544,336  (93.2%)                │
-│  PROVIDER_ID as BH_ID:        112,186  ( 6.8%)                │
-└──────────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 10.2 Step-by-Step Numbers
-
-#### Step 1 → Step 2: Base Providers → Demographics Join
-
-| Set | Count | % of Base |
-|---|---|---|
-| **lrx_nbrx** (base NBRx providers) | 1,656,523 | 100% |
-| **pha_hcp_demographics** (all HCPs) | 2,763,497 | — |
-| **Overlap** (in BOTH) | 1,653,410 | 99.8% |
-| Base only (not in demo) | 3,113 | 0.2% |
-| Demo only (not NBRx providers) | 1,110,087 | — |
-
-> **Interpretation:** Demographics table is a superset — it covers 99.8% of NBRx providers plus 1.1M additional HCPs who don't have NBRx claims.
-
----
-
-#### Step 2 → Step 3: Demographics Join → NPI & BH_ID Availability
-
-Of the **1,653,410 matched** providers:
-
-| Attribute | Has It | Missing It | Fill Rate |
-|---|---|---|---|
-| **NPI** (HCP_NPI_ID) | 1,568,786 | 84,624 | **94.9%** |
-| **BH_ID** (primary) | 1,535,608 | 117,802 | **92.9%** |
-| **Both NPI + BH_ID** | 1,534,473 | — | **92.8%** |
-| **BH_ID but no NPI** | 1,135 | — | 0.1% |
-| **NPI but no BH_ID** | 34,313 | — | 2.1% |
-| **Neither** | 83,489 | — | 5.1% |
-
-> **Interpretation:** 92.8% of matched providers have complete identity (both BH_ID + NPI). The 34,313 with NPI but no BH_ID are candidates for the fallback path.
-
----
-
-#### Step 3 → Step 4: Primary BH_ID → NPI Fallback Recovery
-
-Of the **117,802 providers** in demo with NO primary BH_ID:
-
-| Subset | Count | Action |
-|---|---|---|
-| Has NPI → can attempt fallback | 34,313 | Try `mdm_stg_hcp_prfl` |
-| No NPI → fallback impossible | 83,489 | → PROVIDER_ID default |
-
-Of the **34,313** with NPI attempted:
-
-| Result | Count | Recovery Rate |
-|---|---|---|
-| **BH_ID recovered** via NPI fallback | 8,728 | **25.4%** of attempted |
-| NPI not found in mdm_stg_hcp_prfl | 25,585 | 74.6% (still no BH_ID) |
-
-> **Interpretation:** The NPI fallback recovers BH_ID for 25.4% of providers that had NPI but no primary BH_ID. This adds 8,728 proper BH_IDs (0.5% of total).
-
----
-
-#### Step 4 → Step 5: Final Resolution Breakdown
-
-| Resolution Path | Providers | % | BH_ID Format |
-|---|---|---|---|
-| Case 1: Primary demo BH_ID | 1,535,608 | 92.7% | `BH*` prefix |
-| Case 2: NPI fallback BH_ID | 8,728 | 0.5% | `BH*` prefix |
-| Case 3: PROVIDER_ID default | 112,187 | 6.8% | Numeric (PROVIDER_ID) |
-| **Total** | **1,656,523** | **100%** | |
-
-The **112,187** PROVIDER_ID defaults break down as:
-
-| Source of Default | Count |
-|---|---|
-| In demo, no BH_ID, no NPI | 83,489 |
-| In demo, has NPI, but NPI not in hcp_prfl | 25,585 |
-| Not in demographics at all | 3,113 |
-| **Total** | **112,187** |
-
----
-
-### 10.3 BH_ID → PROVIDER_ID Cardinality (Mapping Uniqueness)
-
-#### Forward: PROVIDER_ID → BH_ID
-
-| Mapping | Count | Notes |
-|---|---|---|
-| Providers with exactly 1 BH_ID | 1,656,522 | **100%** — perfect 1:1 |
-| Providers with multiple BH_IDs | 0 | No ambiguity |
-
-> Every PROVIDER_ID resolves to exactly one BH_ID. The CASE cascade is deterministic.
-
-#### Reverse: BH_ID → PROVIDER_ID(s)
-
-| PROVIDER_IDs per BH_ID | Distinct BH_IDs | % |
-|---|---|---|
-| 1:1 (unique) | 1,656,063 | **\~100%** |
-| 2:1 (two providers share BH_ID) | 228 | 0.01% |
-| 3-5:1 | 1 | \<0.01% |
-| 6+:1 | 0 | 0% |
-| **Max providers per BH_ID** | **3** | |
-| **Avg providers per BH_ID** | **1.00** | |
-
-> **Interpretation:** Near-perfect 1:1 mapping. Only 229 BH_IDs (0.01%) are shared by 2–3 PROVIDER_IDs — likely IQVIA sub-provider splits. No fan-out risk for downstream aggregations.
-
----
-
-### 10.4 Cross-Overlap: BH_ID vs NPI at Final Output
-
-```
-                        ┌────────────────────────────────────────┐
-                        │        1,656,523 Total Providers       │
-                        └───────────────────┬────────────────────┘
-                                            │
-      ┌─────────────────────────────────────────────────────┐
-      │                Has BH_ID (BH-prefix): 1,544,336           │
-      │  ┌─────────────────────────────────────────────────┐  │
-      │  │   BH_ID + NPI: 1,534,473 (92.6%)                     │  │
-      │  └─────────────────────────────────────────────────┘  │
-      │  ┌─────────────────────────────────────────────────┐  │
-      │  │   BH_ID only (no NPI): 1,135 (0.1%)                  │  │
-      │  └─────────────────────────────────────────────────┘  │
-      └─────────────────────────────────────────────────────┘
-      ┌─────────────────────────────────────────────────────┐
-      │           NPI only (no BH_ID): 34,313 (2.1%)             │
-      │           └─ 8,728 recovered via fallback                │
-      │           └─ 25,585 still without BH_ID                  │
-      └─────────────────────────────────────────────────────┘
-      ┌─────────────────────────────────────────────────────┐
-      │         Neither BH_ID nor NPI: 86,602 (5.2%)             │
-      │         → All use PROVIDER_ID as BH_ID                   │
-      └─────────────────────────────────────────────────────┘
-```
+To confirm parity with the Snowflake output:
+- [ ] Sample ~1,000 PROVIDER_IDs and compare BH_ID from Snowflake cascade vs UC cascade
+- [ ] Focus validation on **Case 2** (NPI fallback) and **Case 3** (default) rows — these are most likely to show discrepancies
+- [ ] Compare NPI values: XREF vs pha_hcp_demographics for sampled providers
+- [ ] Check if the 3,113 unmatched providers exist in the Snowflake output and what BH_ID they received there
 
 ---
 

@@ -764,3 +764,94 @@ CLICKSTREAM_AVG_PRESN_DURATION_IN_LAST_{1..6}_MONTH
 ```
 
 **Total personal promotional features: ~324 columns**
+
+---
+
+## 10. QC Validation (Oct 2026)
+
+### What Was Done
+
+A value-level QC notebook ([`promotional_features_qc`](../04_Promotional_Features/promotional_features_qc))
+was built and run against production job run **413138665338273** (all 9/9 tasks SUCCESS).
+Unlike structural-only validation (column counts, prefix conventions), this QC independently
+recomputes feature values from raw source data and compares them row-by-row, column-by-column
+against the production output parquet files.
+
+### QC Methodology
+
+1. **Activity-based stratified sampling.** 4 HCPs sampled across tertiles of total non-zero
+   feature activity: `BH10088198` (high), `BH10287571` (moderate), `BH11943089` (low),
+   `BH12604072` (sparse). Seed=42 for reproducibility.
+2. **Independent recomputation.** For each channel, the QC queries the same raw Snowflake
+   tables or Delta files used by the production notebooks, applies the identical business
+   logic (flag creation, cohort cross-join, day-level spine fill, rolling-window lag), and
+   produces a manual feature set.
+3. **Value-by-value comparison.** Each recomputed value is compared against the production
+   output for the same `HCP_COHORT_ID` and column. Tolerance: exact integer equality for
+   binary flags, quantity sums, counts, and cross-products; `abs(m-n) < 1e-4` for float
+   features involving division (ClickStream durations, Digital engagement metrics).
+4. **Known-discrepancy self-test.** One production feature value (`TOTAL_SENT_IN_LAST_1_MONTH`)
+   is corrupted by +999 and the comparison is re-run. The QC must detect this as a MISMATCH
+   to prove the comparison logic works.
+
+### Results
+
+| Channel | Source | Value Checks | Mismatches | Status |
+| --- | --- | --- | --- | --- |
+| DTC | Delta (DirectBuys + Social volumes) | 96,670 | 0 | Full independent recompute |
+| FTP | Snowflake `PHCDW_SANDBOX.VIEW_RB_KERENDIA_VOUCHER_FTP` | 84 | 0 | Full independent recompute |
+| Speaker | Snowflake `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM` | 0 | 0 | Pipeline executed correctly on 0 raw events (sampled HCPs not in Speaker universe) |
+| Self-test | Corrupted HQ Emails value +999 | 1 | 1 (intentional) | Mismatch correctly detected |
+| Calls | Snowflake `PHCDW_CDM.FACT_CALL` | -- | -- | Blocked: role lacks SELECT on CDM table |
+| HQ Emails | Snowflake `PHCDW_CDM.HCP_EMAIL_LIST` | -- | -- | Blocked: view chain broken (upstream `CPH_DB_PROD.MODEL.S_EXTA_IMCM_PH_CAMPAIGN` unauthorized) |
+| ClickStream | Depends on FACT_CALL | -- | -- | Blocked: same CDM permission issue as Calls |
+| Samples | Snowflake `CPH_DB_PROD.ANALYTICS_V2` | -- | -- | Blocked: skill had incorrect column names (see findings) |
+| iRep | Snowflake `PHCDW_SANDBOX.VIEW_RB_KERENDIA_IREP` | -- | -- | Blocked: skill had incorrect column names (see findings) |
+
+**Total: 96,755 value-level checks. 0 real mismatches. Self-test confirmed working.**
+
+### Findings
+
+1. **Samples skill had wrong column names.** The skill documented `SAMPLE_DROP_DT`,
+   `SAMPLE_NM`, `DELIVERY_STATUS`, `QTY` — but the actual Snowflake table
+   (`ANLT_BASE_FACT_KERENDIA_SAMPLES_SHIPPED_DROPPED_KER`) uses `SMPLE_CALL_DT`,
+   `SMPLE_CALL_NM`, `SMPLE_QTY`, `SAMPLE_FLAG`. The production notebook (17) uses the
+   correct names. This is a skill documentation error, not a pipeline bug.
+
+2. **iRep skill had wrong column names.** The skill documented `BHID`, `DELIVERY_TS`,
+   `DOC_CAT_NAME`, `DELIVERED`, `CLICKED` — but the actual Snowflake view
+   (`VIEW_RB_KERENDIA_IREP`) uses `ACCT_IDNTFR` (aliased to BHID), `EMAIL_SENT_DT`,
+   `APPRVD_DOC_NM`, `EMAIL_STATUS`, `EMAIL_CLCKD_FLG`. The production notebook (16)
+   uses the correct names. This is a skill documentation error, not a pipeline bug.
+
+3. **Digital column count drift (665 → 896).** The MMX source
+   (`MMX_FNL_COMBINED_AGGR_TAB`) has gained new `CHANNEL`/`TACTIC_NAME` values since the
+   skill was written. The Oct 2026 run produced 896 columns (298 base features × 3 windows
+   + 2 keys). This is expected behavior — the non-personal skill has been updated to note
+   the exact count drifts over time.
+
+4. **Cross-channel cohort coverage differences.** Not every HCP appears in all 26 cohorts
+   across all channels. The lookback-window filter naturally excludes HCPs with no activity
+   in older cohort windows. Confirmed as expected pipeline behavior, not a bug.
+
+5. **Snowflake CDM schema inaccessible.** Role `BAY_CPH_CDP_PROD_CR_US_EAST_1_MVXPF_MVXPF`
+   cannot query `PHCDW.PHCDW_CDM.FACT_CALL` or `PHCDW.PHCDW_CDM.HCP_EMAIL_LIST`. This
+   blocks independent QC for Calls, HQ Emails, and ClickStream. SANDBOX and
+   ANALYTICS_V2 schemas are accessible (FTP, Speaker confirmed working).
+
+### QC Artifacts
+
+| Artifact | Location |
+| --- | --- |
+| QC notebook | `04_Promotional_Features/promotional_features_qc` |
+| QC skill (SKILL.md) | `.assistant/skills/promotional-features-qc-eda/SKILL.md` |
+| Production job run validated | 413138665338273 |
+| Sampled BHIDs | `BH10088198`, `BH10287571`, `BH11943089`, `BH12604072` |
+
+### Remaining Work
+
+- **Fix Samples and iRep column names in the QC notebook** and re-run to get value-level
+  validation for those channels.
+- **Request CDM Snowflake role access** (or use a service account with broader privileges)
+  to enable Calls, HQ Emails, and ClickStream independent recomputation.
+- **Add Digital channel QC** using the `sfOptionscdpread` connection (different warehouse).

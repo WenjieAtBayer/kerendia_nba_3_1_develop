@@ -887,18 +887,48 @@ END AS BH_ID
 >
 > | BH_ID Comparison | Count | % |
 > |---|---|---|
-> | **MATCH** (identical BH_ID) | **1,599,577** | **93.9%** |
-> | **NEW_IMPROVED** (Old=PROVIDER_ID, New=BH*) | 56,510 | 3.3% |
-> | **OTHER** (NULL handling differences) | 41,851 | 2.5% |
-> | **BOTH_BH_DIFF_ID** (different BH_ID assigned) | 3,695 | 0.2% |
-> | **NEW_DEGRADED** (Old=BH*, New=PROVIDER_ID) | 1,944 | 0.1% |
+> | **MATCH** (identical BH_ID) | **1,549,638** | **95.9%** |
+> | **NEW_IMPROVED** (Old=PROVIDER_ID, New=BH*) | 59,635 | 3.7% |
+> | **BOTH_BH_DIFF_ID** (different BH_ID assigned) | 3,115 | 0.2% |
+> | **NEW_DEGRADED** (Old=BH*, New=PROVIDER_ID) | 1,778 | 0.1% |
+> | **OTHER** (NULL handling differences) | 1,512 | 0.1% |
 >
 > | NPI Comparison | Count | % |
 > |---|---|---|
 > | **MATCH** | **1,575,648** | **92.5%** |
 > | MISMATCH (incl NULL diffs) | 42,628 | 2.5% |
 >
-> **Key takeaway:** 93.9% exact BH_ID match. Of the 6.1% mismatches, the dominant category (56K) is the new UC pipeline **resolving proper BH_IDs** where old Snowflake defaulted to PROVIDER_ID — a net improvement. Only 0.1% (1,944 providers) show degradation.
+> **Key takeaway:** 95.9% exact BH_ID match. Of the 4.1% mismatches, the dominant category (59.6K) is the new UC pipeline **resolving proper BH_IDs** where old Snowflake defaulted to PROVIDER_ID — a net improvement. Only 0.1% (1,778 providers) show degradation.
+>
+> #### Where Do the 59,635 Improved HCPs Come From?
+>
+> These are providers where the old V6 had `PROVIDER_ID` as BH_ID (the CASE cascade's default path) but the new UC pipeline resolves a proper `BH*`-prefixed BH_ID. Breakdown:
+>
+> | Category | Count | % | Kerendia NBRX > 0 (LAAD V6) | Kerendia Paid TRX > 0 (Raw FCT_RX) |
+> |---|---|---|---|---|
+> | **In NBA 3.0 Modeling Universe** | **1,972** | **3.3%** | **411** | **935** |
+> | Not in NBA 3.0 Universe | 57,663 | 96.7% | 20 | 48 |
+> | **TOTAL** | **59,635** | **100%** | **431** | **983** |
+>
+> **Note on KERENDIA_FLAG vs actual prescribers:** The NBA 3.0 universe flags 930 of these 1,972 HCPs with `KERENDIA_FLAG=1`, but only 411 actually have Kerendia NBRX > 0 in the last 2 years. The remaining 522 with `KERENDIA_FLAG=1` are HCPs the model identifies as Kerendia *targets* (right specialty, CKD/T2D patient panel) who have not yet written a Kerendia prescription.
+>
+> **Note on Paid TRX vs NBRX — different data sources:** NBRX comes from `kerendia_laad_based_lrx_v6` (pipeline-processed, aggregated LAAD data). Paid TRX comes from raw IQVIA claims (`STG_CAR_IQV_LAAD_FCT_RX` JOIN `STG_CAR_IQV_LAAD_DIM_PRD`, `CLAIM_TYPE='PD'`, 24-mo lookback via Snowflake). The 2.3x difference (935 vs 411) reflects both the broader TRX metric (all paid dispensings including refills, vs NBRX = new-to-brand only) and the raw-vs-processed data source difference.
+>
+> **96.7% of improved HCPs are outside the NBA 3.0 universe** — they are general cardiology/diabetes prescribers (Beta Blockers, CCBs, Diuretics, ARBs, Metformin) who have NBRx claims in the LAAD LRx data but are not targeted for Kerendia modeling.
+>
+> **1,972 Improved HCPs IN the NBA 3.0 Universe (232,965 total):**
+>
+> | NBA 3.0 Segment | Improved HCPs | % of Improved | % of Segment |
+> |---|---|---|---|
+> | KERENDIA_FLAG=1 | 930 | 47.2% | 1.19% of 77,972 |
+> | SGLT2_GLP1_FLAG=1 | 1,148 | 58.2% | 0.59% of 193,974 |
+> | NEPH_FLAG=1 | 82 | 4.2% | 0.50% of 16,414 |
+> | TARGETING_HCP_FLAG=1 | 395 | 20.0% | 0.50% of 78,389 |
+> | BPT_HCP_FLAG=1 | 395 | 20.0% | 0.50% of 78,389 |
+>
+> **Impact Assessment:** The improvement affects only **0.85% of the NBA 3.0 universe** (1,972 of 232,965) and **1.19% of Kerendia HCPs** (930 of 77,972). These HCPs now get a proper BH_ID instead of defaulting to PROVIDER_ID — a data quality improvement, but affecting a small fraction of the modeling population.
+>
+> Only 431 of the 59,635 improved HCPs (0.7%) are actual Kerendia prescribers (any NBRx for KERENDIA ever in V6).
 >
 > **Kerendia HCP Impact (40,383 total) — Final Resolution:**
 >

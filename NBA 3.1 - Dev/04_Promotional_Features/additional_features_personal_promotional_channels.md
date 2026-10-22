@@ -5,7 +5,8 @@
 **Built from:** line-by-line review of the three NBA 3.1 Dev notebooks (current feature sets verified from the `withColumn` / `alias` code)  
 **Date:** October 22, 2026
 
-This file proposes additional features for each personal promotional channel, organized by category: volume, ratio/rate, recency, diversity, cross-product, trend, and cross-channel. Each proposal notes the computation and why it adds value beyond the existing features. Risk IDs (C-*, I-*, K-*) refer to the personal strategic file.
+This file proposes additional features for each personal promotional channel, organized by category: volume, ratio/rate, recency, diversity, cross-product, trend, and cross-channel. Each proposal notes the computation and why it adds value beyond the existing features. 
+
 
 ---
 

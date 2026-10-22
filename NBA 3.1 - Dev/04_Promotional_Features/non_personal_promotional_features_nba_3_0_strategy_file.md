@@ -6,7 +6,8 @@
 **Built from:** the legacy notebook code (feature names checked against the `withColumn` / `alias` statements)  
 **Date:** October 22, 2026
 
-For each channel, this file gives: (1) the source, (2) the preprocessing steps, (3) the features. Risk IDs (LD-*, LH-*, LT-*, LS-*, LSP-*, LF-*) refer to the companion strategic file.
+For each channel, this file gives: (1) the source, (2) the preprocessing steps, (3) the features. 
+
 
 ---
 

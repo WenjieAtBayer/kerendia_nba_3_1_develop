@@ -1,6 +1,70 @@
 ---
 name: promotional-features-qc-eda
 description: >
+  Validation skill for promotional feature outputs in Kerendia NBA 3.x.
+  Independently recomputes values from raw Snowflake/Delta sources for
+  per-channel HCP samples and compares against production parquets.
+  Enforces 4-outcome model: PASSED / FAILED / NOT_VALIDATED / INCOMPLETE.
+  Zero checks is NEVER a pass.
+---
+
+# Promotional Features QC — Independent Recomputation Validation (v2)
+
+## Core Rules
+
+### 4-Outcome Model (Mandatory)
+
+| Status | Condition | Meaning |
+| --- | --- | --- |
+| PASSED | checks > 0 AND mismatches = 0 | Real validation |
+| FAILED | mismatches > 0 | Discrepancies found |
+| NOT_VALIDATED | checks = 0, no error | Sample had no events in this channel |
+| INCOMPLETE | Query error (permission/schema) | Cannot be validated until access granted |
+
+Zero checks is NEVER a pass. The headline MUST say:
+`Validated: X/9. Not validated: Y. Blocked: Z.` No checkmark unless X=9.
+
+### Per-Channel Sampling (Mandatory)
+
+For each channel independently: load production output, filter to C01 cohort,
+find HCPs with >=1 non-zero feature, sample 2-4 with seed=42.
+Different channels WILL have different sampled HCPs. This is correct.
+
+## Data Provenance — Correct Column Names (verified Oct 2026)
+
+| Channel | Source | Key Columns | Filter | Schema |
+| --- | --- | --- | --- | --- |
+| Calls | PHCDW.PHCDW_CDM.FACT_CALL | BAYER_HCP_ID, CALL_DT, CALL_CHNL_NM, CALL_TYP_NM, CALL_PRPS_NM, CALL_DURATION | UPPER(PROD_NM)='KERENDIA' | default |
+| iRep | PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_IREP | ACCT_IDNTFR AS BHID, EMAIL_SENT_DT, EMAIL_CLCKD_FLG, EMAIL_OPND_FLG, EMAIL_STATUS, APPRVD_DOC_NM | acct_idntfr NOT LIKE 'BHO%' AND Email_Status='Delivered' | PHCDW_SANDBOX |
+| ClickStream | CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLKSTRM + FACT_CALL | join on CALL_ID | depends on FACT_CALL | default |
+| HQ Emails | PHCDW.PHCDW_CDM.HCP_EMAIL_LIST | BH_ID AS BHID, EVENTDATE, EVENTTYPE | UPPER(EMAILPRODUCTTYPE) LIKE '%KERENDIA%' | default |
+| Speaker | CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM | BAYER_HCP_ID, EVNT_START_DATE, EVNT_FMT, EVNT_TYP, EVNT_TPIC_NM | UPPER(ATND)='ATTENDED' AND UPPER(PROD_BRAND_NM)='KERENDIA' | default |
+| Samples | CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_KERENDIA_SAMPLES_SHIPPED_DROPPED_KER | BHID, SMPLE_CALL_DT, SMPLE_CALL_NM, UPPER(SMPLE_NM), SMPLE_QTY, SAMPLE_FLAG | none | default |
+| FTP | PHCDW.PHCDW_SANDBOX.VIEW_RB_KERENDIA_VOUCHER_FTP | PRSC_NPI, RX_FILL_DT (MM/dd/yyyy), CLAIM_COUNT_NBR, ORGN_CLM_AUTH_NUM | USE_SLS='Y' | PHCDW_SANDBOX |
+| Digital | PHCDW.PHCDW_CDM.MMX_FNL_COMBINED_AGGR_TAB | NPI-keyed | none | sfOptionscdpread (PHCDW_DSAA) |
+| DTC | Delta volume (DirectBuys + Social) | DMA_Code, DATA_MONTH | none | N/A |
+
+## Snowflake Access (Oct 2026)
+
+| Schema | Status | Channels |
+| --- | --- | --- |
+| PHCDW_SANDBOX | Accessible | FTP, iRep |
+| CPH_DB_PROD.ANALYTICS_V2 | Accessible | Speaker, Samples |
+| PHCDW_CDM (FACT_CALL) | BLOCKED | Calls, ClickStream |
+| PHCDW_CDM (HCP_EMAIL_LIST) | BLOCKED | HQ Emails |
+| PHCDW_DSAA (MMX) | Not attempted | Digital |
+
+Blocked channels MUST report INCOMPLETE, never PASSED.
+
+## Tolerance
+
+| Type | Method |
+| --- | --- |
+| Binary flag sums | Exact integer |
+| Quantity sums | Exact integer |
+| Count features | Exact integer |
+| Duration sums | abs < 1e-4 |
+| DTC vendor spend | abs < 0.01 |
   Validation skill for promotional feature engineering outputs in the Kerendia NBA 3.x
   pipeline. Read this skill when the user wants to spot-check that feature values generated
   by the 9 promotional feature notebooks are correct by independently recomputing them from

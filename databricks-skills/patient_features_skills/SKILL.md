@@ -169,6 +169,53 @@ Hospitalization features (DX and PX only) require **two** input sources:
 Both sources are collapsed to a single event literal: `lit("ALL_DIAGNOSIS")` (DX) or
 `lit("ALL_PROCEDURES")` (PX). No per-event breakdown in hospitalization features.
 
+### 1.5 Market Basket (REQUIRED for every claim type)
+
+Every claim type MUST have a **market basket**: an explicit, curated list of the events that
+features are built for. Features are generated **only** for basket events -- drugs (RX),
+diagnoses (DX), procedures (PX) and lab tests (Lab). Claims for events outside the basket
+are dropped right after `standardize()`.
+
+> **TODO -- add the market baskets here before the final update of this skill.** The final
+> RX, DX, PX and Lab basket lists (exact `EVENT_NAME` values) have not been added yet. The
+> entries in the table below are illustrative examples only. Until the baskets are filled in,
+> generated notebooks cannot apply the basket filter and fall back to all events in the input
+> files.
+
+| Claim type | Basket matches on `EVENT_NAME` from | Example entries |
+| --- | --- | --- |
+| RX | `PRODUCT_GROUP` | `KERENDIA`, `JARDIANCE`, `FARXIGA`, `OZEMPIC` |
+| DX | `DIAGNOSIS_DESCRIPTION` | `CHRONIC KIDNEY DISEASE, STAGE 3A`, `TYPE 2 DIABETES MELLITUS WITH DIABETIC CHRONIC KIDNEY DISEASE` |
+| PX | `PROCEDURE_DESCRIPTION` | `echo_tests`, dialysis procedure descriptions |
+| Lab | `TEST_TYPE` | `GFR`, `UACR` |
+
+Rules:
+
+1. Define the baskets once, next to the cohort config (e.g. `RX_MARKET_BASKET`,
+   `DX_MARKET_BASKET`, `PX_MARKET_BASKET`, `LAB_MARKET_BASKET`, all Python lists), so every
+   notebook and every cohort uses the same event set. Do not hard-code them in a notebook.
+2. Filter with a broadcast semi-join on the upper-cased, trimmed `EVENT_NAME` BEFORE any
+   pre-aggregation, cohort join or pivot. This is also the cheapest scale lever: fewer claims
+   and fewer pivot columns.
+3. Use the basket as the explicit pivot value list: `.pivot("EVENT_KEY", basket_keys)`. The
+   output schema is then fixed (identical across batches, cohorts and reruns), even when a
+   basket event has no claims in a cohort.
+4. The basket replaces `event_prevalence` and `relevant_rx_events` as the column-count
+   control (Section 7.8). If a prevalence filter is still wanted, apply it inside the basket.
+5. Hospitalization (DX/PX) uses the basket-filtered claims for both the total and the
+   hospitalized counts, then collapses them to `ALL_DIAGNOSIS` / `ALL_PROCEDURES`.
+6. Validate the basket against the data: print the basket entries with zero matching claims
+   (spelling or casing drift) and fail if more than a small share is unmatched.
+
+```python
+def apply_market_basket(claims, basket):
+    b = spark.createDataFrame([(e.strip().upper(),) for e in basket], "BASKET_EVENT string")
+    claims = claims.withColumn("BASKET_EVENT", F.upper(F.trim("EVENT_NAME")))
+    unmatched = b.join(claims.select("BASKET_EVENT").distinct(), "BASKET_EVENT", "left_anti")
+    print("Basket events with no claims:", [r[0] for r in unmatched.collect()])
+    return claims.join(F.broadcast(b), "BASKET_EVENT", "left_semi").drop("BASKET_EVENT")
+```
+
 ---
 
 ## 2. Anchor Dates and Cohort Generation
@@ -197,6 +244,24 @@ When `cohort_day_offset` is set to a value other than `1`, cohort boundaries shi
 custom-month windows (e.g., offset=15 means each "month" runs from the 15th to the 14th).
 See Section 10 for the full custom cohort boundary specification.
 
+> **NBA 3.1:** offset-aligned cohorts are defined once in the shared `00_cohort_config`
+> notebook (`OFFSET_DAY`, `assign_cohort_month`, `get_cohort_bounds`). Any 3.1 patient or
+> HCP feature notebook MUST `%run` that config and follow Section 10.8 -- do not
+> re-implement month bucketing with `date_trunc`/`trunc` or `custom_month_bucket`.
+>
+> **Cohort config path:** a cohort_config path has been set for the skill to use:
+> `COHORT_CONFIG_PATH = /Users/patricio.guledjian.ext@bayer.com/kerendia_nba_3_1_develop_clone/00_cohort_config`.
+> Load it with `%run /Users/patricio.guledjian.ext@bayer.com/kerendia_nba_3_1_develop_clone/00_cohort_config`
+> in its own cell. `%run` only accepts a literal path, not a variable, so if the path
+> changes, update this note and every generated notebook. The older repo location in
+> Section 10.8 (`.../03_Feature_Engineering/03_HCP_level_features/00_cohort_config`) no
+> longer exists.
+>
+> **TODO -- update in the future:** this path points to a personal clone (Patricio's
+> `kerendia_nba_3_1_develop_clone`) and is a temporary location. When the cohort config moves
+> to its final shared location, update `COHORT_CONFIG_PATH` here, in Sections 9, 10.8 and
+> 12.1, and in the `%run` cell of every generated notebook.
+
 Anchor dates are saved to `hcp_model_inference_anchor_dates.csv` for downstream joins.
 
 ### 2.1 Default File Paths
@@ -217,9 +282,34 @@ When generating notebooks from this skill, pre-fill file paths with the values b
 | Source | First Occ + Recency | Frequency | Hospitalized (HX) |
 | --- | --- | --- | --- |
 | RX | `rx_input_claims_total_events_and_first_occ_features_input` | `rx_input_claims_12M_features_input` | -- |
-| DX | `dx_input_claims_all_events_features_input` | `dx_input_claims_12M_and_first_occ_features_input` | `dx_hospitalization_claims_all_events_features_input` |
+| DX | `dx_input_claims_all_events_features_input` (**12M only -- see note**) | `dx_input_claims_12M_and_first_occ_features_input` | `dx_hospitalization_claims_all_events_features_input` (**12M only**) |
 | PX | `px_input_claims_all_events_features_input` | `px_input_claims_12M_and_first_occ_features_input` | `px_hospitalization_claims_all_events_features_input` |
-| Lab | `lab_input_claims_12M_and_first_occ_features_input` | -- | -- |
+| Lab | `lab_input_claims_12M_and_first_occ_features_input` | same file (used for Frequency too) | -- |
+
+> **Data coverage check (2026-10 test, data up to 2026-08-28):** the file names do not
+> reliably describe what the files contain. `dx_input_claims_all_events_features_input` and
+> `dx_hospitalization_claims_all_events_features_input` only start on 2025-08-31 (one 12M
+> window for a single inference anchor). `dx_input_claims_12M_and_first_occ_features_input`,
+> the RX first-occurrence file and all PX files hold history from 2021, and Lab goes back to
+> 2001. For multi-cohort (NBA 3.1) runs:
+> * DX First Occ / Recency / Frequency: use `dx_input_claims_12M_and_first_occ_features_input`.
+> * RX: use `rx_input_claims_total_events_and_first_occ_features_input` for every feature.
+>   `rx_input_claims_12M_features_input` is 12M only.
+> * DX hospitalization: no full-history file exists, so `PERC_HOSPITALIZED_*` is 0 for
+>   cohorts whose windows end before 2025-08. Re-pull the hospitalized DX claims for the full
+>   period, or exclude those cohorts.
+> * PX Frequency: `px_input_claims_12M_and_first_occ_features_input` (the Frequency file in
+>   the table above) holds history from 2021 but only **5 procedures**.
+>   `px_input_claims_all_events_features_input` (First Occ / Recency) has **124**. Following the
+>   table, the PX Frequency features drop from 124 procedures to 5, while PX First Occ and
+>   Recency keep all 124. It is not yet confirmed whether this is intended. **This will
+>   probably be solved once the PX market basket (Section 1.5) is in place:** the basket fixes
+>   the procedure list for every PX feature. Then either both files must cover the basket
+>   procedures, or PX Frequency should read `px_input_claims_all_events_features_input` too.
+>   Until then, check the distinct `EVENT_NAME` count of both PX files before generating PX
+>   Frequency features.
+> * Before you pick a file, check `min(SVC_DT)` / `max(SVC_DT)` against the earliest cohort's
+>   `LOOKBACK_START_DATE` and the latest cutoff.
 
 **Output paths** (under notebook output base):
 
@@ -240,43 +330,73 @@ When generating notebooks from this skill, pre-fill file paths with the values b
 ### How It Works
 
 Raw claims are first collapsed to one row per `(PROVIDER_ID, EVENT_NAME)` pair, recording
-only the earliest `EVENT_DATE`. This intermediate -- typically N-million rows -- is then
-cross-joined with the cohort anchor dates to compute `EVENT_TIME` and pivot wide. The
-alternative of joining 100B raw claims directly against cohort dates before aggregating would
-produce a 100B x N_cohorts cross-join that does not scale; the pre-aggregation step is what
-makes the pipeline feasible at production data volumes.
+only the earliest `EVENT_DATE`. This intermediate (typically N-million rows) is then
+**pivoted wide per HCP first**, and only then cross-joined with the cohort anchor dates to
+compute `EVENT_TIME` for each event column. Joining 100B raw claims directly against the
+cohort dates before aggregating would produce a 100B x N_cohorts cross-join that does not
+scale. The pre-aggregation step is what makes the pipeline feasible at production data
+volumes.
 
 ```
 Step 1: Collapse raw claims
   groupBy(PROVIDER_ID, EVENT_NAME)
     .agg(min(EVENT_DATE) -> FIRST_OCCURRENCE_DATE)
-  -> save intermediate to Parquet                    (millions of rows)
+  -> save intermediate to Delta/Parquet               (millions of rows)
 
-Step 2: Attach cohort dates
-  intermediate
+Step 2: Pivot wide (once, cohort-independent)
+  groupBy(PROVIDER_ID)
+    .pivot(EVENT_KEY, event_keys)                     -- explicit list = market basket keys
+    .agg(min(FIRST_OCCURRENCE_DATE))
+  -> one row per HCP, one DATE column per event
+
+Step 3: Attach cohort dates and compute EVENT_TIME
+  wide
     .crossJoin(broadcast(cohort_anchor_dates))        (~100 rows, broadcast)
-    .withColumn("EVENT_TIME",
-        datediff(LOOKBACK_END_DATE, FIRST_OCCURRENCE_DATE))
-    .filter(EVENT_TIME >= 0)                          -- future leakage guard
-
-Step 3: Pivot wide
-  groupBy(HCP_COHORT_ID)
-    .pivot(EVENT_NAME)
-    .agg(max(EVENT_TIME))
-  -> suffix non-ID columns with "_first_occurrence"
+    .select(per event column:
+        when(datediff(LOOKBACK_END_DATE, col) >= 0,   -- future leakage guard
+             datediff(LOOKBACK_END_DATE, col))
+        -> MAX_EVENT_TIME_{EVENT_KEY}_FIRST_OCCURRENCE)
+  -> drop HCP-cohort rows where every event column is NULL
 ```
+
+```python
+pre = (claims.groupBy("PROVIDER_ID", "EVENT_KEY")
+             .agg(F.min("EVENT_DATE").alias("FIRST_OCCURRENCE_DATE")))            # Step 1
+wide = pre.groupBy("PROVIDER_ID").pivot("EVENT_KEY", event_keys).agg(F.min("FIRST_OCCURRENCE_DATE"))  # Step 2
+fo_cols = [f"MAX_EVENT_TIME_{k}_FIRST_OCCURRENCE" for k in event_keys]
+out = (wide.crossJoin(F.broadcast(cohorts.select("COHORT", "LOOKBACK_END_DATE")))     # Step 3
+           .select("PROVIDER_ID", "COHORT",
+                   *[F.when(F.datediff("LOOKBACK_END_DATE", k) >= 0,
+                            F.datediff("LOOKBACK_END_DATE", k)).alias(c)
+                     for k, c in zip(event_keys, fo_cols)])
+           .filter(F.greatest(*[F.col(c).isNotNull().cast("int") for c in fo_cols]) == 1)
+           .withColumn("HCP_COHORT_ID", F.concat_ws("_", "PROVIDER_ID", "COHORT")))
+```
+
+> **Why pivot before the cross-join (changed 2026-10):** the earlier order was Step 1 ->
+> cross-join -> pivot. That multiplied the 21.4M (HCP, event) rows by the number of cohorts
+> (~406M rows for 19 cohorts) BEFORE the pivot shuffle. Pivoting first shuffles only the
+> 21.4M rows, once. The cross-join then becomes a cheap broadcast with a narrow `select` and no
+> second shuffle. On serverless (RX, full universe of 231K HCPs, 243 events, 19 cohorts at
+> offset 7), Steps 2+3 took **0.21 min vs 1.31 min (~6x faster)**. The output was identical:
+> 4,366,572 rows and 0 differences after dropping the all-NULL HCP-cohort rows. The gain grows
+> linearly with the number of cohorts, and the new order needs no cohort batching. Step 1 is
+> unchanged in both orders (2.9 min: 3.6B claims down to 21.4M pairs).
+> Only fall back to cross-join -> pivot if the event list is too large to pivot in a single
+> pass (thousands of events). With a market basket (Section 1.5), that does not happen.
 
 ### Business Rules
 
 | Rule | Detail | Hard / Tunable |
 | --- | --- | --- |
 | Lookback scope | Full history (`EVENT_TIME >= 0`, no lower bound) | **Hard** |
-| Future leakage guard | `filter(EVENT_TIME >= 0)` after computing `EVENT_TIME` | **Hard** |
-| Core aggregation | `max(EVENT_TIME)` per `HCP_COHORT_ID` per `EVENT_NAME` | **Hard** |
+| Future leakage guard | `when(EVENT_TIME >= 0, EVENT_TIME)` per event column (NULL if the first event is after the cutoff), then drop all-NULL rows | **Hard** |
+| Core aggregation | `min(FIRST_OCCURRENCE_DATE)` per HCP per event, then `datediff(cutoff, date)`; equals `max(EVENT_TIME)` per `HCP_COHORT_ID` per `EVENT_NAME` | **Hard** |
+| Step order | Pre-aggregate -> pivot -> cross-join cohorts (see the note under How It Works) | **Hard** (default) |
 | Interpretation | `max(EVENT_TIME)` = earliest event (most days before anchor) | -- |
 | Event prevalence filter | `event_prevalence` threshold (0.00 = keep all) | **Tunable** |
 | Bypass list | `relevant_rx_events` force-keeps specific drugs (RX only) | **Tunable** |
-| Batch size | Cohorts per batch (`batch_size=6`) | **Tunable** |
+| Batch size | Not needed for First Occurrence (output is N_HCP x N_cohorts rows) | -- |
 
 ### Grain
 
@@ -302,9 +422,10 @@ The computation is **identical** across sources -- only `EVENT_NAME` values diff
 
 Earlier versions of the pipeline used a direct
 `groupBy(HCP_COHORT_ID).pivot(EVENT_NAME).agg(max(EVENT_TIME))` on the full claims table
-after joining with cohort dates. This was replaced by the pre-aggregation pattern above
-because the 100B-row x N_cohorts cross-join before aggregation does not scale to production
-data volumes.
+after joining with cohort dates. This was replaced by the pre-aggregation pattern because
+the 100B-row x N_cohorts cross-join before aggregation does not scale to production data
+volumes. In 2026-10, the order after pre-aggregation changed from cross-join -> pivot to
+pivot -> cross-join (see the note under How It Works).
 
 ---
 
@@ -924,6 +1045,14 @@ NUM_OF_HOSPITALIZED_PATIENTS_..._IN_LAST_{N}_DAYS           -- int
 | Hosp patient count windows | inline in notebooks | `[30, 180, 360]` | Hosp Sub-D | Yes |
 | `batch_size` | `DataFrameBatchProcessor` | `6` | First Occ, Recency | Yes |
 | `cohort_day_offset` | `00_config` | `1` | All features (opt-in) | Yes |
+| `OFFSET_DAY` (NBA 3.1) | `00_cohort_config` | `7` (0 = calendar months) | All 3.1 notebooks (Section 10.8) | Yes -- set once, rebuild everything |
+| `DATA_START_DATE` (NBA 3.1) | `00_cohort_config` | `2023-01-01` | Patient journey inputs | Yes |
+| `COHORT_ORIGIN` / `COHORT_LAST` (NBA 3.1) | `00_cohort_config` | `2025-01-01` / `2026-10-01` | Cohort list C1..C22 | Yes |
+| `LOOKBACK_WINDOWS` / `AVG_EXTRA_MONTH` (NBA 3.1) | `00_cohort_config` | `[1, 3, 6, 9, 12]` / `True` | HCP windowed + AVG features | Yes |
+| `VALIDATION_MODE` (NBA 3.1) | `00_cohort_config` | `True` (10 test NPIs) | All 3.1 notebooks | Yes |
+| `COHORT_CONFIG_PATH` (NBA 3.1) | Skill, Section 2 | `/Users/patricio.guledjian.ext@bayer.com/kerendia_nba_3_1_develop_clone/00_cohort_config` | `%run` target of every 3.1 notebook | Yes -- literal path |
+| `{RX,DX,PX,LAB}_MARKET_BASKET` | Next to the cohort config | -- (required) | All features, all claim types (Section 1.5) | Yes |
+| `TEST_HCP_SAMPLE` | Notebook widget | `500` (0 = full universe) | Test runs (Section 12.2) | Yes |
 | `rx_file_path` | `00_config` | `query_output/rx_input_claims_total_events_and_first_occ_features_input` | RX First Occ, Recency | Yes |
 | `dx_file_path` | `00_config` | `query_output/dx_input_claims_all_events_features_input` | DX First Occ, Recency | Yes |
 | `px_file_path` | `00_config` | `query_output/px_input_claims_all_events_features_input` | PX First Occ, Recency | Yes |
@@ -1170,6 +1299,133 @@ Not recommended. February never has day 29-31 (except Feb 29 in leap years), so
 `date_add(date_trunc('MM', '2024-02-01'), 28)` = Feb 29 in a leap year but would need
 special handling in non-leap years. Restrict `cohort_day_offset` to 1-28 for safety.
 
+### 10.8 NBA 3.1 Canonical Offset Logic (`00_cohort_config`)
+
+NBA 3.1 replaces the per-notebook bucketing above with one shared config notebook.
+Current path (`COHORT_CONFIG_PATH`, see Section 2):
+`/Users/patricio.guledjian.ext@bayer.com/kerendia_nba_3_1_develop_clone/00_cohort_config`.
+The older repo location `kerendia_nba_3_1_develop/NBA 3.1 - Dev/03_Feature_Engineering/03_HCP_level_features/00_cohort_config` no longer exists.
+It is the single source of truth for the patient journey notebooks
+(`Patient_Journey_Validation/01-06`) and the HCP feature notebooks (`hcp_level_features/01-05`).
+Every notebook loads it with `%run "../00_cohort_config"` AFTER `00_connection` (which may
+restart Python) and uses its functions -- never a local copy of the formulas.
+
+#### 10.8.1 Parameters and mapping to `cohort_day_offset`
+
+| `00_cohort_config` | Meaning | Equivalent in Sections 10.1-10.7 |
+| --- | --- | --- |
+| `OFFSET_DAY = 0` (or 1) | Calendar months | `cohort_day_offset = 1` |
+| `OFFSET_DAY = D` (2-28) | The D-th of each month starts the NEW cohort | `cohort_day_offset = D` |
+| `DATA_START_DATE` | Earliest claim date read by the patient journey | -- |
+| `COHORT_ORIGIN`, `COHORT_LAST` | Reference months of C1 and the last cohort | `cohort_start_date`, `cohort_end_date` |
+| `LOOKBACK_WINDOWS`, `AVG_EXTRA_MONTH` | Window sizes in cohort-months; AVG uses N+1 months | Lag windows |
+
+**Labeling convention (critical for joins):** 3.1 labels a cohort-month by the **1st of its
+reference month** (`2025-02-01` = the Feb cohort, Feb 7 to Mar 6 at offset 7). This differs
+from `custom_month_bucket`, which labels by the bucket START date (`2025-02-07`). All 3.1
+patient tables (`DATE`, `SVC_DT_M`) and HCP outputs (`COHORT_MONTH`, `SVC_DT_M`) use the
+1st-of-month label, so `custom_month_bucket` output will NOT join to them.
+
+#### 10.8.2 Core rules
+
+| Rule | Definition (offset D > 0) | Offset 0 |
+| --- | --- | --- |
+| Cohort month of a date | `assign_cohort_month(d) = trunc(date_sub(d, D - 1), 'month')` | `trunc(d, 'month')` |
+| Cohort M covers | `[M-D, (M+1)-D)` e.g. Feb = Feb 7 to Mar 6 | calendar month |
+| Cutoff (last day, inclusive) | `month_end(M) + (D - 1)` e.g. Feb 2025 -> Mar 6 | `month_end(M)` |
+| Window of N months | `(cutoff - N months, cutoff]` -- start EXCLUSIVE, end inclusive | `(first_of(M - (N-1)) - 1 day, month_end(M)]` |
+| AVG window | N+1 months, monthly values zero-filled, divided by N+1 | same |
+| RUNNING_ | All history with `EVENT_DATE <= cutoff` | same |
+| Cohorts processed | `get_cohort_months(max_data_date)` keeps cohorts whose cutoff <= last data date | same |
+| Cohort id | `{YYYY-MM}_offset{D}` (e.g. `2025-02_offset7`), one Delta partition per id | `_offset0` |
+
+Functions provided: `assign_cohort_month(col, offset_days=None)`, `get_cohort_bounds(month,
+offset_days=None)` (returns `cutoff`, `window_bounds`, `avg_window_bounds`, `cohort_id`),
+`get_cohort_months(max_data_date, offset_days)`, `filter_to_window`, `build_feature_group`,
+`build_total_col`, `pivoted_counts`, `apply_hcp_filter` (patient grain), `apply_npi_filter`
+(NPI grain), and `df_cohort_ref` (C1..C22 labels).
+
+**Worked example -- Feb 2025 cohort, `OFFSET_DAY = 7`, cutoff 2025-03-06:**
+
+| Window | Claims counted | AVG window (divide by) |
+| --- | --- | --- |
+| 1M | 2025-02-07 to 2025-03-06 | 2025-01-07 to 2025-03-06 (/2) |
+| 3M | 2024-12-07 to 2025-03-06 | 2024-11-07 to 2025-03-06 (/4) |
+| 6M | 2024-09-07 to 2025-03-06 | (/7) |
+| 12M | 2024-03-07 to 2025-03-06 | 2024-02-07 to 2025-03-06 (/13) |
+
+A claim on 2025-02-03 belongs to the **Jan 2025** cohort; a claim on 2025-02-07 belongs to Feb.
+
+#### 10.8.3 Applying it to patient features
+
+| Patient-feature concept | 3.1 definition |
+| --- | --- |
+| `SVC_DT_M` (monthly grain) | `assign_cohort_month(F.col("EVENT_DATE"))` -- never `date_trunc('MM', ...)` |
+| `LOOKBACK_END_DATE` for cohort M | `get_cohort_bounds(M)["cutoff"]` (equals the Section 10.1 formula with the anchor two custom-months later) |
+| `EVENT_TIME` | `datediff(cutoff, EVENT_DATE)`, keep `EVENT_TIME >= 0` |
+| Lag / `_IN_LAST_{N}_MONTH` | Date-range filter with `window_bounds[N]` (equivalent to `rowsBetween(-N+1, 0)` only on a dense cohort-month spine) |
+| Month spine | `sequence(assign_cohort_month(start + 1 day), assign_cohort_month(cutoff), interval 1 month)` -- use the cohort month of the END date, not its calendar month |
+| Day-based features (Recency windows, Freq/Hosp Sub-D) | Unchanged; they shift only because `cutoff` moves |
+| Prediction / target window | Must start at `cutoff + 1 day`. `SVC_DT_M` = 1st of M while features run to day D-1 of M+1, so a calendar-month target for M+1 overlaps the features (leakage) |
+
+#### 10.8.4 Mandatory rules (from the 2026-10 offset review)
+
+1. **Every month assignment uses `assign_cohort_month`.** This includes flags derived from
+   dates (e.g. `FIRST_DIALYSIS_DATE` in `06_patient_journey_combine`): use
+   `assign_cohort_month(F.to_date("FIRST_DIALYSIS_DATE")) <= DATE`, not `trunc(..., 'month')`.
+   Calendar truncation puts events on days 1 to D-1 one cohort late.
+2. **Pass the cohort's offset explicitly** when evaluating a non-global offset (e.g. offset-0
+   parity checks): `assign_cohort_month(col, cb["offset_days"])`. Calls without the argument
+   silently use the global `OFFSET_DAY`. `_cohort_month_sql()` ignores any offset argument and
+   always uses the global -- do not use it for parity runs.
+3. **Producer and consumer tables must be built at the same `OFFSET_DAY`.** Patient tables
+   (`pat_new_and_total_treatments`, `pat_new_ckd_stage`, `pat_gfr_dx_stage...`,
+   `pat_uacr_stage...`) are joined on `(PATIENT_ID, assign_cohort_month(SVC_DT))`. If they were
+   built at a different offset the join still succeeds but matches the wrong month.
+   Never mix with the 3.0 calendar-month tables when `OFFSET_DAY > 0`.
+4. **Apply `DATA_START_DATE` after forward-fill, not before**, for stage-carrying journeys
+   (labs, dx); otherwise stages from earlier tests are lost and every patient looks "new" in
+   the first cohort.
+5. **RUNNING_ history and patient-table history must cover the same period.** A claim older
+   than the patient journey's first month finds no patient row and falls into
+   `NO_ACTIVE_TREATMENT` / `NO_NEW_TREATMENT`.
+6. **Partial first cohort:** with `DATA_START_DATE = 2023-01-01` and D > 1, days Jan 1 to
+   D-1 form a partial Dec-2022 cohort. Either start data on the D-th or exclude that month from
+   lag/"new" logic.
+7. **Overwrite only your cohort partitions** (`replaceWhere COHORT_ID = ...`) and remove stale
+   partitions from older offsets before downstream use.
+
+#### 10.8.5 Correct execution order
+
+1. Set `OFFSET_DAY`, `DATA_START_DATE`, `VALIDATION_MODE` once in `00_cohort_config`.
+2. Patient journey `01_labs`, `02_dx`, `03_rx`, `04_t2d_flag`, `05_px` (independent).
+3. `06_patient_journey_combine` (needs all five).
+4. HCP `01_claim_rx` (needs `pat_new_and_total_treatments`), `03_claim_diagnosis` (needs
+   `pat_new_ckd_stage`), `04_claims` (needs GFR/UACR stage tables).
+5. HCP `02_claim_lab` and `05_claim_rx_nps` (no patient-table dependency) -- any time.
+6. Patient feature notebooks (First Occ / Recency / Frequency / Hosp) using the same cohort
+   list and `cutoff` as `LOOKBACK_END_DATE`.
+
+#### 10.8.6 Verification checks
+
+```python
+# 1) Config self-test (runs inside 00_cohort_config): window edges vs assign_cohort_month -> PASS
+
+# 2) Patient table was built at the current OFFSET_DAY: events on days 1..D-1 must sit in the
+#    PREVIOUS cohort month. Example with the dx journey (raw dx -> journey DATE):
+early = raw_dx.filter(F.dayofmonth("SVC_DT") < OFFSET_DAY)
+chk = (early.withColumn("_M", assign_cohort_month(F.col("SVC_DT")))
+       .join(dx_journey.select("PATIENT_ID", F.col("DATE").alias("_M"),
+                               F.size("DX_STAGE").alias("_n")), ["PATIENT_ID", "_M"], "left"))
+assert chk.filter("_n IS NULL OR _n = 0").count() == 0, "journey built at a different offset"
+
+# 3) Output partitions: one OFFSET_DAYS value per output table
+out.groupBy("OFFSET_DAYS").agg(F.countDistinct("COHORT_ID")).show()
+```
+
+Offset-0 parity (rebuild at `OFFSET_DAY = 0` and compare with the 3.0 outputs) is the
+regression test for any change to this logic.
+
 ---
 
 ## 11. Serverless Compute and Delta Lake Constraints
@@ -1286,3 +1542,76 @@ referring/rendering provider IDs) AFTER `standardize()` will fail with
 (`KERENDIA_FLAG`, `SGLT2_GLP1_FLAG`, etc.) from hospitalized claims. After
 `standardize()`, these columns do not exist. The `if flag in df.columns` guard makes
 the drop a no-op -- this is defensive coding, not a functional requirement.
+
+---
+
+## 12. Known Gaps and How to Fill Them (2026-10 skill test)
+
+These came from generating the RX/DX/PX/LAB offset-7 notebooks
+(`NBA 3.1 - Dev/03_patient_features/*_offset`) from this skill alone and running them as a job.
+
+### 12.1 Cohort config path
+
+**Gap:** the config path in Section 10.8 no longer exists. **Fix:** `%run` the
+`COHORT_CONFIG_PATH` from Section 2, in its own cell, before any helper notebook. Turn
+`cb["cutoff"]` (a `datetime`) into a `date` with `.date()` before using it in Spark literals.
+
+### 12.2 Validation IDs do not match `PROVIDER_ID`
+
+**Gap:** the config's `get_test_npis()` / `apply_npi_filter()` hold NPIs, but `PROVIDER_ID`
+in the claims files is an IQVIA provider id (e.g. `26620371`), so the 10 test NPIs match
+nothing. **Fix:** either map the NPIs through a crosswalk (Section 1.2), or use a deterministic
+sample of the HCP universe for test runs. Write test outputs to a separate `_test` folder.
+
+```python
+u = spark.read.format("delta").load(hcp_universe_path).select("PROVIDER_ID").distinct()
+if TEST_HCP_SAMPLE > 0:
+    u = u.orderBy(F.xxhash64("PROVIDER_ID"), "PROVIDER_ID").limit(TEST_HCP_SAMPLE)
+claims = claims.join(F.broadcast(u), "PROVIDER_ID", "left_semi")
+```
+
+### 12.3 Input files with less history than their names suggest
+
+**Gap:** some default paths in Section 2.1 cover only the last 12M. **Fix:** see the data
+coverage note in Section 2.1. Always check the date range against the earliest cohort's
+lookback start before you choose a file.
+
+### 12.4 Delta-safe names for the documented feature columns
+
+**Gap:** the documented names `max(EVENT_TIME)_{EVENT}_first_occurrence` and
+`min(EVENT_TIME)_{EVENT}_time_min` contain parentheses, which Delta rejects. **Fix:**
+sanitize the whole name. The written names are then
+`MAX_EVENT_TIME_{EVENT_KEY}_FIRST_OCCURRENCE` and `MIN_EVENT_TIME_{EVENT_KEY}_TIME_MIN`.
+Sanitize the event names ONCE into an `EVENT_KEY` column (a broadcast join of a
+`(EVENT_NAME, EVENT_KEY)` map), and pivot on `EVENT_KEY`. Every pivot then produces clean
+columns, and no backticks are needed later. If two names sanitize to the same key, append
+`_2`, `_3`, ...
+
+### 12.5 Batching wide pivots
+
+**Gap:** the skill says to batch by cohort, but it does not say how to keep the batch schemas
+identical. **Fix:** always pass the explicit value list to `.pivot(col, values)`: the market
+basket keys (Section 1.5). Write the first batch with `mode("overwrite")` +
+`overwriteSchema`, and the later batches with `mode("append")`, partitioned by `COHORT`.
+Pivoting with several aggregations names the columns `{value}_{alias}`; rename them to the
+final names straight away. First Occurrence (Section 3, pivot -> cross-join) needs no batching.
+
+### 12.6 Recency counts by type in single-source notebooks
+
+**Gap:** each notebook processes one claim type, so `total_{type}` equals `total_events`, and
+the other types' columns are always 0. **Fix:** pass only the notebook's own type
+(`event_types=[EVENT_TYPE]`). Build the counts by type and by type x window only when RX, DX,
+PX and Lab claims are unioned in one recency computation.
+
+### 12.7 Monthly spine bounds
+
+**Gap:** with data from 2001 (Lab), a min-to-max spine is needlessly large. **Fix:** bound the
+spine to `[first cohort month - (max lag - 1) months, last cohort month]`. This gives
+identical lag values for every cohort month. Assign `SVC_DT_M` with `assign_cohort_month`.
+
+### 12.8 Testing a generated notebook
+
+Run the four notebooks as one job run with `TEST_HCP_SAMPLE=500` (about 6.5 min on
+serverless). Checks: one row per `HCP_COHORT_ID`, a single `_offset{D}` suffix in `COHORT`,
+events on days 1..D-1 bucketed into the previous cohort month, and no stage folders left
+behind.

@@ -10,7 +10,7 @@
 # MAGIC Refactored from `02_claim_lab_monthly` (NBA 3.0) to use the shared `00_cohort_config` (cohort month + offset). The feature logic is unchanged (TEST_TYPE / STAGE pivots, claim counts, `RUNNING_` totals, `PCT_` features); only the time windows change from monthly row-windows to date ranges ending at the cohort cutoff.
 # MAGIC
 # MAGIC * **Offset = 0** reproduces the original calendar-month values (see Validation section)
-# MAGIC * **Lookback windows**: `LOOKBACK_WINDOWS` from config (1, 3, 6, 9, 12)
+# MAGIC * **Lookback windows**: `LOOKBACK_WINDOWS` from config (1, 3, 6, 12, as 3.0)
 # MAGIC * **Cohorts**: all cohorts from `COHORT_ORIGIN` (or the `COHORT_MONTHS` list) whose cutoff is on or before the last lab service date, so every window has complete data
 # MAGIC * **Output grain**: one row per (NPI_NUMBER, COHORT_ID), one partition per cohort; the original had one row per (NPI_NUMBER, SVC_DT_M)
 # MAGIC * **Outputs**: `notebook_output/claim_lab_monthly_cohort` and `provider_claim_lab_monthly_cohort`, partitioned by `COHORT_ID` (Wenjie's `_ZS` tables are not touched)
@@ -78,7 +78,11 @@ print(f"Offset: {OFFSET_DAYS} | Cohorts: {_cohort_setting} | Validation: {VALIDA
 # COMMAND ----------
 
 # DBTITLE 1,Load raw lab claims and define cohorts
-df_lab_raw = spark.read.format("delta").load('/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_volume/hcp_level_model/ops_pipeline/query_output/Lab_03')
+# Paths and windows come from 00_cohort_config (HCP shared constants)
+_QUERY_OUTPUT    = HCP_QUERY_OUTPUT
+_NOTEBOOK_OUTPUT = HCP_NOTEBOOK_OUTPUT
+# Lookbacks: LOOKBACK_WINDOWS from the config (= HCP_LOOKBACK_WINDOWS["lab"], 1/3/6/12)
+df_lab_raw = spark.read.format("delta").load(_QUERY_OUTPUT + "Lab_03")
 
 # Month truncation (date_trunc('MM', SVC_DT)) removed: daily SVC_DT is kept and
 # windows are date ranges from each cohort month + OFFSET_DAYS (00_cohort_config).
@@ -87,12 +91,18 @@ df_lab = df_lab_raw.withColumn("PATIENT_ID", F.col("PATIENT_ID").cast('string'))
 # Validation mode: restrict to the 10 test HCPs (no-op when VALIDATION_MODE = False)
 df_lab = apply_npi_filter(df_lab, NPI_COL)
 
+# Team rule (3.1, option B): every feature, RUNNING_ included, uses lab claims from DATA_START_DATE on.
+# df_lab_all keeps the full history only for the offset-0 parity check against the 3.0 original.
+df_lab_all = df_lab
+df_lab = df_lab.filter(F.col(SVC_COL) >= F.lit(DATA_START_DATE))
+
 # ---------- Cohorts to process ----------
 # Every cohort (COHORT_ORIGIN..COHORT_LAST, or the COHORT_MONTHS list) whose cutoff is on or
-# before the last service date in Lab_03, so all its windows have complete data.
+# before the common last service date of all HCP inputs (get_hcp_cohort_months, 00_cohort_config),
+# so every HCP feature table has the same COHORT_IDs. DATA_MAX_DT (Lab_03 only) is kept for parity.
 import builtins
 DATA_MAX_DT   = df_lab_raw.agg(F.max(SVC_COL)).first()[0]
-COHORT_LIST   = get_cohort_months(max_data_date=DATA_MAX_DT)
+COHORT_LIST   = get_hcp_cohort_months()
 COHORT_BOUNDS = {m: get_cohort_bounds(m) for m in COHORT_LIST}
 COHORT_IDS    = [COHORT_BOUNDS[m]["cohort_id"] for m in COHORT_LIST]
 print(f"Lab data through {DATA_MAX_DT} -> {len(COHORT_LIST)} complete cohorts: "
@@ -125,7 +135,7 @@ display(df_lab_filtered.limit(100))
 # COMMAND ----------
 
 # DBTITLE 1,Date range and cohort bounds check
-# Full history (used for RUNNING_) and windowed range (used for _IN_LAST_N_MONTH)
+# Claims from DATA_START_DATE (used for RUNNING_) and windowed range (used for _IN_LAST_N_MONTH)
 display(df_lab.agg(F.min(SVC_COL).alias("min_svc_dt"), F.max(SVC_COL).alias("max_svc_dt"), F.count(F.lit(1)).alias("rows")))
 display(df_lab_filtered.agg(F.min(SVC_COL).alias("min_svc_dt"), F.max(SVC_COL).alias("max_svc_dt"), F.count(F.lit(1)).alias("rows")))
 
@@ -329,24 +339,34 @@ claim_lab_monthly.limit(100).display()
 
 # COMMAND ----------
 
-# DBTITLE 1,Section: Build and Write All Cohorts
+# DBTITLE 1,Section: Fast cohort engine
 # MAGIC %md
-# MAGIC ##4. Build and Write All Cohorts
-# MAGIC Runs the same steps as section 2–3 (`build_window_features` → `build_running_features` → `combine_features` → `add_pct_features` → `add_cohort_metadata`) for every cohort in `COHORT_LIST` and writes one `COHORT_ID` partition per cohort. Partitions already written are kept if a later cohort fails.
+# MAGIC ####2.3 Fast Cohort Engine (used by section 4)
+# MAGIC Same features as the step-by-step functions above (`build_cohort_slow`), but all cohorts in **one query**, the same approach as NB01:
+# MAGIC 1. **Once per run**: each lab claim becomes its feature keys (total, `TEST_TYPE = x`, `STAGE = y`), counted per **NPI x cohort month x key**. Kept in memory (validation) or saved to a staging Delta table (production).
+# MAGIC 2. **All cohorts**: each month is tagged with every (cohort, window) it belongs to (1, 3, 6, 12 months, RUNNING_) through a small broadcast table, then one pivot by NPI x cohort. PCT and metadata use the same functions.
+# MAGIC
+# MAGIC The windows line up exactly with cohort months (checked for every cohort), so counting by month gives the same result as filtering by date. The next cell checks the engine against `build_cohort_slow`.
 
 # COMMAND ----------
 
-# DBTITLE 1,Build and write every cohort (one partition per COHORT_ID)
-# New output path, partitioned by COHORT_ID so multiple cohorts/offsets coexist.
-# Wenjie's claim_lab_monthly_ZS is NOT touched.
-OUTPUT_PATH = (
-    "/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/"
-    "kerendia_nba_3_volume/hcp_level_model/ops_pipeline/notebook_output/"
-    "claim_lab_monthly_cohort"
-)
+# DBTITLE 1,Fast cohort engine
+# ============================================================
+# FAST COHORT ENGINE — lab claims read once, all cohorts in one query
+# ============================================================
+import time
+from datetime import date
 
-def build_cohort(cb):
-    """All feature steps for one cohort (same functions as the preview above)."""
+_SEP = "\u0001"   # separator inside pivot keys (never appears in the data)
+_STAGE_PREFIX = _NOTEBOOK_OUTPUT + "claim_lab_monthly_cohort_stage_"
+
+
+# materialize(df, name) comes from 00_cohort_config (in memory in validation, staging Delta table
+# _STAGE_PREFIX + name in production).
+
+
+def build_cohort_slow(cb):
+    """Step-by-step version (same functions as the preview cells): reference for the fast engine."""
     df_test_type, df_stage, df_total = build_window_features(df_lab_filtered, cb)
     df_running = build_running_features(df_lab, cb)
     df_spine   = combine_features(df_lab_filtered, df_test_type, df_stage, df_total, df_running, cb)
@@ -354,18 +374,213 @@ def build_cohort(cb):
     return add_cohort_metadata(df_spine, cb).withColumn("PULL_DT", F.current_date())
 
 
-for m in COHORT_LIST:
-    cb = COHORT_BOUNDS[m]
-    build_cohort(cb).write \
-        .format("delta") \
-        .mode("overwrite") \
-        .option("mergeSchema", "true") \
-        .option("replaceWhere", f"COHORT_ID = '{cb['cohort_id']}'") \
-        .partitionBy("COHORT_ID") \
-        .save(OUTPUT_PATH)
-    print(f"{cb['cohort_id']}: written (cutoff {cb['cutoff']:%Y-%m-%d})")
+# ---------- Step 1: claims -> (NPI, cohort month, feature key, N) ----------
+_LAB_GROUPS = [("TEST_TYPE", TEST_TYPE_VALUES), ("STAGE", STAGE_VALUES)]
 
-print(f"\n{len(COHORT_LIST)} cohorts written to {OUTPUT_PATH}")
+def build_lab_long(df, offset_days):
+    d = (df.filter(F.col(NPI_COL).isNotNull())
+           .withColumn("_CM", assign_cohort_month(F.col(SVC_COL), offset_days)))
+    keys = [F.lit("total" + _SEP)] + [F.concat(F.lit(g + _SEP), F.col(g)) for g, _ in _LAB_GROUPS]
+    return (d.select(NPI_COL, "_CM", F.explode(F.array(*keys)).alias("KEY"))
+             .filter(F.col("KEY").isNotNull())            # null TEST_TYPE / STAGE -> not counted (like pivot)
+             .groupBy(NPI_COL, "_CM", "KEY").agg(F.count(F.lit(1)).alias("N")))
+
+
+# ---------- Output columns: (pivot key, column name), same names as the step-by-step functions ----------
+_W = [str(w) for w in sorted(LOOKBACK_WINDOWS)]
+COUNT_SPECS = []
+for _t in _W + ["RUN"]:
+    _pre = "RUNNING_" if _t == "RUN" else ""
+    _sfx = "" if _t == "RUN" else f"_IN_LAST_{_t}_MONTH"
+    COUNT_SPECS.append((f"total{_SEP}{_SEP}{_t}", f"{_pre}TOTAL_LAB_CLAIMS{_sfx}"))
+    for _g, _vals in _LAB_GROUPS:
+        COUNT_SPECS += [(f"{_g}{_SEP}{v}{_SEP}{_t}", f"{_pre}TOTAL_LAB_CLAIMS_{clean_col_name(v)}{_sfx}")
+                        for v in _vals]
+
+
+# ---------- Window -> cohort-month range (checked: windows must line up with cohort months) ----------
+def _cm_of(d, off):
+    """Python version of assign_cohort_month."""
+    return (d - timedelta(days=off - 1)).replace(day=1) if off > 0 else d.replace(day=1)
+
+def _window_months(b, off):
+    s = datetime.strptime(b["start"], "%Y-%m-%d")    # exclusive
+    e = datetime.strptime(b["end"], "%Y-%m-%d")      # inclusive
+    lo, hi = _cm_of(s + timedelta(days=1), off), _cm_of(e, off)
+    if _cm_of(s, off) == lo or _cm_of(e + timedelta(days=1), off) == hi:
+        raise ValueError(f"Window {b} does not line up with cohort months at offset {off}")
+    return lo.date(), hi.date()
+
+
+# ---------- Staged input (built on first use, one per source x offset) ----------
+# "run"  = this run's claims (from DATA_START_DATE); "orig" = full history (offset-0 parity only)
+FAST_SOURCES = {"run": lambda: df_lab, "orig": lambda: df_lab_all}
+_FAST_LONG = {}
+
+def get_lab_long(off, source="run"):
+    key = (source, off)
+    if key not in _FAST_LONG:
+        _t = time.time()
+        _FAST_LONG[key] = materialize(build_lab_long(FAST_SOURCES[source](), off), f"lab_long_{source}_offset{off}")
+        print(f"Lab feature-key table ({source}, offset {off}) built in {time.time() - _t:,.0f}s")
+    return _FAST_LONG[key]
+
+
+# ---------- Step 2: all cohorts in ONE query ----------
+_EARLIEST = date(1900, 1, 1)
+_META_COLS = ["COHORT_ID", "COHORT_MONTH", "OFFSET_DAYS", "CUTOFF_DATE", "SVC_DT_M", "PULL_DT"]
+# Column order of the step-by-step output (schema only, nothing is computed)
+OUTPUT_COLS = build_cohort_slow(cb_preview).columns
+
+def build_all_cohorts_fast(cbs, source="run"):
+    """Same columns and values as build_cohort_slow for each cohort, one row per NPI x COHORT_ID.
+    NPI universe = NPIs with a lab claim up to the cutoff (as combine_features: widest window + RUNNING_)."""
+    offs = {cb["offset_days"] for cb in cbs}
+    if len(offs) != 1:
+        raise ValueError(f"All cohorts must share one offset, got {offs}")
+    off = offs.pop()
+
+    tag_rows, meta_rows = [], []
+    for cb in cbs:
+        cm = datetime.strptime(f"{cb['cohort_month']}-01", "%Y-%m-%d").date()
+        for w in LOOKBACK_WINDOWS:
+            _lo, _hi = _window_months(cb["window_bounds"][w], off)
+            if _hi != cm:
+                raise ValueError(f"{cb['cohort_id']}: window {w} ends in {_hi}, expected {cm}")
+            tag_rows.append((cb["cohort_id"], str(w), _lo, cm))
+        tag_rows.append((cb["cohort_id"], "RUN", _EARLIEST, cm))   # RUNNING_: every month up to the cohort
+        meta_rows.append((cb["cohort_id"], cb["cohort_month"], int(cb["offset_days"]), cb["cutoff"].strftime("%Y-%m-%d")))
+
+    tags = F.broadcast(spark.createDataFrame(tag_rows, "_COHORT string, _TAG string, _LO date, _HI date"))
+    df = (
+        get_lab_long(off, source)
+        .join(tags, (F.col("_CM") >= F.col("_LO")) & (F.col("_CM") <= F.col("_HI")))
+        .withColumn("_PK", F.concat(F.col("KEY"), F.lit(_SEP), F.col("_TAG")))
+        .groupBy(NPI_COL, "_COHORT").pivot("_PK", [k for k, _ in COUNT_SPECS]).agg(F.sum("N"))
+        .toDF(NPI_COL, "_COHORT", *[c for _, c in COUNT_SPECS])
+        .na.fill(0)
+    )
+    df = add_pct_features(df)   # row-wise, cohorts don't mix
+
+    meta = (spark.createDataFrame(meta_rows, "COHORT_ID string, COHORT_MONTH string, OFFSET_DAYS int, CUTOFF_DATE string")
+            .withColumns({"SVC_DT_M": F.to_timestamp(F.concat(F.col("COHORT_MONTH"), F.lit("-01"))),
+                          "PULL_DT": F.current_date()}))
+    return (df.join(F.broadcast(meta), F.col("_COHORT") == F.col("COHORT_ID"))
+              .select(*OUTPUT_COLS))
+
+
+# Same column set as the step-by-step output (fails here, before anything is computed, if not)
+_fast_cols = [NPI_COL] + [c for _, c in COUNT_SPECS] + _META_COLS
+_missing = sorted(set(OUTPUT_COLS) - set(_fast_cols) - {c for c in OUTPUT_COLS if c.startswith("PCT_")})
+_extra   = sorted(set(_fast_cols) - set(OUTPUT_COLS))
+if _missing or _extra:
+    raise ValueError(f"Fast engine columns differ from build_cohort_slow: missing {_missing}, extra {_extra}")
+print(f"Fast engine ready: {len(COUNT_SPECS)} count columns, {len(OUTPUT_COLS)} output columns per cohort")
+
+# COMMAND ----------
+
+# DBTITLE 1,Check: fast engine = step-by-step (2 cohorts)
+# ---- Check: the all-cohorts query gives exactly what the step-by-step functions give ----
+# First and last cohort, nothing is written.
+import builtins   # round/sum are shadowed by a pyspark.sql.functions star import
+import numpy as np
+import pandas as pd
+
+_check = [COHORT_LIST[0], COHORT_LIST[-1]]
+_t0 = time.time()
+_pd_all = build_all_cohorts_fast([COHORT_BOUNDS[m] for m in _check]).toPandas()
+print(f"All-cohorts query ({len(_check)} cohorts): {time.time() - _t0:,.0f}s")
+
+_rows = []
+for m in _check:
+    cb = COHORT_BOUNDS[m]
+    _t0 = time.time()
+    pd_one = build_cohort_slow(cb).toPandas().set_index(NPI_COL)
+    _t_one = time.time() - _t0
+    pd_all = _pd_all[_pd_all["COHORT_ID"] == cb["cohort_id"]].set_index(NPI_COL)
+
+    same_order = list(pd_one.columns) == list(pd_all.columns)
+    same_types = (pd_one.dtypes.astype(str) == pd_all.dtypes.reindex(pd_one.columns).astype(str)).all()
+    cols = [c for c in pd_one.columns if c in pd_all.columns and c != "PULL_DT"]
+    num = [c for c in cols if pd.api.types.is_numeric_dtype(pd_one[c])]
+    txt = [c for c in cols if c not in num]
+    common = sorted(set(pd_one.index) & set(pd_all.index))
+    o = pd_one.loc[common, num].astype(float).values
+    n = pd_all.loc[common, num].astype(float).values
+    bad = ~np.isclose(o, n, rtol=1e-9, atol=1e-9, equal_nan=True)
+    txt_bad = int((pd_one.loc[common, txt].astype(str).values != pd_all.loc[common, txt].astype(str).values).sum())
+    _rows.append({"cohort": cb["cohort_id"], "npis_slow": len(pd_one), "npis_fast": len(pd_all),
+                  "npis_common": len(common), "columns": len(pd_one.columns),
+                  "same_column_order": same_order, "same_types": bool(same_types),
+                  "cells_compared": int(bad.size) + len(common) * len(txt),
+                  "mismatching_cells": int(bad.sum()) + txt_bad, "slow_seconds": builtins.round(_t_one)})
+    if bad.any():
+        i, j = np.argwhere(bad)[0]
+        print(f"  {cb['cohort_id']} first mismatch: NPI {common[i]} {num[j]} slow={o[i, j]} fast={n[i, j]}")
+
+df_fast_vs_slow = pd.DataFrame(_rows)
+display(df_fast_vs_slow)
+_ok = (df_fast_vs_slow["mismatching_cells"].sum() == 0 and df_fast_vs_slow["same_column_order"].all()
+       and df_fast_vs_slow["same_types"].all()
+       and (df_fast_vs_slow[["npis_slow", "npis_fast"]].values == df_fast_vs_slow[["npis_common"]].values).all())
+print("PASS — fast engine = step-by-step" if _ok else "CHECK MISMATCHES")
+
+# COMMAND ----------
+
+# DBTITLE 1,Section: Build and Write All Cohorts
+# MAGIC %md
+# MAGIC ##4. Build and Write All Cohorts
+# MAGIC Runs the same steps as section 2–3 (`build_window_features` → `build_running_features` → `combine_features` → `add_pct_features` → `add_cohort_metadata`) for every cohort in `COHORT_LIST` and writes one `COHORT_ID` partition per cohort. Partitions already written are kept if a later cohort fails.
+
+# COMMAND ----------
+
+# DBTITLE 1,One-time reset: delete old tables (9-month columns)
+# ---- ONE-TIME RESET (2026-10-23): remove the old tables so the 9-month columns are gone ----
+# The write uses mergeSchema, so columns dropped from the code stay in the table as nulls.
+# Deleting the table forces it to be recreated with only the current columns.
+# Safe: only our 3.1 tables are touched; Wenjie's 3.0 claim_lab_monthly_ZS is not affected.
+# After one successful Run all, COMMENT OUT or DELETE this cell.
+import shutil, os
+
+_RESET_PATHS = [
+    _NOTEBOOK_OUTPUT + "claim_lab_monthly_cohort",
+    _NOTEBOOK_OUTPUT + "provider_claim_lab_monthly_cohort",
+]
+for _p in _RESET_PATHS:
+    if os.path.exists(_p.replace("/Volumes/", "/Volumes/")):
+        try:
+            dbutils.fs.rm(_p.replace("/Volumes/", "dbfs:/Volumes/"), recurse=True)
+            print(f"DELETED: {_p}")
+        except Exception as e:
+            print(f"Could not delete {_p}: {e}")
+    else:
+        print(f"Not found (already clean): {_p}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Build and write every cohort (one query, one write)
+# New output path, partitioned by COHORT_ID so multiple cohorts/offsets coexist.
+# Wenjie's claim_lab_monthly_ZS is NOT touched.
+OUTPUT_PATH = _NOTEBOOK_OUTPUT + "claim_lab_monthly_cohort"
+
+# Step-by-step version kept as build_cohort_slow (fast engine cell); switch back with
+# per-cohort writes of build_cohort_slow(cb) if ever needed.
+build_cohort = build_cohort_slow
+
+# All cohorts in ONE query and ONE write (fast engine, section 2.3). Only this run's COHORT_IDs
+# are replaced; other partitions in the table are kept.
+_t0 = time.time()
+_df_out = build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST])
+(_df_out.write
+    .format("delta")
+    .mode("overwrite")
+    .option("mergeSchema", "true")
+    .option("replaceWhere", "COHORT_ID IN (" + ", ".join(f"'{c}'" for c in COHORT_IDS) + ")")
+    .partitionBy("COHORT_ID")
+    .save(OUTPUT_PATH))
+
+print(f"{len(COHORT_IDS)} cohorts ({COHORT_IDS[0]} .. {COHORT_IDS[-1]}) written to {OUTPUT_PATH} "
+      f"in {(time.time() - _t0) / 60:,.1f} min")
 
 
 # COMMAND ----------
@@ -401,7 +616,8 @@ display(df_all_cohorts.select(*_key_cols, *_feat_cols).orderBy(NPI_COL, "COHORT_
 
 # COMMAND ----------
 
-hcp_npi_mapping =spark.read.format('delta').load("/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_volume/hcp_level_model/ops_pipeline/query_output/kerendia_nba_3_0_npi_bhid_mapping")
+# DBTITLE 1,Provider ID mapping
+hcp_npi_mapping = spark.read.format('delta').load(_QUERY_OUTPUT + HCP_NPI_MAPPING_TABLE)
 
 hcp_npi_mapping_df = hcp_npi_mapping.select('NPI_NUMBER', 'PROVIDER_ID').distinct()
  
@@ -413,11 +629,7 @@ claim_lab_monthly = claim_lab_monthly.drop('NPI_NUMBER')
 
 # DBTITLE 1,Write provider-level output
 # New output path (Wenjie's provider_claim_lab_monthly_ZS is NOT touched)
-PROVIDER_OUTPUT_PATH = (
-    "/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/"
-    "kerendia_nba_3_volume/hcp_level_model/ops_pipeline/notebook_output/"
-    "provider_claim_lab_monthly_cohort"
-)
+PROVIDER_OUTPUT_PATH = _NOTEBOOK_OUTPUT + "provider_claim_lab_monthly_cohort"
 
 claim_lab_monthly.write.format("delta") \
     .mode("overwrite") \
@@ -457,11 +669,8 @@ _npis = get_test_npis()
 if _npis is None:
     print("Production mode — parity check skipped (runs on the test NPIs only)")
 else:
-    _lab0 = df_lab.filter(F.col(NPI_COL).isin(_npis))
     _orig_all = (
-        spark.read.format("delta").load(
-            "/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/"
-            "kerendia_nba_3_volume/hcp_level_model/ops_pipeline/notebook_output/claim_lab_monthly_ZS")
+        spark.read.format("delta").load(_NOTEBOOK_OUTPUT + "claim_lab_monthly_ZS")
         .filter(F.col(NPI_COL).isin(_npis))
         .withColumn("_M", F.date_format("SVC_DT_M", "yyyy-MM"))
     )
@@ -476,13 +685,16 @@ else:
     _map = {oc: (oc if ("_IN_LAST_" in oc or oc.startswith("RUNNING_")) else f"{oc}_IN_LAST_1_MONTH")
             for oc in _orig_cols}
 
+    # Same input as the original: full lab history (no DATA_START_DATE). This checks the feature
+    # LOGIC of the engine that writes the output; the 2023 start is a config choice.
+    # All parity months in ONE query (same engine as section 4), compared month by month in pandas.
+    _cbs0 = {m: get_cohort_bounds(m, offset_days=0) for m in _months0}
+    pd_new_all = build_all_cohorts_fast(list(_cbs0.values()), source="orig").toPandas()
+
     summary, mismatches = [], []
     for m in _months0:
-        cb0 = get_cohort_bounds(m, offset_days=0)
-        tt, st, tot = build_window_features(_lab0, cb0)
-        run = build_running_features(_lab0, cb0)
-        pd_new = (add_pct_features(combine_features(_lab0, tt, st, tot, run, cb0))
-                  .toPandas().set_index(NPI_COL))
+        cb0 = _cbs0[m]
+        pd_new = pd_new_all[pd_new_all["COHORT_ID"] == cb0["cohort_id"]].set_index(NPI_COL)
         pd_orig = pd_orig_all[pd_orig_all["_M"] == m].set_index(NPI_COL)
 
         common    = sorted(set(pd_new.index) & set(pd_orig.index))
@@ -526,8 +738,7 @@ else:
 # ---- Validation 2: HCP trace — raw lab claims recounted in pandas vs written features, every cohort ----
 import pandas as pd
 
-TRACE_NPI = (df_lab_filtered.groupBy(NPI_COL).count()
-             .orderBy(F.desc("count")).first()[NPI_COL])
+TRACE_NPI = HCP_TRACE_NPIS["lab"]   # fixed trace HCP (00_cohort_config)
 
 _raw = df_lab.filter(F.col(NPI_COL) == TRACE_NPI).select(SVC_COL, "TEST_TYPE", "STAGE").toPandas()
 _raw[SVC_COL] = pd.to_datetime(_raw[SVC_COL])

@@ -64,7 +64,7 @@ Implications for MMIT:
 * Full feed only from **202510** (Check 1). 202509 is missing; 202506-202508 are a 31-drug pilot without Kerendia.
 * Bayer HPM (derived fields) only from **202601**. L3M change features complete from 202601, L6M from 202604.
 * Inside the window, 10.5% of Kerendia claims are unmatched (6.5% no payer, 4.1% no Kerendia row; the latter jumps to ~7% from 202603 when the formulary count drops from 2,133 to 2,036).
-* MMIT alone is short, but **DRG (through Dec 2025) + MMIT (from Oct 2025) together cover the full training window**, with a 3-month overlap (202510-202512) for calibration, if DRG indeed runs to 202512. See Section 4.
+* MMIT alone is short, but **DRG (202107-202511) + MMIT (from 202510) together cover the full training window**, with a 2-month overlap (202510-202511) for calibration. See Section 4.
 
 ### 2.3 Semantics to align with the client
 * Which source defines "Preferred": MMIT rollup or Bayer HPM (they disagree on 119 formularies).
@@ -122,11 +122,11 @@ Interaction candidates for the learner (or explicit): restriction share x `RUNNI
 
 ## 4. Stitching DRG and MMIT into one access history
 
-DRG was bought through Dec 2025 and MMIT from Jan 2026 (the MMIT historical uploads in the volume start at 202510 for the full feed). Combining them gives a continuous history from 2023, with MMIT as the go-forward source.
+DRG data runs through **202511** (verified in 4.3) and MMIT was purchased from Jan 2026 (the MMIT historical uploads in the volume start at 202510 for the full feed). Combining them gives a continuous history from 2023, with MMIT as the go-forward source.
 
 ### 4.1 Linkage design
 
-| Layer | DRG (2023 - 202512) | MMIT (202510 onward) |
+| Layer | DRG (2023 - 202509 in the unified table) | MMIT (202510 onward) |
 |---|---|---|
 | Common key | IQVIA LAAD `PAYER_PLAN_ID` | IQVIA LAAD `PAYER_PLAN_ID` (`IMSPayerPlanId`) |
 | Payer to formulary | MASA file `MASA_MA_Kerendia_IQVIA_Access_Mapping_at_Plan_Level_01_28_25.xlsb` -> `DRG_PLAN_ID` (static, Jan 2025) | `bronze_iqvia_bridge` -> `OrgId` -> `FormularyId` (refreshed weekly; winning formulary by lives) |
@@ -135,10 +135,10 @@ DRG was bought through Dec 2025 and MMIT from Jan 2026 (the MMIT historical uplo
 Build one **unified plan-month access table** at `PAYER_PLAN_ID x month x drug`, with harmonized columns `h_tier` (Preferred / Covered / Non_Preferred / Not_Covered / Specialty / Not_Listed) and `h_restriction` (Unrestricted / PA_wo_ST / ST_or_PA_ST / Not_Covered / Unspecified), plus `access_source` (DRG / MMIT). All HCP features (Section 1.1 logic) are then computed once from this table, so the feature code does not change at the switch.
 
 ### 4.2 Switch rule and calibration
-* **Overlap 202510-202512:** compare DRG and MMIT on the same payer plan and month (claim-weighted agreement matrices for tier and restriction). This is the evidence that the two series can be joined.
-* **Switch month:** default DRG through 202512, MMIT from 202601 (matches the purchase dates). Move the switch earlier to 202510 only if overlap agreement is high.
+* **Overlap 202510-202511:** compare DRG and MMIT on the same payer plan and month (claim-weighted agreement matrices for tier and restriction). This is the evidence that the two series can be joined. Results in 4.2a.
+* **Switch month (decided, 4.2a):** DRG through 202509, MMIT from 202510. DRG has no data after 202511, so a 202601 switch is not possible.
 * **Crosswalk:** systematic off-diagonal cells in the overlap (e.g. MMIT `Covered` where DRG says `Non-Preferred`) become explicit mapping rules. Remaining differences are absorbed by an `access_source` flag.
-* **Artificial changes:** change and momentum features must not fire because of the source switch. Compare the month-over-month change rate at 202512 -> 202601 with the within-source rates; if it spikes, compute changes within source only and set the switch-month change to missing.
+* **Artificial changes:** change and momentum features must not fire because of the source switch. Compare the month-over-month change rate at 202509 -> 202510 with the within-source rates; if it spikes, compute changes within source only and set the switch-month change to missing.
 * **Plan-universe drift:** the MASA file is static (Jan 2025) and the MMIT bridge is refreshed weekly, so the set of mapped plans (the denominator of `PCT_PLANS_*`) can step-change at the switch. Measure the share of paid claims mapped in DRG only / MMIT only / both, and test a common-universe denominator (plans mapped in both) as a variant.
 
 ### 4.2a Overlap results (run Oct 23 2026)
@@ -185,7 +185,7 @@ MMIT maps about 87% of paid claims vs about 79% for DRG, so `PCT_PLANS_*` denomi
 
 **Verified in `DRG_MMIT_History_Linkage_Checks` (Oct 23 2026):** `ANLT_DRG_FRMLRY_HIST` has 46 columns. Beyond the 7 used in NBA 3.0 it has `TIER_STATUS` (Tier 1-6 / Not Covered), `RESTRICTIONS` (PA / ST / QL combinations, e.g. `PA QL`, `ST QL`), `FORMULARY_STATUS` (tier + restrictions), `PHARMACY_LIVES` (80-92% filled), `REASON_CODE`, `PARENT_ID/NAME` and `PROVIDER_ID/NAME` (controller / payer org), `MEDICAL_ST_CRITERIA` (all Not Covered for Kerendia). No step-product or PA-criteria detail.
 
-DRG coverage: `DATA_MONTH` 202107-202511 (50 months). **The last month is 202511, not 202512.** In 2025, 05, 07, 09 and 12 are missing as labels, and 06, 08 and 10 each hold two snapshot files (e.g. 10/2025 holds `formularies_20251027` and `formularies_20251124`), so some files appear to be mislabelled to the previous month. 12/2024 has about 5x the normal rows. The unified table must dedupe by `FILE_NAME` and decide whether to re-derive the month from the file date. Overlap with MMIT: **202510-202511**.
+DRG coverage: 202107-202511 (50 months). **The last month is 202511, not 202512.** In 2025, the `DATA_MONTH` labels 05, 07 and 09 are missing, and 06, 08 and 10 each hold two snapshot files (e.g. 10/2025 holds `formularies_20251027` and `formularies_20251124`), so some files are mislabelled to the previous month. 12/2024 has about 5x the normal rows. Rule adopted: month = file date minus 1 month, keeping the latest file per month (supported by the overlap check in 4.2a). Overlap with MMIT: **202510-202511**.
 
 | Family | Feature | From DRG (history) | From MMIT (go-forward) | Continuous series? |
 |---|---|---|---|---|
@@ -208,7 +208,7 @@ DRG coverage: `DATA_MONTH` 202107-202511 (50 months). **The last month is 202511
 
 ### 4.4 How to use the two feature tiers in NBA 3.1
 * **Tier A (continuous):** P0, coarse PA / ST, plan mix, relative access, momentum and competitor events. Built on the unified table from 2023 onward, so the model keeps its full training history (the 26 cohorts and beyond). These replace the DRG features one-for-one.
-* **Tier B (MMIT-only):** QL detail (if absent in DRG), step product, PA burden, HPM, medical, geography. About 12 months of history exist now (202510-202609) and it grows every week. Do not add them as all-missing before 2026 in a single model, because LightGBM would learn "missing = earlier cohorts" and confound them with time. Instead:
+* **Tier B (MMIT-only):** MMIT ST split, step product, PA burden, HPM, medical, geography. About 12 months of history exist now (202510-202609) and it grows every week. Do not add them as all-missing before 2026 in a single model, because LightGBM would learn "missing = earlier cohorts" and confound them with time. Instead:
   1. Train the main model on Tier A over the full history.
   2. Measure the value of Tier B with a second-stage model on the residuals, or a model trained on recent months only, evaluated on later held-out months.
   3. Move a Tier B feature into the main model once its MMIT history covers the training window used for retraining.
@@ -218,7 +218,7 @@ DRG coverage: `DATA_MONTH` 202107-202511 (50 months). **The last month is 202511
 
 ## 5. Validation plan
 
-1. **Linkage and parity check:** notebook `DRG_MMIT_History_Linkage_Checks` (same folder). Sections: DRG schema and month range; claim-weighted coverage of paid LAAD claims by DRG / MMIT / both; harmonized taxonomy; overlap-month (202510-202512) agreement matrices; change rate across the switch; HCP x month `PCT_PLANS_*` parity (correlation, mean, MAE). Pass criteria to agree with the team, e.g. claim-weighted tier agreement of 90% or more and HCP-level correlation of 0.9 or more for the P0 features.
+1. **Linkage and parity check:** notebook `DRG_MMIT_History_Linkage_Checks` (same folder). Sections: DRG schema and month range; claim-weighted coverage of paid LAAD claims by DRG / MMIT / both; harmonized taxonomy; overlap-month (202510-202511) agreement matrices; change rate across the switch; HCP x month `PCT_PLANS_*` parity (correlation, mean, MAE). Pass criteria to agree with the team, e.g. claim-weighted tier agreement of 90% or more and HCP-level correlation of 0.9 or more for the P0 features.
 2. **Ablation on the baseline setup** (same target, Tweedie, hyperparameters, time split):
    * M0: baseline with DRG (reference)
    * M1: baseline minus all `PCT_PLANS_*` (cost of dropping DRG)
@@ -244,7 +244,7 @@ DRG coverage: `DATA_MONTH` 202107-202511 (50 months). **The last month is 202511
 
 | Phase | Weeks | Deliverables |
 |---|---|---|
-| 0. Fix and align | 1-2 | Run `DRG_MMIT_History_Linkage_Checks`; decide switch month and crosswalk; HPM mapping fix; `bronze_plan_details` explicit schema; client decisions (Preferred source, APR, Farxiga) |
+| 0. Fix and align | 1-2 | Finish `DRG_MMIT_History_Linkage_Checks` (switch month decided: 202510); confirm crosswalk; HPM mapping fix; `bronze_plan_details` explicit schema; client decisions (Preferred source, APR, Farxiga) |
 | 1. Access foundation | 2-4 | Unified DRG + MMIT plan-month access table at `PAYER_PLAN_ID x month x drug` (harmonized, point-in-time, `access_source` flag); payer bridge QA (placeholder IDs); weekly DQ checks |
 | 2. HCP features | 4-6 | P0 parity on all paid LAAD claims (distinct plans, 12-month lookback) for Kerendia / Jardiance / Farxiga; P1 features; geo fallback; coverage for the 221,723-HCP universe |
 | 3. Modeling | 6-8 | Ablations M0-M3; out-of-time tests; SHAP review |
@@ -253,8 +253,9 @@ DRG coverage: `DATA_MONTH` 202107-202511 (50 months). **The last month is 202511
 ---
 
 ## 8. Open questions
-* Last month of DRG data in `ANLT_DRG_FRMLRY_HIST` (expected 202512), which defines the overlap window.
-* Full DRG column list: is there tier, QL, step-product or lives detail that would make more Tier B features continuous?
+* ~~Last month of DRG data~~ Resolved: 202511 (overlap 202510-202511).
+* ~~Full DRG column list~~ Resolved: tier (`TIER_STATUS`), QL (`RESTRICTIONS`) and lives (`PHARMACY_LIVES`) exist; no step-product or PA-criteria detail (4.3).
+* Why MMIT codes ST for 35% of Kerendia claims where DRG records `PA QL` (label prerequisite coded as a step?). To confirm with MMIT / Bayer Market Access.
 * Is the MASA payer-plan mapping file maintained after Jan 2025? If not, plans added in 2025 are missing from DRG history.
 * Can MMIT deliver historical monthly snapshots before 202510 (only needed if the overlap check fails)?
 * Whether the NBA 3.1 HCP universe stays at the v5 definition (221,723 HCPs).

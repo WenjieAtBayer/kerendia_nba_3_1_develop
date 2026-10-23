@@ -34,7 +34,7 @@ This describes the **old version** of the pipeline (NBA 3.0). A "pipeline" is th
 5. **What the final table looks like**: every column of the saved table.
 6. **Things to watch out for**: every known problem, fully explained. Codes such as LH-1 or LSP-2 are references to the companion file (LH = HQ Emails, LT = DTC, LS = Samples, LSP = Speaker Programs, LF = Free Trial Program); the problem is also explained here, so you do not need the companion file to understand it.
 
-**How to read names.** Anything written `like this` is the exact name used in the data or in the code, so you can search for it. Its meaning is always given next to it, or in the glossary in section 0.
+**How to read names.** Anything written `like this` is the exact name used in the data or in the code, so you can search for it. Its meaning is always given next to it.
 
 **About the numbers.** Figures such as "159,970 rows" come from the last time each notebook was run (the date is given). They will be different the next time the notebook runs.
 
@@ -42,76 +42,7 @@ This describes the **old version** of the pipeline (NBA 3.0). A "pipeline" is th
 
 ## 0. Key ideas to understand first
 
-### 0.1 Business words
-
-| Word | What it means |
-| --- | --- |
-| HCP | "Health Care Professional". In this document, a doctor (or other person allowed to prescribe medicines). |
-| Prescriber | The doctor who wrote a prescription. |
-| Kerendia | Bayer medicine (finerenone) for chronic kidney disease (CKD) in adults with type 2 diabetes (T2D), and more recently for heart failure (HF). It comes in 10 mg, 20 mg and 40 mg tablets. |
-| CKD / T2D / HF | Chronic Kidney Disease / Type 2 Diabetes / Heart Failure. |
-| Cardiorenal | About the heart ("cardio") and the kidneys ("renal") together. |
-| NPI | "National Provider Identifier": a doctor's official US ID number (10 digits). Every prescriber has one. Used by the Digital and Free Trial Program data. |
-| BHID (also `BH_ID`) | Bayer's own internal ID for a doctor, usually `BH` followed by 8 digits (e.g. `BH12345678`). Used by the HQ Emails, Samples and Speaker Programs data. |
-| NPI-to-BHID mapping | A translation table (`kerendia_nba_3_0_npi_bhid_mapping`) that says which BHID belongs to which NPI. One NPI can be linked to more than one BHID. |
-| HCP universe | The list of doctors the model is allowed to score. It is built by another notebook and saved as `kerendia_nba_3_hcp_model_base_hcp_universe_for_inference`. Only the Samples notebook uses it. |
-| Feature | One number describing a doctor (or a doctor's region), used by the model. |
-| Channel | A type of promotion (digital, email, samples, ...). |
-| Rep | A Bayer sales representative who visits doctors. |
-| HQ | "Headquarters": Bayer's head office, which sends marketing emails centrally. |
-| iRep email | An email sent by a rep (through a rep email tool) rather than by HQ. |
-| Vendor | An outside company that shows Bayer's content to doctors or patients (for example a medical website). |
-| Impression / exposure | One time a piece of content (an ad, an email, a message) was shown or delivered to someone. |
-| Engagement | Any interaction with the content: opening it, viewing it, clicking it. |
-| Click | The person clicked on the content to see more. |
-| DMA | "Designated Market Area": one of about 210 media regions of the US (roughly a large city and its surrounding area). Used for patient advertising. |
-| Sample | A free pack of Kerendia given to a doctor to hand to patients. |
-| Voucher / free trial | A coupon that lets a patient get the first Kerendia supply at no cost. |
-| Claim | The pharmacy's record that a prescription was filled (here: paid with a voucher). |
-| Reversal | A claim that was cancelled after it was recorded (for example, the patient never collected the medicine). It appears as an extra line with negative amounts. |
-
-### 0.2 Time words
-
-| Word | What it means |
-| --- | --- |
-| Lookback period | The past year (365 days) of history the features are calculated from. Starts at `LOOKBACK_START_DATE`, ends at `LOOKBACK_END_DATE`. |
-| End of the lookback | The "as of" date of every feature: features describe what happened up to and including this day. |
-| Anchor date | The day the model makes its suggestions from (the first day of a month). The lookback ends about two weeks before it, to give recent data time to arrive. |
-| Prediction window | The period the model tries to predict (about one month, starting about a week after the anchor date). Not used by these notebooks. |
-| Cohort | A "snapshot" of all doctors at one anchor date. When the model is used for real there is only one cohort, called `I01`. When the model was trained, there was one cohort per month (`C01`, `C02`, ...). |
-| Inference | Using the trained model for real, to score doctors today (as opposed to training it on the past). All tables in this document are built for inference; their names end in `_for_inference`. |
-
-### 0.3 Data and code words
-
-The notebooks are written in Python using **Spark** (a tool for processing large tables). These are the operations they use, explained once here:
-
-| Word | What it means |
-| --- | --- |
-| Table, row, column | Data is stored like a spreadsheet: a table has columns (e.g. "doctor", "date", "emails opened") and rows (lines). |
-| Notebook | A file containing code that runs step by step (one "cell" at a time). Each channel has one notebook. |
-| Snowflake | Bayer's central data warehouse, where most raw data lives. The notebooks read from it. |
-| Delta table | The file format used to save tables in Databricks (the platform where the notebooks run). Each feature table is saved as a Delta table in a folder (a "Volume" path starting with `/Volumes/...`). |
-| SQL query | A request written in the SQL language that asks Snowflake for specific rows and columns. |
-| Filter | Keep only the rows that meet a condition (e.g. "brand is Kerendia"). |
-| Group and sum / count | Put rows with the same values together (e.g. same doctor and same day) and add up a number (sum) or count the rows (count). |
-| Pivot | Turn the values of one column into separate columns. Example: a column "event" with values Open and Click becomes two columns, "Open" and "Click", each holding a count. |
-| Dynamic pivot | A pivot where the new columns are decided by whatever values are in the data at run time. If a new value appears, a new column appears automatically. |
-| Join | Put two tables side by side by matching a shared column (the "key", e.g. the doctor ID). Kinds: **inner join** keeps only rows found in both tables; **left join** keeps every row of the first table and fills blanks where the second has nothing; **full outer join** keeps every row of both tables; **cross join** pairs every row of one table with every row of the other. |
-| NULL | An empty cell: no value at all (different from 0). |
-| Fill with 0 (`fillna(0)`) | Replace empty cells with 0. |
-| Duplicates / DISTINCT | Identical rows. `SELECT DISTINCT` and `dropDuplicates()` keep only one copy of identical rows. |
-| Calendar fill ("spine") | Add a row for every day (or month) in a period, even days with no activity, so that totals over time are calculated correctly. |
-| Rolling total (window) | A total over the last N days or months, recalculated for each day or month. |
-| Running total | A total of everything from the start of the data up to a given month. |
-| Upper-case / trim | Convert text to capital letters / remove spaces at the start and end of text, so that "Banner " and "BANNER" are treated the same. |
-| Cast | Change the type of a value, e.g. from text to date. |
-| Text (string) vs date | A date can be stored as real date (sortable, usable in calculations) or as text such as `2026_05_27`. |
-| Hard-coded | Written directly in the code (for example a fixed list of names), so it does not update itself when the data changes. |
-| Commented out | Code that is still in the notebook but switched off (it does not run). |
-| Overwrite | Saving a table replaces the previous version completely. |
-| Key | The column(s) that identify a row, e.g. doctor + month. |
-
-### 0.4 The time frame: what period do the features cover?
+### 0.1 The time frame: what period do the features cover?
 
 Imagine the model is used on **1 June 2026** (the anchor date). It looks back over the previous year of activity, but stops about two weeks early, because recent data takes time to arrive:
 
@@ -139,63 +70,7 @@ So every feature answers a question like *"what happened up to 17 May 2026?"*.
 
 The example values come from the Samples run of 27 May 2026. Because each notebook was last run on a different day, the saved tables use different dates. For example, the Free Trial Program table was last built with a lookback ending 17 September 2025.
 
-### 0.5 How "in the last N months" features work
-
-Most feature names end with something like `_IN_LAST_3_MONTH`. This means **"the total over the last 3 months, counting back from the end of the lookback period"**. One "month" here means 30 days, so:
-
-| Name ending | Period covered (counting back from the end of the lookback) |
-| --- | --- |
-| `_IN_LAST_1_MONTH` | Last 30 days |
-| `_IN_LAST_2_MONTH` | Last 60 days |
-| `_IN_LAST_3_MONTH` | Last 90 days |
-| `_IN_LAST_4_MONTH` | Last 120 days |
-| `_IN_LAST_5_MONTH` | Last 150 days |
-| `_IN_LAST_6_MONTH` | Last 180 days |
-
-**Example.** The lookback ends on 17 May 2026. Dr. Smith received 3 sample units on 1 April and 5 sample units on 10 May.
-
-* Samples in the last 1 month (18 April to 17 May) = **5**
-* Samples in the last 2 months (19 March to 17 May) = 3 + 5 = **8**
-* Samples in the last 6 months = **8**
-
-The longer windows always include the shorter ones, so the numbers can only stay the same or grow as the window gets longer.
-
-**How the code does it (HQ Emails, Samples, Speaker Programs, FTP).** Each of these notebooks contains two small functions:
-
-1. `step2_fill_missing_date` (the calendar fill): for every doctor with **at least one** activity in the lookback, it creates one row per calendar day, from the first to the last day of the lookback (365 rows per doctor). Days with activity get their counts; the notebook then fills all other days with 0.
-2. `step3_lag_date` (the rolling totals): for each day and each period length N (30, 60, ... days), it adds up that day and the N-1 days before it. Because there is exactly one row per day, "the last N rows" is the same as "the last N days, including that day". The new column is named `<measure>_IN_LAST_<N/30>_MONTH` (so 90 days gives `_IN_LAST_3_MONTH`).
-3. The notebook then keeps **only the row for the last day of the lookback** (`LOOKBACK_END_DATE`) and removes the daily counts. What remains is one row per doctor with the totals.
-
-### 0.6 How Digital's monthly totals work
-
-Digital works with **calendar months** instead of 30-day blocks, using two shared functions from the helper notebook `00_step23_function`:
-
-1. `step2_fill_missing` (the calendar fill): finds the first and the last month present in the data, and gives **every doctor a row for every month** in between (empty months are filled with 0 afterwards).
-2. `step3_lag` (the totals): for each doctor and month it adds:
-   * `<measure>_IN_LAST_<i>_MONTH` for i = 1, 3, 6: the total of that month plus the i-1 months before it. So `_IN_LAST_1_MONTH` is that month alone, and `_IN_LAST_3_MONTH` is that month plus the two before.
-   * `RUNNING_<measure>`: the total of all months from the first month in the data up to that month.
-
-Unlike the other channels, Digital keeps **every month**, not only the last one.
-
-**Example.** Dr. Lee saw 4 banner ads in January, 0 in February and 2 in March (and the data starts in January). In her March row: that month = 2, last 3 months = 4 + 0 + 2 = 6, running total = 6. In her February row: that month = 0, running total = 4.
-
-### 0.7 The three table shapes
-
-The channels produce tables of three different shapes:
-
-| Shape | Channels | One row means | Example |
-| --- | --- | --- | --- |
-| **One row per doctor** | HQ Emails, Samples, Speaker Programs, FTP | One doctor, at the end of the lookback | "Dr. Smith: 8 samples in the last 2 months" |
-| **One row per doctor per month** | Digital | One doctor in one calendar month | "Dr. Smith, March 2026: 12 banner ads seen" |
-| **One row per region per month** | DTC | One media region of the US in one month | "New York region, March 2026: 50,000 ad views" |
-
-The later step that combines all channels (notebook `99_Combine_Physician_Data_Promotional&Acc`) puts these together into one row per doctor.
-
-### 0.8 Why some doctors are missing from a table
-
-In the "one row per doctor" tables, **a doctor only appears if they had at least one activity in that channel during the lookback**. The calendar fill (section 0.5) only creates days for doctors who already have activity. A doctor who never attended a speaker program is simply not in the speaker table. When all channels are combined later, such a doctor is treated as having 0.
-
-### 0.9 Things every notebook shares
+### 0.2 Things every notebook shares
 
 | Topic | What happens |
 | --- | --- |
@@ -220,7 +95,7 @@ The data comes from Bayer's marketing-mix table ("MMX"), which collects reports 
 
 ### 1.2 Where the data comes from
 
-**Table:** `PHCDW.PHCDW_CDM.MMX_FNL_COMBINED_AGGR_TAB` in Snowflake (database `PHCDW`, schema `PHCDW_CDM`). It is read with the `sfOptionscdpread` connection settings (section 0.9).
+**Table:** `PHCDW.PHCDW_CDM.MMX_FNL_COMBINED_AGGR_TAB` in Snowflake (database `PHCDW`, schema `PHCDW_CDM`). It is read with the `sfOptionscdpread` connection settings (section 0.2).
 
 **History of the source.** Until 29 April 2025 the notebook combined this table with an older one, `..._AGGR_TAB_TEMP`, for months before the lookback. That older table was retired ("deprecated"), so that version of the query is now commented out and only the main table is used.
 
@@ -318,7 +193,7 @@ Example of what a pivot does:
 | Dr. Lee | 2026-03 | 2 | 1 |
 
 **Step 7. Fill in the months and calculate the totals over time.**
-*What:* for each of the three tables, `step2_fill_missing` gives every doctor a row for every month, and `step3_lag` adds the totals for the last 1, 3 and 6 months and the running total (section 0.6). Empty cells are filled with 0.
+*What:* for each of the three tables, `step2_fill_missing` gives every doctor a row for every month, and `step3_lag` adds the totals for the last 1, 3 and 6 months and the running total. Empty cells are filled with 0.
 *Why:* so that "last 3 months" really covers three months, even when a doctor had no activity in some of them.
 
 **Step 8. Remove the single-month tactic columns.**
@@ -462,7 +337,7 @@ An email log with one line for every email "event". An event is one thing that h
 | Bounce | The email could not be delivered (for example, the address no longer exists). |
 | Unsubscribe | The doctor asked to stop receiving Kerendia emails. |
 
-**Table:** `PHCDW.PHCDW_CDM.HCP_EMAIL_LIST` in Snowflake, read with `Get_Data_Snowflakes` (section 0.9).
+**Table:** `PHCDW.PHCDW_CDM.HCP_EMAIL_LIST` in Snowflake, read with `Get_Data_Snowflakes` (section 0.2).
 
 **One line of the table** = one email event for one doctor.
 
@@ -493,7 +368,7 @@ An email log with one line for every email "event". An event is one thing that h
 **Step 2. Read the email events** with the filters above.
 
 **Step 3. Attach the dates and build the doctor key.**
-*What:* cross join with the dates (section 0.9), keep events inside the lookback, remove rows without a BHID, and create `HCP_COHORT_ID` (e.g. `BH10000342_I01`).
+*What:* cross join with the dates (section 0.2), keep events inside the lookback, remove rows without a BHID, and create `HCP_COHORT_ID` (e.g. `BH10000342_I01`).
 
 **Step 4. Count events per doctor, per day, per type.**
 *What:* every event gets a helper value `FLAG = 1`. Then a pivot on `EVENTTYPE` adds up the flags for each doctor and day, giving one column per event type. The columns are renamed with `TOTAL_` in front: `TOTAL_SENT`, `TOTAL_OPEN`, `TOTAL_CLICK`, `TOTAL_BOUNCE`, `TOTAL_UNSUBSCRIBE`.
@@ -501,7 +376,7 @@ An email log with one line for every email "event". An event is one thing that h
 *Detail to know:* this is a **dynamic** pivot: the columns come from whatever event types exist in the data (see LH-1 below).
 
 **Step 5. Fill in the calendar and add up the last 90 days.**
-*What:* `step2_fill_missing_date` gives each doctor one row per day of the lookback, empty days become 0, and `step3_lag_date` with the single period **90 days** adds up each day and the 89 days before it (section 0.5).
+*What:* `step2_fill_missing_date` gives each doctor one row per day of the lookback, empty days become 0, and `step3_lag_date` with the single period **90 days** adds up each day and the 89 days before it.
 *Why:* only the 3-month total is used by the model.
 
 **Step 6. Keep the last day only and tidy up.**
@@ -730,7 +605,7 @@ There is **no column for `KERENDIA 40MG BRC`** (LS-1). Then three more columns, 
 *What:* add up each of the 9 columns for each doctor and day. The totals get `TOTAL_` in front (e.g. `TOTAL_SAMPLE_SHIPPED`).
 
 **Step 6. Fill in the calendar and add up the periods.**
-*What:* `step2_fill_missing_date`, empty days become 0, then `step3_lag_date` for 30, 60, 90, 120, 150 and 180 days (section 0.5).
+*What:* `step2_fill_missing_date`, empty days become 0, then `step3_lag_date` for 30, 60, 90, 120, 150 and 180 days.
 
 **Step 7. Keep the last day only and tidy up.**
 *What:* keep the row for `LOOKBACK_END_DATE`, remove the daily totals, rename the day column `SVC_DT`, put the BHID in its own column `BHID`.
@@ -860,7 +735,7 @@ A presentation that is not on any list (for example "Underscoring Early Patient 
 **Step 5. Add up per doctor and day.**
 *What:* the labels are added up for each doctor and day, giving the 11 measures of section 5.4. `ATTENDED_FLAG` becomes `TOTAL_SPEAKER_PROGRAMS_ATTENDED`; the others get `TOTAL_` in front, except `SPKR_TOPIC_OTHER`, which keeps its name (LSP-3). The in-office-meal label is not added up (that line is commented out, LSP-4).
 
-**Step 6. Fill in the calendar and add up the periods** (30, 60, 90, 120, 150, 180 days; section 0.5).
+**Step 6. Fill in the calendar and add up the periods** (30, 60, 90, 120, 150, 180 days).
 
 **Step 7. Keep the last day only and tidy up.**
 *What:* keep the row for `LOOKBACK_END_DATE`, remove the daily totals, rename the day column `SVC_DT`, put the BHID in its own column, and remove the cohort and lookback-end columns.
@@ -975,7 +850,7 @@ If the claim was then approved again, a third line (+30) makes the total 30 agai
 **Step 5. Count claims per doctor and day.**
 *What:* the number of lines for each doctor and day becomes `TOTAL_RX_FTP` ("total prescriptions with free trial").
 
-**Step 6. Fill in the calendar and add up the periods** (30, 60, 90, 120, 150, 180 days; section 0.5), then keep the row for `LOOKBACK_END_DATE`.
+**Step 6. Fill in the calendar and add up the periods** (30, 60, 90, 120, 150, 180 days), then keep the row for `LOOKBACK_END_DATE`.
 
 **Step 7. Tidy up.**
 *What:* a list of columns to keep (`keep_cols`) is applied. It contains `LOOKBACK_END_MONTH`, a misspelling of `LOOKBACK_END_DATE` (LF-2), so the lookback end column is removed together with the daily count. Unlike the other daily notebooks, the day column is **not** renamed to `SVC_DT` (it stays `MONTH_ID`) and the BHID is **not** put in its own column.

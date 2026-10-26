@@ -17,15 +17,13 @@ _cohort_setting = (COHORT_MONTHS if COHORT_MONTHS is not None
 print(f"Offset: {OFFSET_DAYS} | Cohorts: {_cohort_setting} | Validation: {VALIDATION_MODE}")
 ```
 
-If the notebook uses lookbacks other than `LOOKBACK_WINDOWS`, build the bounds with `_build_bounds(X_LOOKBACK_WINDOWS, cb["cutoff"], cohort_start, False, cb["offset_days"])`, or loop only over `X_LOOKBACK_WINDOWS` when you read `cb["window_bounds"]` (the config builds bounds for 1, 3, 6, 9 and 12).
+If the notebook uses lookbacks other than `LOOKBACK_WINDOWS`, build the bounds with `_build_bounds(X_LOOKBACK_WINDOWS, cb["cutoff"], cohort_start, False, cb["offset_days"])`, or loop only over `X_LOOKBACK_WINDOWS` when you read `cb["window_bounds"]` (check in `get_cohort_bounds` which windows the config builds bounds for before relying on a key).
 
 ## T2. Load cell
 
 ```python
 import builtins, time
-_VOLUME = ("/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/"
-           "kerendia_nba_3_volume/hcp_level_model/ops_pipeline/")
-_QUERY_OUTPUT, _NOTEBOOK_OUTPUT = _VOLUME + "query_output/", _VOLUME + "notebook_output/"
+_QUERY_OUTPUT, _NOTEBOOK_OUTPUT = HCP_QUERY_OUTPUT, HCP_NOTEBOOK_OUTPUT   # from 00_cohort_config (no hardcoded paths)
 
 df_x_raw = spark.read.format("delta").load(_QUERY_OUTPUT + "<SOURCE_TABLE>")
 df_x = <same cleaning as the 3.0 original>(df_x_raw)
@@ -41,7 +39,8 @@ COHORT_IDS     = [COHORT_BOUNDS[m]["cohort_id"] for m in COHORT_LIST]
 PREVIEW_COHORT = COHORT_MONTH if COHORT_MONTH in COHORT_LIST else COHORT_LIST[0]
 cb_preview     = COHORT_BOUNDS[PREVIEW_COHORT]
 
-# Fixed pivot values from the FULL history -> same columns in every cohort and as 3.0
+# Fixed pivot values from the FULL input history -> same columns in every cohort and as 3.0.
+# Never read them from a 3.0 output table (those tables can disappear; SKILL.md rule 12).
 <GROUP>_VALUES = sorted(r[0] for r in df_x_raw.select("<PIVOT_COL>").distinct().collect() if r[0] is not None)
 print(f"Data through {DATA_MAX_DT} -> {len(COHORT_LIST)} cohorts: {COHORT_LIST[0]} .. {COHORT_LIST[-1]}")
 ```
@@ -151,7 +150,10 @@ def build_feature_rows(df_in, offset_days=None):
 
 _STAGE_PREFIX = _NOTEBOOK_OUTPUT + "<output_name>_feature_rows_"
 df_feat = materialize(build_feature_rows(df_x, OFFSET_DAYS), f"offset{OFFSET_DAYS}")
-FEATURE_VALUES = sorted(r[0] for r in df_feat.select("FEATURE").distinct().collect())  # or 3.0 column list
+FEATURE_VALUES = sorted(r[0] for r in df_feat.select("FEATURE").distinct().collect())
+# If the list must also contain values the run's HCPs never had (NB05: 16 start columns), build it from the
+# distinct values of the full input (df_x_all), cleaned with a Python copy of the Spark cleaning. Cross-check
+# with the 3.0 output only when os.path.exists(<3.0 path>), and raise if the sets differ.
 
 def build_cohort(cb, L=None):
     L = df_feat if L is None else L
@@ -234,8 +236,13 @@ display(df_all.groupBy("COHORT_ID", "CUTOFF_DATE").count().orderBy("COHORT_ID"))
 ## T7. Offset-0 parity vs 3.0 (every cohort)
 
 ```python
-import numpy as np, pandas as pd
+import os, numpy as np, pandas as pd
 _npis = get_test_npis()
+# Guard (required): 3.0 tables were missing on 2026-10-26. Put the code below under the `else:` of
+#   _ref_missing = [p for p in [_NOTEBOOK_OUTPUT + "<3.0 table>", <3.0 patient tables used>] if not os.path.exists(p)]
+#   if _npis is None: print("Production mode — parity check skipped")
+#   elif _ref_missing: print("SKIPPED — 3.0 reference table(s) missing, rerun when restored:\n  " + "\n  ".join(_ref_missing))
+#   else: ...
 _orig = (spark.read.format("delta").load(_NOTEBOOK_OUTPUT + "<3.0 table>")
          .filter(F.col(NPI_COL).isin(_npis)).withColumn("_M", F.date_format("SVC_DT_M", "yyyy-MM")))
 _months = {r[0] for r in _orig.select("_M").distinct().collect()}
@@ -265,7 +272,7 @@ display(pd.DataFrame(rows))
 ```
 
 Variants used in the notebooks:
-* **Run only in validation mode:** wrap the cell in `if _npis is None: print("Production mode: parity check skipped") else: ...`.
+* **Run only in validation mode and only when the 3.0 tables exist:** the `if / elif _ref_missing / else` guard above (all five notebooks since 2026-10-26). Cells that display the 3.0 output fall back to an empty frame (`spark.createDataFrame([], "PROVIDER_ID string, SVC_DT_M timestamp")`) and skip `display()` of empty pandas frames.
 * **"orig" source:** before the build, register the original inputs: full history (`df_x_all`, no `DATA_START_DATE`) and the 3.0 patient tables restricted to the test HCPs' patients, e.g. `FAST_SOURCES["orig"] = lambda: (df_rx_all, _pat30)` (NB01) or `lambda off: (_dx0, add_patient_stage(_dx0, off, pat_df=_pat30))` (NB03). Pattern B notebooks rebuild `df_feat0 = materialize(build_feature_rows(..., 0), "offset0")` and call `build_cohort(cb0, df_feat0, ...)` per month.
 * **3.0 table at provider level (NB03-NB05; NB01 and NB02 compare at NPI level):** map `pd_new[NPI_COL]` to `PROVIDER_ID` with `kerendia_nba_3_0_npi_bhid_mapping` and index both sides on `PROVIDER_ID`.
 * **3.0 base-month columns without a suffix (NB03-NB05):** map them before comparing: `_map = {oc: oc if ("_IN_LAST_" in oc or oc.startswith("RUNNING_")) else f"{oc}_IN_LAST_1_MONTH" for oc in orig_cols}`; then compare `o[list(_map)]` with `n[list(_map.values())]`.
@@ -275,6 +282,8 @@ Add these checks when they apply: original-only window columns must be all 0, or
 ## T8. HCP trace (independent pandas recount)
 
 ```python
+# Busiest HCP of the run, so the trace always has claims. If you use a fixed HCP_TRACE_NPIS[<key>],
+# check it has claims in df_x first and fall back to this (NB02: the fixed lab NPI has none).
 TRACE_NPI = df_x.groupBy(NPI_COL).count().orderBy(F.desc("count")).first()[NPI_COL]
 _raw = df_x.filter(F.col(NPI_COL) == TRACE_NPI).select(SVC_COL, "<PIVOT_COLS>").toPandas()
 _raw[SVC_COL] = pd.to_datetime(_raw[SVC_COL])

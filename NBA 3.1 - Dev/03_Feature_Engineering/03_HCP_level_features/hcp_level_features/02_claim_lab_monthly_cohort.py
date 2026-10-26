@@ -534,27 +534,25 @@ print("PASS — fast engine = step-by-step" if _ok else "CHECK MISMATCHES")
 
 # COMMAND ----------
 
-# DBTITLE 1,One-time reset: delete old tables (9-month columns)
-# ---- ONE-TIME RESET (2026-10-23): remove the old tables so the 9-month columns are gone ----
-# The write uses mergeSchema, so columns dropped from the code stay in the table as nulls.
-# Deleting the table forces it to be recreated with only the current columns.
+# DBTITLE 1,One-time reset (DONE 2026-10-26, disabled)
+# ---- ONE-TIME RESET: DONE on 2026-10-26, now disabled ----
+# Removed the old tables so the 9-month columns are gone (the write uses mergeSchema, so dropped
+# columns would otherwise stay in the table as nulls). Tables were rewritten right after:
+# 20 cohorts, 102 columns. Only uncomment if columns are dropped from the code again.
 # Safe: only our 3.1 tables are touched; Wenjie's 3.0 claim_lab_monthly_ZS is not affected.
-# After one successful Run all, COMMENT OUT or DELETE this cell.
-import shutil, os
-
-_RESET_PATHS = [
-    _NOTEBOOK_OUTPUT + "claim_lab_monthly_cohort",
-    _NOTEBOOK_OUTPUT + "provider_claim_lab_monthly_cohort",
-]
-for _p in _RESET_PATHS:
-    if os.path.exists(_p.replace("/Volumes/", "/Volumes/")):
-        try:
-            dbutils.fs.rm(_p.replace("/Volumes/", "dbfs:/Volumes/"), recurse=True)
-            print(f"DELETED: {_p}")
-        except Exception as e:
-            print(f"Could not delete {_p}: {e}")
-    else:
-        print(f"Not found (already clean): {_p}")
+#
+# import os
+# _RESET_PATHS = [
+#     _NOTEBOOK_OUTPUT + "claim_lab_monthly_cohort",
+#     _NOTEBOOK_OUTPUT + "provider_claim_lab_monthly_cohort",
+# ]
+# for _p in _RESET_PATHS:
+#     if os.path.exists(_p):
+#         dbutils.fs.rm(_p.replace("/Volumes/", "dbfs:/Volumes/"), recurse=True)
+#         print(f"DELETED: {_p}")
+#     else:
+#         print(f"Not found (already clean): {_p}")
+print("Reset disabled (done 2026-10-26)")
 
 # COMMAND ----------
 
@@ -665,9 +663,15 @@ display(null_counts)
 # ---- Validation 1: offset = 0 parity vs original claim_lab_monthly_ZS, every cohort ----
 import pandas as pd
 
+import os
 _npis = get_test_npis()
+# The parity needs Wenjie's 3.0 output. It was missing on 2026-10-26 (volume cleaned);
+# skip instead of failing so Run all still completes.
+_ref_missing = [p for p in [_NOTEBOOK_OUTPUT + "claim_lab_monthly_ZS"] if not os.path.exists(p)]
 if _npis is None:
     print("Production mode — parity check skipped (runs on the test NPIs only)")
+elif _ref_missing:
+    print("SKIPPED — 3.0 reference table(s) missing, rerun when restored:\n  " + "\n  ".join(_ref_missing))
 else:
     _orig_all = (
         spark.read.format("delta").load(_NOTEBOOK_OUTPUT + "claim_lab_monthly_ZS")
@@ -738,7 +742,16 @@ else:
 # ---- Validation 2: HCP trace — raw lab claims recounted in pandas vs written features, every cohort ----
 import pandas as pd
 
+import builtins
 TRACE_NPI = HCP_TRACE_NPIS["lab"]   # fixed trace HCP (00_cohort_config)
+# If that HCP has no lab claims in this run (seen 2026-10-26 after the data refresh), the trace
+# would only compare 0 with 0. Use the busiest HCP of the run instead and say so.
+_trace_counts = {r[0]: r[1] for r in df_lab.groupBy(NPI_COL).count().collect()}
+print("Lab claims per NPI in this run:", dict(sorted(_trace_counts.items(), key=lambda kv: -kv[1])))
+if _trace_counts.get(TRACE_NPI, 0) == 0:
+    _fallback = builtins.max(_trace_counts, key=_trace_counts.get)
+    print(f"Trace NPI {TRACE_NPI} has no lab claims in this run -> using the busiest NPI {_fallback}")
+    TRACE_NPI = _fallback
 
 _raw = df_lab.filter(F.col(NPI_COL) == TRACE_NPI).select(SVC_COL, "TEST_TYPE", "STAGE").toPandas()
 _raw[SVC_COL] = pd.to_datetime(_raw[SVC_COL])

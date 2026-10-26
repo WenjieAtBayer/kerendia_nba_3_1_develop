@@ -5,7 +5,7 @@ description: Build, refactor, or validate Kerendia NBA 3.1 HCP-level claim featu
 
 # HCP-Level Claim Features (Kerendia NBA 3.1)
 
-This skill covers how the five cohort notebooks in `kerendia_nba_3_1_develop_clone/hcp_level_features` were built, so the same method can be reused for any new HCP-level feature. Follow the workflow below. Copy code from [templates.md](templates.md). Use [notebooks.md](notebooks.md) for the source tables, feature families, output paths and known quirks of each notebook.
+This skill covers how the five cohort notebooks (NB01-NB05, `hcp_level_features/`) were built, so the same method can be reused for any new HCP-level feature. There are **two copies** of the notebooks and of `00_cohort_config` (see [notebooks.md](notebooks.md), "Common locations"): the clone folder and the hcp_claims worktree. Both write to the same output tables. **The hcp_claims copy is the source of truth** (all 2026-10-26 runs and fixes are there). The clone copy is stale: don't run it or edit it unless the user asks you to sync it. Follow the workflow below. Copy code from [templates.md](templates.md). Use [notebooks.md](notebooks.md) for the source tables, feature families, output paths and known quirks of each notebook.
 
 **To run the existing notebooks for a use case** (another offset, some cohorts, a custom HCP list, production, one extra feature), follow [runbook.md](runbook.md): pin down the parameters, check the dependencies (inputs, patient tables at the same offset), Run all each notebook, check the results, report.
 
@@ -30,12 +30,15 @@ This skill covers how the five cohort notebooks in `kerendia_nba_3_1_develop_clo
 5. **`DATA_START_DATE = 2023-01-01` applies to every feature, `RUNNING_` included** (team decision, option B). Keep the full history only in a `df_<x>_all` variable for fixed pivot values and offset-0 parity. All five notebooks apply it (NB04 filters the feature rows, NB05 the counted claims; NB05 keeps the full history for first-start dates). Any "first-ever" logic must keep looking at the full history.
 6. **Don't mix calendar-month patient tables with offset-month claims.** Patient-journey tables must be built at the same offset as the HCP features before the outputs are final.
 7. **Validation mode first:** `VALIDATION_MODE = True` runs on the 10 test NPIs. Production (`False`) runs on all HCPs. Both paths must run the same code.
-8. **Work in the CLONE folder** (`kerendia_nba_3_1_develop_clone`). Push to the Git folder (`kerendia_nba_3_1_develop`, branch `dev/hcp-claims-features`) only when the user asks.
-9. **Confirm open business questions with Wenjie** (null vs 0, data leaks, quirks). List them in a findings cell. Don't decide them yourself.
+8. **Work in the hcp_claims copy** (`kerendia_nba_3_1_develop_hcp_claims/NBA 3.1 - Dev/03_Feature_Engineering/03_HCP_level_features/`). The clone folder `kerendia_nba_3_1_develop_clone` holds the editable copy of this skill and stale notebook copies; it is not a git folder. The hcp_claims worktree is a git worktree on branch `dev/hcp-claims-features` (same branch as `kerendia_nba_3_1_develop`) and tracks the notebooks and `databricks-skills/hcp-level-features/`. Pushed by the user's request on 2026-10-26 (notebooks + skill). Push again only when the user asks, and sync the skill files from the clone into the worktree first (see [runbook.md](runbook.md), "Publishing").
+9. **Keep the original 3.0 queries for patient-journey inputs.** When a 3.0 intermediate table is missing, run the original 3.0 Snowflake query (from `00_Write_Input_Files`) inside the 3.1 notebook, not a look-alike table (e.g. `Lab_03` is not equivalent to the lab journey query). (Source: the user, 2026-10-26: "keep the original".)
+10. **Run only what is needed** for a refresh (the user asked for speed): setup + feature functions + fast engine + write + completeness + provider output. Skip display, preview, fast-vs-slow, parity and trace cells unless the logic changed. See [runbook.md](runbook.md) step 3.
+11. **Confirm open business questions with Wenjie** (null vs 0, data leaks, quirks). List them in a findings cell. Don't decide them yourself.
+12. **Never make a feature depend on a 3.0 output table.** The 3.0 tables can disappear (on 2026-10-26 all 3.0 outputs and 3.0 patient tables were gone from the volume). Fixed pivot lists come from the 3.1 input data. A 3.0 table is only allowed as an optional cross-check, and every cell that reads one must check `os.path.exists(path)` first and print `SKIPPED — 3.0 reference table(s) missing` instead of failing. See [notebooks.md](notebooks.md), "3.0 reference tables".
 
-## 3. Shared config: `00_cohort_config` (ID 4005178662472033)
+## 3. Shared config: `00_cohort_config` (hcp_claims ID 751947149479393)
 
-Path: `/Users/patricio.guledjian.ext@bayer.com/kerendia_nba_3_1_develop_clone/00_cohort_config`. It provides:
+Path: `.../kerendia_nba_3_1_develop_hcp_claims/NBA 3.1 - Dev/03_Feature_Engineering/03_HCP_level_features/00_cohort_config` (ID 751947149479393; stale clone copy 4005178662472033). Each notebook loads the one next to it (`../00_cohort_config`), so make parameter changes in the hcp_claims config. It provides:
 
 | Name | Purpose |
 | --- | --- |
@@ -80,7 +83,7 @@ Use the same sections in every notebook. The user reads them top to bottom.
 2. **Profile the inputs** on the test NPIs: grain, date range, null keys, distinct pivot values, duplicates. Check whether patient tables are monthly (`SVC_DT_M`) and at which offset they were built.
 3. **Write the findings cell** before the refactor.
 4. **Load cell:** read the source, use the original cleaning, `DATA_MAX_DT` from the unfiltered source, `apply_npi_filter`, then `df_x_all = df_x` and `df_x = df_x.filter(SVC >= DATA_START_DATE)`. Build `COHORT_LIST`, `COHORT_BOUNDS`, `COHORT_IDS`, `cb_preview`.
-5. **Fixed pivot values** from the full history (`df_x_all`, or the 3.0 output column list) so every cohort has the same columns and matches 3.0.
+5. **Fixed pivot values** from the full history (`df_x_all`) so every cohort has the same columns and matches 3.0. Don't read them from the 3.0 output (rule 12). If the 3.0 output exists, cross-check the set (NB05 does this) and raise when it differs.
 6. **Step-by-step version** (`build_cohort_slow(cb)`) with the config helpers. This is the readable reference.
 7. **Fast engine.** Choose the pattern (section 6). Then add the check cell: fast = slow on the first and last cohort.
 8. **Write all cohorts**, then the completeness checks: all `COHORT_IDS` present, rows = distinct (key, COHORT_ID), 0 nulls, same columns per cohort.
@@ -99,11 +102,13 @@ The step-by-step version filters and pivots the claims once per feature group x 
 
 **Pattern B: date-level feature rows (NB04, NB05), then the same all-cohorts engine.** Use it when features come from claim-level joins (patient stage, same-day lab, first-start dates) or when the 3.0 cleaning differs from `clean_col_name`.
 1. `build_feature_rows(...)` returns `(KEY_COL, SVC_DT, FEATURE, N)`, with FEATURE already being the final cleaned base column name. Run `materialize()` once. Distinct counts (NB05 visits, new patients) must already be one row per patient per cohort month here.
-2. `FEATURE_VALUES` = fixed sorted list (from the feature rows or from the 3.0 output columns).
+2. `FEATURE_VALUES` = fixed sorted list from the data (feature rows, or the distinct values in the full input, as in NB05), never only from a 3.0 output.
 3. `build_cohort(cb)` (reference only): filter `SVC_DT <= cutoff`, explode a suffix array (`RUNNING` + `_IN_LAST_N_MONTH` when `SVC_DT > window start`), pivot with the fixed list, `na.fill(0)`, PCT, metadata.
 4. `build_all_cohorts_fast(cbs)` (writes the output): shared engine in `00_cohort_config`: `feature_rows_to_months(rows, key, off)` (materialized, rows with N = 0 kept) -> `build_all_cohorts_from_months(monthly, cbs, key, FEATURE_VALUES, windows)` (window tags + one pivot) -> notebook PCT -> `add_cohort_meta(df, cbs)` -> `select(*build_cohort(cb).columns)`. A check cell compares it with `build_cohort` on the first and last cohort; the offset-0 parity uses it too.
 
 NB04 validation (2026-10-23, 10 test HCPs): fast = per-cohort for all 19 cohorts (0 mismatching cells), 12 s vs 141 s for the 19 builds. NB05: 19 cohorts, 0 mismatching cells.
+
+Refresh run (2026-10-26, 10 test HCPs, 20 cohorts, write only): NB01 1.3 min (feature-key table 7 s, monthly AVG table 22 s), NB02 0.1 min, NB03 0.1-0.2 min (feature-key table 3-4 s), NB04 0.2-0.6 min (feature rows 11-17 s), NB05 0.3 min.
 
 Both patterns: separator `\u0001` inside pivot keys, an explicit pivot value list (never let Spark discover values), and one `withColumns`/`select` for derived columns instead of `withColumn` loops (deep plans are slow).
 
@@ -119,8 +124,8 @@ Both patterns: separator `\u0001` inside pivot keys, an explicit pivot value lis
 
 1. **Fast = slow:** first and last cohort, all cells equal (`np.isclose` rtol/atol 1e-9), same column order and types.
 2. **Completeness:** expected vs written cohorts, duplicates = 0, null cells = 0 (sum one flat aggregate per column in Python; a deep `a+b+c` expression hits `RecursionError` on Spark Connect), rows per cohort.
-3. **Offset-0 parity:** rebuild every cohort at offset 0 with the original's inputs (full history `df_x_all` + 3.0 patient tables, via `FAST_SOURCES["orig"]`), then compare every shared column with the 3.0 table for the same `SVC_DT_M` (null = 0). Also check that original-only window columns and original-only NPIs are all 0. Report known quirks separately; don't hide them. Target: 0 mismatches.
-4. **HCP trace:** take the busiest test NPI, recount the raw claims per cohort and window in pandas (code independent of Spark), and compare with the written table. Target: 0 mismatches.
+3. **Offset-0 parity** (needs the 3.0 tables; when they are missing the cell must skip with a clear message, rule 12, and you report "parity not run, last PASS on <date>"): rebuild every cohort at offset 0 with the original's inputs (full history `df_x_all` + 3.0 patient tables, via `FAST_SOURCES["orig"]`), then compare every shared column with the 3.0 table for the same `SVC_DT_M` (null = 0). Also check that original-only window columns and original-only NPIs are all 0. Report known quirks separately; don't hide them. Target: 0 mismatches.
+4. **HCP trace:** take the busiest test NPI, recount the raw claims per cohort and window in pandas (code independent of Spark), and compare with the written table. Target: 0 mismatches. **First check the trace NPI has claims in the run.** A trace NPI with none compares 0 with 0 and "passes" without testing anything (NB02 on 2026-10-26: `HCP_TRACE_NPIS["lab"]` = 1528629052 has no lab claims). Print claims per NPI and fall back to the busiest one, as the NB02 trace cell does.
 
 Vectorise the pandas comparisons. Convert only the object columns with `pd.to_numeric`, then `astype(float).fillna(0)`. Per-column loops over thousands of columns take minutes.
 
@@ -131,6 +136,10 @@ Vectorise the pandas comparisons. Convert only the object columns with `pd.to_nu
 * Spark Connect: no RDD, `_jvm` or `_jdf`. Read `.columns` once outside loops (lint SCPAP001).
 * `00_connection` may call `restartPython()`. Define parameters after it.
 * The user's write calls can be blocked for the assistant. If a write is denied, ask the user to run that cell.
+* **Delete cells are always blocked** for the assistant (the one-time reset cells use `dbutils.fs.rm`). Explain in plain words which cell to run and why: "select the cell, Run all above, then run the cell", because the reset needs `_NOTEBOOK_OUTPUT` from the earlier cells. Then the assistant runs the write + checks and comments the reset cell out.
+* `mergeSchema` writes only add columns. Dropped columns stay as nulls until the table is deleted and rewritten (reset cell). A column whose **type** changed fails with `DELTA_FAILED_TO_MERGE_FIELDS` (e.g. PJ01 `GFR_STAGE` integer vs `decimal(1,0)`); fix with `.option("overwriteSchema", "true")` on a full overwrite.
+* `display()` of an **empty pandas** DataFrame fails with `CANNOT_INFER_EMPTY_SCHEMA`. Guard it with `if len(df):` (NB05 "Display: Original output").
+* `executeCode` scratch compute can fail to accept commands ("not accepted within 30s"). Running notebook cells with `runAsset` on the notebook's own serverless compute still works; check outputs from the notebook cells instead.
 
 ## 10. Working with this user
 

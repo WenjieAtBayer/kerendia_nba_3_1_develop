@@ -177,7 +177,7 @@ The HQ email and iRep email features are vendor-level in the MMX table (`SRC_SYS
 | Column list | Dynamic (changes with the data) | Fixed by the model config; missing columns are added as 0 |
 | Digital features built | About 684 `DIGITAL_` + HQ email + clickstream | About 25,700 candidate columns in total (all families) |
 | Digital features in the model | 9 `DIGITAL_` (banner, HQ email, iRep email) + 9 DTC | About 90: 18 vendor event metrics, 13 content counts, 4 touchpoint totals, 41 `DIGITAL_`, plus 9 DTC, HQ email sent and 2 clickstream |
-| Vendors visible in the model | Only Bayer's own email systems (`HQ EMAIL`, `IREP EMAIL` vendor codes); no media partner; banner only as a channel and tactic total | Doximity, Medscape, PeerDirect, PulsePoint, SFMC, Epocrates, Prescriber Point |
+| Vendors visible in the model | Bayer's own email systems (`HQ EMAIL`, `IREP EMAIL` vendor codes), and PulsePoint indirectly: the Banner channel features are in practice PulsePoint (98% of banner rows). No other media partner. The banner *tactic* feature is not PulsePoint (see `01_digital_entity_map_vendor_channel_tactic_content.md`) | Doximity, Medscape, PeerDirect, PulsePoint, SFMC, Epocrates, Prescriber Point |
 | Feature selection | Done at model level: 752 features kept | LightGBM + SHAP, Poisson objective: about 2,100 kept |
 
 ## 7. Ideas for NBA 3.1

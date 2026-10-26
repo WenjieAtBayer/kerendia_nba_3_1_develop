@@ -85,13 +85,13 @@ In the final 752, 33 change features hold 1.5% of SHAP, and 19 of them are 1M or
 
 ## 2. Features to add in NBA 3.1
 
-| # | Feature | Source | Hypothesis | Value | Effort | Median lift |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | Untreated eligible pool | Dx + Rx + Lab | Direct measure of the HCP's addressable pool of Kerendia starts | High | Medium (patient-level join across Dx, Rx and Lab) | 2.52 |
-| 2 | 90-day trigger events | Dx (new DKD), Rx (new SGLT2), Lab/Px (new albuminuria test) | Kerendia often starts right after these events. 12-month counts miss the timing | High | Quick win | 1.30 - 2.21 |
-| 3 | HF with LVEF >= 40% | Dx + Px (echo) + Rx (loop diuretic, no MRA) | Supports the 2025 HF indication. The current Dx list is mostly systolic or unspecified HF | High for 3.1 | Upstream (Dx grouping) | - |
-| 4 | Potassium barrier | Dx + Rx + Lab | Hyperkalemia is the top safety concern that limits Kerendia use. Nothing captures it today | Medium | Upstream (new codes and a new lab test type) | - |
-| 5 | MRA switch candidates | Rx + Dx | Shows comfort with the MRA class and identifies potential switches to Kerendia | Medium | Quick win | 0.98 - 1.49 |
+| # | Feature | Source | Hypothesis | Value | Effort |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Untreated eligible pool | Dx + Rx + Lab | Direct measure of the HCP's addressable pool of Kerendia starts | High | Medium (patient-level join across Dx, Rx and Lab) |
+| 2 | 90-day trigger events | Dx (new DKD), Rx (new SGLT2), Lab/Px (new albuminuria test) | Kerendia often starts right after these events. 12-month counts miss the timing | High | Quick win |
+| 3 | HF with LVEF >= 40% | Dx + Px (echo) + Rx (loop diuretic, no MRA) | Supports the 2025 HF indication. The current Dx list is mostly systolic or unspecified HF | High for 3.1 | Upstream (Dx grouping) |
+| 4 | Potassium barrier | Dx + Rx + Lab | Hyperkalemia is the top safety concern that limits Kerendia use. Nothing captures it today | Medium | Upstream (new codes and a new lab test type) |
+| 5 | MRA switch candidates | Rx + Dx | Shows comfort with the MRA class and identifies potential switches to Kerendia | Medium | Quick win |
 
 Source tells which LAAD files a feature needs. Features that combine several sources are built at patient level and end in `_PATIENT`. Single-source features end in `_RX`, `_DX` or `_LAB_DATA`.
 

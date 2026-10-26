@@ -39,6 +39,7 @@
 ## 2. The big picture
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"htmlLabels": true, "wrappingWidth": 600, "padding": 8, "nodeSpacing": 30, "rankSpacing": 60}}}%%
 flowchart LR
     HCP["HCP digital<br/>doctor level (NPI)"]
     DTC["DTC<br/>region level (DMA)"]
@@ -105,6 +106,7 @@ flowchart LR
 ### 3.1 Banner
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"htmlLabels": true, "wrappingWidth": 600, "padding": 8, "nodeSpacing": 30, "rankSpacing": 60}}}%%
 flowchart LR
     BAN["Banner channel = mostly PulsePoint<br/>NBA: DIGITAL_RUNNING_BANNER_EXPOSURE (151),<br/>DIGITAL_BANNER_EXPOSURE_IN_LAST_3_MONTH (200),<br/>DIGITAL_BANNER_EXPOSURE_IN_LAST_1_MONTH (644)<br/>OE: DIGITAL_BANNER_* (2 in model)"]
 
@@ -165,6 +167,7 @@ flowchart LR
 ### 3.2 3rd Party Email
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"htmlLabels": true, "wrappingWidth": 600, "padding": 8, "nodeSpacing": 30, "rankSpacing": 60}}}%%
 flowchart LR
     TPE["3rd Party Email channel<br/>NBA: built only<br/>OE: DIGITAL_3RD_PARTY_EMAIL_EXPOSURE_IN_LAST_3_MONTH"]
 
@@ -208,6 +211,7 @@ flowchart LR
 ### 3.3 Custom (vendor-specific programs)
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"htmlLabels": true, "wrappingWidth": 600, "padding": 8, "nodeSpacing": 30, "rankSpacing": 60}}}%%
 flowchart LR
     CUS["Custom channel<br/>NBA: built only<br/>OE: DIGITAL_CUSTOM_* (5 in model)"]
 
@@ -270,6 +274,7 @@ flowchart LR
 ### 3.4 HQ Email and iRep Email
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"htmlLabels": true, "wrappingWidth": 600, "padding": 8, "nodeSpacing": 30, "rankSpacing": 60}}}%%
 flowchart LR
     HQ["HQ Email channel<br/>OE: DIGITAL_HQ_EMAILS_EXPOSURE_IN_LAST_2_MONTH"]
     HQ --> HQV["Vendor code HQ EMAIL (Bayer HQ, SFMC) 9.19M rows<br/>NBA: DIGITAL_HQ_EMAIL_EXPOSURE_IN_LAST_3_MONTH,<br/>DIGITAL_HQ_EMAIL_LIGHT_ENGAGEMENT_IN_LAST_6_MONTH"]
@@ -320,6 +325,7 @@ flowchart LR
 NBA 3.0 has no content dimension. OE tags each message with a content category (from litcode, subject line, creative, ...), and its content matrix (`content_matrix_oe_2`) defines which categories each recommended placement can carry.
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"htmlLabels": true, "wrappingWidth": 600, "padding": 8, "nodeSpacing": 30, "rankSpacing": 60}}}%%
 flowchart LR
     subgraph Placements["OE recommended placements"]
         P_DXN["Doximity DocNews"]
@@ -390,6 +396,7 @@ flowchart LR
 ## 5. DTC (consumer media)
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"htmlLabels": true, "wrappingWidth": 600, "padding": 8, "nodeSpacing": 30, "rankSpacing": 60}}}%%
 flowchart LR
     DTC["DTC<br/>region (DMA) x month,<br/>linked to doctor by practice location"]
     DTC --> HU["Health Union<br/>impressions (rank 32), clicks (392)"]

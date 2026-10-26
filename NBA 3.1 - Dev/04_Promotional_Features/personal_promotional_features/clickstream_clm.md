@@ -12,7 +12,7 @@ Bayer uses a model called **Next Best Action (NBA)** to suggest, for each doctor
 
 This document explains the **ClickStream / CLM** features: how long a Bayer sales representative ("rep") showed Kerendia slides on a tablet during calls with each doctor. It describes the **old version** of the pipeline (NBA 3.0); a "pipeline" is the chain of notebooks that runs one after another to prepare the data for the model.
 
-**How it is organised:** the key ideas shared by the channels of this folder (time frame, dates table, doctor key, helper notebooks, how "last N months" is calculated) are in `00_introduction.md`. This file has: 1. In short, 2. Where the data comes from, 3. How the features are built step by step, 4. The features explained, 5. What the final table looks like, 6. Things to watch out for. Codes such as LK-1 refer to the companion legacy file; each problem is also explained here.
+**How it is organised:** the key ideas shared by the channels of this folder (time frame, dates table, doctor key, helper notebooks, how "last N months" is calculated) are in `00_introduction.md`. This file has: 1. In short, 2. Where the data comes from, 3. How the features are built step by step, 4. The features explained, 5. What the final table looks like, 6. Things to watch out for, 7. Use in the NBA 3.0 model. Codes such as LK-1 refer to the companion legacy file; each problem is also explained here.
 
 **How to read names.** Anything written `like this` is the exact name used in the data or in the code. Its meaning is always given next to it.
 
@@ -27,6 +27,8 @@ During a call, reps can show Kerendia slides and videos on a tablet. This is cal
 This channel adds up, for each doctor, **how much time** Kerendia tablet content was used during their calls, for six periods (1 to 6 months).
 
 It helps the model answer: *"When the rep visits, does this doctor spend time on our material?"*
+
+**Used by the NBA 3.0 model? No.** None of the 24 features is among the 752 features of the final NBA 3.0 model (see section 7).
 
 ## 2. Where the data comes from
 
@@ -117,3 +119,20 @@ Unlike most other tables, there is **no `BHID` column**.
 * **Few doctors.** Only 3,237 doctors in the saved table, against 88,511 in Sales Rep Calls, so for most doctors these features are missing (treated as 0).
 * **No `BHID` column**, unlike most other tables; a later step must take it from `HCP_COHORT_ID`.
 * **Unused helper column** `SUBMITTED_CALL_COUNT` (step 5): a per-period count of CLM calls was probably intended but is not produced.
+* **Not used by the model** (section 7): the features reach the model's input table but none was kept.
+
+## 7. Use in the NBA 3.0 model
+
+**Checked:** the final NBA 3.0 model (LightGBM, MLflow run `f583bcbc9d56477fae983d44c16f8c70`, 752 features) and its saved SHAP importance file (`Shap_Importances.csv`), on 26 October 2026.
+
+**How the features reach the model.** The notebook `99_HCP_Combine_Data` reads the ClickStream output (from `hcp_level_features/noteboook_output/kerendia_nba_3_0_clickstream_features.parquet` in the volume), adds `_BY_HCP` to every feature name (for example `CLICKSTREAM_TOTAL_USAGE_DURATION_IN_LAST_3_MONTH_BY_HCP`) and joins them to the other promotional features on `BHID` and month. So all 24 features were offered to the model as candidates.
+
+**Result: none of the 24 ClickStream features is in the final model.** No feature name in the model or in the SHAP file contains `CLICKSTREAM`, `CLM`, `USAGE` or `PRESN`. They were removed during feature selection, before the final training.
+
+**Related features that were kept** (from Sales Rep Calls, not from this channel): `TOTAL_CALL_DURATION_IN_LAST_6_MONTH`, `..._3_MONTH` and `..._5_MONTH`, all with very low importance (gain ranks 727, 734 and 737 out of 752).
+
+**Likely reasons** (not proven): very few doctors have CLM data (3,237 against 88,511 in Sales Rep Calls), so the features are 0 for almost everyone; the "average" features behave like totals (LK-1); and they overlap with the call-count and call-duration features.
+
+**Things to check for NBA 3.1:**
+* Whether the combine step actually finds a `BHID` column in the ClickStream input: the saved table described in section 5 has none, so the join on `BHID` only works if the parquet version has it. If it is missing, the features would be empty for every doctor, which would also explain why none was selected.
+* Whether a smaller, cleaner set (number of CLM calls, share of calls with CLM, true average time per call, recency of the last CLM call) does better than the 24 current features.

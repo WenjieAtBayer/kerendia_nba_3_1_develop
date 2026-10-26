@@ -159,7 +159,7 @@ Other non-personal promotion features kept: 9 DTC (consumer media: WebMD, Health
 | 738 | `DIGITAL_IREP_EMAIL_EXPOSURE_IN_LAST_6_MONTH` | `DIGITAL_` (channel) |
 | 743 | `DIGITAL_IREP_EMAIL_EXPOSURE_IN_LAST_3_MONTH` | `DIGITAL_` (channel) |
 
-No vendor-level (`SRC_SYS_CD`) `DIGITAL_` feature, no HQ email event feature (`TOTAL_SENT`, `TOTAL_OPEN`, ...) and no clickstream feature is in the NBA 3.0 model. Of the `DIGITAL_` features, only exposure and light engagement were kept; no deep engagement feature was kept.
+The HQ email and iRep email features are vendor-level in the MMX table (`SRC_SYS_CD` = `HQ EMAIL`, `IREP EMAIL`), but no media partner (Doximity, Medscape, PeerDirect, PulsePoint, Epocrates, ...) appears by name. No HQ email event feature (`TOTAL_SENT`, `TOTAL_OPEN`, ...) and no clickstream feature is in the NBA 3.0 model. Of the `DIGITAL_` features, only exposure and light engagement were kept; no deep engagement feature was kept.
 
 **Comparison:**
 
@@ -177,7 +177,7 @@ No vendor-level (`SRC_SYS_CD`) `DIGITAL_` feature, no HQ email event feature (`T
 | Column list | Dynamic (changes with the data) | Fixed by the model config; missing columns are added as 0 |
 | Digital features built | About 684 `DIGITAL_` + HQ email + clickstream | About 25,700 candidate columns in total (all families) |
 | Digital features in the model | 9 `DIGITAL_` (banner, HQ email, iRep email) + 9 DTC | About 90: 18 vendor event metrics, 13 content counts, 4 touchpoint totals, 41 `DIGITAL_`, plus 9 DTC, HQ email sent and 2 clickstream |
-| Vendors visible in the model | None by name (only channels: banner, HQ email, iRep email) | Doximity, Medscape, PeerDirect, PulsePoint, SFMC, Epocrates, Prescriber Point |
+| Vendors visible in the model | Only Bayer's own email systems (`HQ EMAIL`, `IREP EMAIL` vendor codes); no media partner; banner only as a channel and tactic total | Doximity, Medscape, PeerDirect, PulsePoint, SFMC, Epocrates, Prescriber Point |
 | Feature selection | Done at model level: 752 features kept | LightGBM + SHAP, Poisson objective: about 2,100 kept |
 
 ## 7. Ideas for NBA 3.1

@@ -15,6 +15,7 @@ The digital team runs two kinds of non-personal promotion, and the files are gro
 | File | Type | Audience | What it is for |
 | --- | --- | --- | --- |
 | `00_README_folder_guide.md` | Guide | All | This file: folder map, reading order, and the ideas shared by all NBA 3.0 notebooks (time frame, helpers, how totals are built). Read first. |
+| `01_digital_entity_map_vendor_channel_tactic_content.md` | Map | Both | Diagrams of audience, channel, vendor, tactic / placement and content, with labels showing what the NBA 3.0 model uses and what OE 2.0 uses and recommends. Read second for orientation. |
 | `10_hcp_digital_paid_media_nba_3_0.md` | NBA 3.0 reference | HCP digital | How notebook `24_Features_Digital` builds the paid media features from the MMX table, and its known problems. |
 | `11_hcp_hq_emails_nba_3_0.md` | NBA 3.0 reference | HCP digital | How notebook `15_promotional_features_HQ_Emails` builds the HQ email features, and its known problems. |
 | `12_hcp_oe_digital_review_for_nba_3_1.md` | Review and ideas | HCP digital | What the Orchestration Engine (OE 2.0) uses for digital, how it compares with the NBA 3.0 model, and ideas for NBA 3.1. |
@@ -22,7 +23,7 @@ The digital team runs two kinds of non-personal promotion, and the files are gro
 | `30_nba_3_1_proposed_additional_features.md` | NBA 3.1 proposals | Both | Proposed new features for each channel (volume, rates, recency, diversity, trend, cross-channel). Sections 4 to 6 (Samples, Speaker Programs, FTP) belong to other folders now. |
 | `90_archive_nba_3_0_combined_review.md` | Archive | Both | Earlier single-file version of the NBA 3.0 review. Replaced by files 00, 10, 11 and 20; still holds the Samples and Speaker Programs sections, which now live in other folders. Keep for reference only. |
 
-**Reading order.** For NBA 3.0: 00, then 10 and 11 (HCP digital), then 20 (DTC). For NBA 3.1 planning: 12, then 30.
+**Reading order.** Start with 00 and 01 (the map). For NBA 3.0: 10 and 11 (HCP digital), then 20 (DTC). For NBA 3.1 planning: 12, then 30.
 
 ## What is this folder about?
 

@@ -1,4 +1,6 @@
-# Non-Personal Promotional Features — NBA 3.0 (Legacy)
+# ARCHIVE — Non-Personal Promotional Features — NBA 3.0 (Legacy), combined version
+
+> **Archived on October 26, 2026.** This earlier single-file review has been replaced by `00_README_folder_guide.md`, `10_hcp_digital_paid_media_nba_3_0.md`, `11_hcp_hq_emails_nba_3_0.md` and `20_dtc_direct_buy_social_nba_3_0.md`. Its Samples, Speaker Programs and FTP sections now belong to `market_access_promotional_features` and `personal_promotional_features`. Keep for reference only; do not update.
 
 **Scope:** promotion that does not involve a sales rep: Digital (`24`), HQ Emails (`15`), DTC (`34`), Samples (`17`), Speaker Programs (`14`), Free Trial Program / FTP (`19`)  
 **NBA 3.0 (legacy Ops):** `/Workspace/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`  

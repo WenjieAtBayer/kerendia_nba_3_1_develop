@@ -1,4 +1,4 @@
-# HQ Email Features — NBA 3.0 (Legacy)
+# HCP Digital: HQ Email Features — NBA 3.0 (Legacy)
 
 **Group:** Non-personal promotional features (promotion that does not involve a sales rep)  
 **Notebook:** `15_promotional_features_HQ_Emails` in `/Workspace/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`  
@@ -12,7 +12,7 @@ Bayer uses a model called **Next Best Action (NBA)** to suggest, for each doctor
 
 This document explains the **HQ Email** features: emails sent by Bayer's head office and what the doctor did with them. It describes the **old version** of the pipeline (NBA 3.0); a "pipeline" is the chain of notebooks that runs one after another to prepare the data for the model.
 
-**How it is organised:** the key ideas shared by the channels of this folder (time frame, dates table, doctor key, helper notebooks, how "last 3 months" is calculated) are in `00_introduction.md`. This file has: 1. In short, 2. Where the data comes from, 3. How the features are built step by step (*what*, *why*, *detail to know*), 4. The features explained, 5. What the final table looks like, 6. Things to watch out for. Codes such as LH-1 refer to the companion legacy file; each problem is also explained here.
+**How it is organised:** the key ideas shared by the channels of this folder (time frame, dates table, doctor key, helper notebooks, how "last 3 months" is calculated) are in `00_README_folder_guide.md`. This file has: 1. In short, 2. Where the data comes from, 3. How the features are built step by step (*what*, *why*, *detail to know*), 4. The features explained, 5. What the final table looks like, 6. Things to watch out for. Codes such as LH-1 refer to the companion legacy file; each problem is also explained here.
 
 **How to read names.** Anything written `like this` is the exact name used in the data or in the code. Its meaning is always given next to it.
 

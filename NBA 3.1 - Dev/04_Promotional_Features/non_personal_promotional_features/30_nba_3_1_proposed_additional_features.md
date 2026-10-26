@@ -6,7 +6,9 @@
 **Companion file:** `additional_features_personal_promotional_channels.md`  
 **Date:** October 22, 2026
 
-This file proposes additional features for each non-personal channel, organized by category: volume, ratio/rate, recency, diversity, mix, trend, and cross-channel. Each proposal gives the computation and why it adds value beyond the existing features. Risk IDs (D-*, H-*, T-*, S-*, SP-*, F-*) refer to `non_personal_promotional_features_strategic_file.md`.
+This file proposes additional features for each non-personal channel, organized by category: volume, ratio/rate, recency, diversity, mix, trend, and cross-channel. Each proposal gives the computation and why it adds value beyond the existing features. Risk IDs (D-*, H-*, T-*, S-*, SP-*, F-*) refer to `non_personal_promotional_features_strategic_file.md` (not in this folder). The NBA 3.0 problems themselves are explained in files 10, 11 and 20.
+
+**Types in this file.** Sections 1 and 2 are **HCP digital** (paid media, HQ emails), section 3 is **DTC**. Sections 4 to 6 (Samples, Speaker Programs, FTP) now belong to `market_access_promotional_features` and `personal_promotional_features`; they are kept here for reference.
 
 **Grain reminder.** The six channels use three different keys, and this changes where each feature can be built:
 

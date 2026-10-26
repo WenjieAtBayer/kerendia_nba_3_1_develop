@@ -1,9 +1,28 @@
-# Non-Personal Promotional Features — NBA 3.0 (Legacy): Introduction
+# Non-Personal Promotional Features: Folder Guide and Shared Concepts
 
 **Group:** Non-personal promotional features (promotion that does not involve a sales rep)  
-**Notebooks:** in `/Workspace/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`  
+**NBA 3.0 notebooks:** in `/Workspace/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`  
 **Built from:** a review of the notebook code  
-**Date:** October 22, 2026
+**Date:** October 22, 2026 (folder guide updated October 26, 2026)
+
+## Folder map
+
+The digital team runs two kinds of non-personal promotion, and the files are grouped the same way:
+
+* **HCP digital** (`1x_hcp_...`): promotion aimed at **doctors** (HCPs): paid media on medical websites and apps (Doximity, Medscape, PeerDirect, PulsePoint, Epocrates, ...), HQ emails and iRep emails. Data is at the **doctor** level.
+* **DTC** (`2x_dtc_...`): direct-to-consumer promotion aimed at **patients** (WebMD, Healthline, Health Union, Sharecare, Facebook / Instagram). Data is at the **region** (DMA) level and is linked to doctors through where they practise.
+
+| File | Type | Audience | What it is for |
+| --- | --- | --- | --- |
+| `00_README_folder_guide.md` | Guide | All | This file: folder map, reading order, and the ideas shared by all NBA 3.0 notebooks (time frame, helpers, how totals are built). Read first. |
+| `10_hcp_digital_paid_media_nba_3_0.md` | NBA 3.0 reference | HCP digital | How notebook `24_Features_Digital` builds the paid media features from the MMX table, and its known problems. |
+| `11_hcp_hq_emails_nba_3_0.md` | NBA 3.0 reference | HCP digital | How notebook `15_promotional_features_HQ_Emails` builds the HQ email features, and its known problems. |
+| `12_hcp_oe_digital_review_for_nba_3_1.md` | Review and ideas | HCP digital | What the Orchestration Engine (OE 2.0) uses for digital, how it compares with the NBA 3.0 model, and ideas for NBA 3.1. |
+| `20_dtc_direct_buy_social_nba_3_0.md` | NBA 3.0 reference | DTC | How notebook `34_promotional_features_DTC` builds the consumer media features, and its known problems. |
+| `30_nba_3_1_proposed_additional_features.md` | NBA 3.1 proposals | Both | Proposed new features for each channel (volume, rates, recency, diversity, trend, cross-channel). Sections 4 to 6 (Samples, Speaker Programs, FTP) belong to other folders now. |
+| `90_archive_nba_3_0_combined_review.md` | Archive | Both | Earlier single-file version of the NBA 3.0 review. Replaced by files 00, 10, 11 and 20; still holds the Samples and Speaker Programs sections, which now live in other folders. Keep for reference only. |
+
+**Reading order.** For NBA 3.0: 00, then 10 and 11 (HCP digital), then 20 (DTC). For NBA 3.1 planning: 12, then 30.
 
 ## What is this folder about?
 
@@ -11,19 +30,19 @@ Bayer uses a model called **Next Best Action (NBA)** to suggest, for each doctor
 
 This folder explains the **non-personal** features: promotion that reaches doctors (or their patients) without a sales rep. It describes the **old version** of the pipeline (NBA 3.0); a "pipeline" is the chain of notebooks that runs one after another to prepare the data for the model.
 
-**Channels in this folder (one file each):**
+**NBA 3.0 channels (one reference file each):**
 
-| Channel | Notebook | File | Saved table |
-| --- | --- | --- | --- |
-| Digital / Paid Media | `24_Features_Digital` | `digital_paid_media.md` | `kerendia_nba_3_0_hcp_model_paid_search_features_for_inference` |
-| HQ Emails | `15_promotional_features_HQ_Emails` | `hq_emails.md` | `kerendia_nba_3_hcp_model_hq_email_features_for_inference` |
-| DTC Direct Buy + Social | `34_promotional_features_DTC` | `dtc_direct_buy_social.md` | `kerendia_nba_3_hcp_model_DTC_PROMOTION_for_inference` |
+| Type | Channel | Notebook | File | Saved table |
+| --- | --- | --- | --- | --- |
+| HCP digital | Digital / Paid Media | `24_Features_Digital` | `10_hcp_digital_paid_media_nba_3_0.md` | `kerendia_nba_3_0_hcp_model_paid_search_features_for_inference` |
+| HCP digital | HQ Emails | `15_promotional_features_HQ_Emails` | `11_hcp_hq_emails_nba_3_0.md` | `kerendia_nba_3_hcp_model_hq_email_features_for_inference` |
+| DTC | DTC Direct Buy + Social | `34_promotional_features_DTC` | `20_dtc_direct_buy_social_nba_3_0.md` | `kerendia_nba_3_hcp_model_DTC_PROMOTION_for_inference` |
 
 Samples and the Free Trial Program are now in `market_access_promotional_features`; Speaker Programs are in `personal_promotional_features`.
 
 **How to read this folder.** Read this introduction first: it explains the key ideas shared by all channels (section 0). Each channel file then has: 1. In short, 2. Where the data comes from, 3. How the features are built step by step (*what*, *why*, *detail to know*), 4. The features explained, 5. What the final table looks like, 6. Things to watch out for.
 
-**How to read names.** Anything written `like this` is the exact name used in the data or in the code. Its meaning is always given next to it. Codes such as LH-1 or LT-1 refer to the companion legacy file; each problem is also explained in the channel file.
+**How to read names.** Anything written `like this` is the exact name used in the data or in the code. Its meaning is always given next to it. Codes such as LH-1 or LT-1 refer to the companion legacy file (not in this folder); each problem is also explained in the channel file.
 
 **About the numbers.** Figures come from the last time each notebook was run. Each channel file gives its own run date. They will be different at the next run.
 
@@ -121,8 +140,8 @@ Unlike the other channels, Digital keeps **every month**, not only the last one.
 
 ## Summary of the channels
 
-| Channel | What it tells the model | One row is | What is counted | Periods | Number of features |
-| --- | --- | --- | --- | --- | --- |
-| Digital | Did the doctor see and click our online content? | A doctor in a month | Times shown / interactions | This month, 3 months, 6 months, since the start | About 684 (changes with the data) |
-| HQ Emails | Does the doctor read our emails? | A doctor | Email events | 3 months | 5 |
-| DTC | How much did patients in the doctor's area see our ads? | A region in a month | Ad views / clicks | That month only | 10 |
+| Type | Channel | What it tells the model | One row is | What is counted | Periods | Number of features |
+| --- | --- | --- | --- | --- | --- | --- |
+| HCP digital | Digital | Did the doctor see and click our online content? | A doctor in a month | Times shown / interactions | This month, 3 months, 6 months, since the start | About 684 built (changes with the data); 9 kept in the NBA 3.0 model |
+| HCP digital | HQ Emails | Does the doctor read our emails? | A doctor | Email events | 3 months | 5 |
+| DTC | DTC | How much did patients in the doctor's area see our ads? | A region in a month | Ad views / clicks | That month only | 10 (9 kept in the NBA 3.0 model) |

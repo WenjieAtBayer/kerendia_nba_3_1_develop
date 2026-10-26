@@ -1,4 +1,4 @@
-# Digital / Paid Media Features — NBA 3.0 (Legacy)
+# HCP Digital: Paid Media Features — NBA 3.0 (Legacy)
 
 **Group:** Non-personal promotional features (promotion that does not involve a sales rep)  
 **Notebook:** `24_Features_Digital` in `/Workspace/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`  
@@ -12,7 +12,7 @@ Bayer uses a model called **Next Best Action (NBA)** to suggest, for each doctor
 
 This document explains the **Digital** features: how often each doctor saw and interacted with Kerendia content online. It describes the **old version** of the pipeline (NBA 3.0); a "pipeline" is the chain of notebooks that runs one after another to prepare the data for the model.
 
-**How it is organised:** the key ideas shared by the channels of this folder (time frame, dates table, helper notebooks, how monthly totals work) are in `00_introduction.md`. This file has: 1. In short, 2. Where the data comes from, 3. How the features are built step by step (*what*, *why*, *detail to know*), 4. The features explained, 5. What the final table looks like, 6. Things to watch out for.
+**How it is organised:** the key ideas shared by the channels of this folder (time frame, dates table, helper notebooks, how monthly totals work) are in `00_README_folder_guide.md`. This file has: 1. In short, 2. Where the data comes from, 3. How the features are built step by step (*what*, *why*, *detail to know*), 4. The features explained, 5. What the final table looks like, 6. Things to watch out for.
 
 **How to read names.** Anything written `like this` is the exact name used in the data or in the code. Its meaning is always given next to it.
 

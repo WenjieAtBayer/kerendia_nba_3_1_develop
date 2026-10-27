@@ -79,8 +79,8 @@ Implications for MMIT:
 ### 2.5 Population: the EDA covers Kerendia writers, the model needs the full book of business
 * All EDA so far is on **HCPs with at least one Kerendia claim** (59K HCPs), using the plans of Kerendia claims. The NBA universe is **221,723 HCPs**, and the DRG features were built on **all paid LAAD claims** of each HCP (Section 1.1).
 * The MMIT replacement must therefore be built on the HCP's whole plan mix:
-  1. **Primary (DRG-equivalent):** all paid LAAD claims -> distinct `PAYER_PLAN_ID` per HCP x month -> `bronze_iqvia_bridge` -> formulary -> Kerendia / Jardiance / Farxiga status. Same unit (distinct plans) and denominators as DRG.
-  2. **Variants to test:** claim-weighted instead of plan-count weighted; plans restricted to the relevant patient basket (CKD / T2D / SGLT2 / ACE-ARB patients) instead of all products; Kerendia-claim plans only (the EDA version).
+  1. **Primary:** all paid LAAD claims -> `PAYER_PLAN_ID` per HCP x month -> `bronze_iqvia_bridge` -> formulary -> Kerendia / Jardiance / Farxiga status, **weighted by patients** (each LAAD patient seen by the HCP in the month counts once, split equally across that patient's plans). Patient weighting replaces the NBA 3.0 distinct-plan count (Section 3.1).
+  2. **Variants to test:** NBA 3.0 distinct-plan count (parity reference); claim-weighted; plans restricted to the relevant patient basket (CKD / T2D / SGLT2 / ACE-ARB patients) instead of all products; Kerendia-claim plans only (the EDA version).
   3. **Geographic fallback** for HCPs with no mapped plan: lives-weighted access in the HCP's ZIP / CBSA / state from `bronze_zip_code`, `bronze_cbsas`, `bronze_states`, with `access_source = plans / geo / none`.
 * Re-run the coverage, unmatched-rate and lift checks (Checks 1, 3, 5) on this all-claims plan universe. All-product plans include many payers not seen on Kerendia claims, so the payer match rate and the payer-to-formulary rule (winning plan by lives vs all formularies of the payer) need to be re-checked.
 
@@ -92,7 +92,7 @@ Keep a **plan-month access table** at `FormularyId x MedId x month` (point-in-ti
 
 | Priority | Family | Example features | Source | Notes |
 |---|---|---|---|---|
-| P0 | **DRG parity** | `PCT_PLANS_<DRUG>_{UNRESTRICTED, COVERED_PA_WO_ST, COVERED_ST_OR_PA_ST, NOT_COVERED_ST, UNSPECIFIED, PREFERRED, COVERED, NOT_PREFERRED, NOT_COVERED, SPECIALTY}` + `_LOOKBACK` for Kerendia / Jardiance / Farxiga | All paid LAAD claims -> bridge -> bronze_statuses + bronze_restrictions | Same unit (distinct plans of all paid claims), denominators and 12-month lookback as Section 1.1. Status mapping below |
+| P0 | **DRG parity** | `PCT_PLANS_<DRUG>_{UNRESTRICTED, COVERED_PA_WO_ST, COVERED_ST_OR_PA_ST, NOT_COVERED_ST, UNSPECIFIED, PREFERRED, COVERED, NOT_PREFERRED, NOT_COVERED, SPECIALTY}` + `_LOOKBACK` for Kerendia / Jardiance / Farxiga | All paid LAAD claims -> bridge -> bronze_statuses + bronze_restrictions | Patient-weighted (Section 3.1); NBA 3.0 distinct-plan version kept as the parity reference. 12-month lookback as Section 1.1. Status mapping below |
 | P1 | Restriction type | `share_has_PA`, `share_has_ST`, `share_has_QL`, `share_any_restriction`, `share_step_requires_sglt2`, `share_ckd_pa_ars_R` | restrictions, st, pa_v2 | Inverse signal; strongest in Check 5 |
 | P1 | Plan mix | `share_commercial`, `share_medicare`, `share_medicaid`, top PBM shares | silver_plan_dim | `share_commercial` most stable positive signal |
 | P1 | Relative access | `kerendia_minus_jardiance_rank`, `share_kerendia_worse_than_sglt2` | statuses | Kerendia is add-on to SGLT2; relative access matters |
@@ -115,6 +115,37 @@ DRG to MMIT status mapping for P0 (to validate in the parity check):
 | `unspecified` | `(PA/ST)` rollup with no structured restriction code |
 
 The P1-P3 features should also be computed on the all-claims plan universe (primary) and, where useful, on the Kerendia-claim plans (secondary).
+
+### 3.1 Weighting unit: plans, claims or patients (evaluated Oct 2026)
+
+Market Access reads MMIT on a **patient** basis. None of the current metrics use patients:
+
+| Where | Unit used today |
+|---|---|
+| NBA 3.0 `PCT_PLANS_*` (Section 1.1) | Distinct `PAYER_PLAN_ID` per HCP x month: every plan counts once, whether it covers 1 or 300 of the HCP's patients |
+| EDA Checks 1-6, client walkthrough (`share_*`, `kerendia_<category>` counters) | Kerendia claims |
+| DRG-MMIT overlap agreement (4.2a) | All paid LAAD claims |
+
+**Test.** For DRG Kerendia status in feature months 202503-202505, the same four shares were built three ways on all paid LAAD claims: distinct plans (NBA 3.0), claims, and patients (each patient counts once per HCP-month, split across that patient's plans). Population: 433K HCPs per month with a paid Kerendia / Jardiance / Farxiga claim in H1 2025 (a proxy for the 221,723-HCP universe). Outcome: next-month Kerendia NBRx (first Kerendia claim since 2023-01; rate 1.29%). AUC within terciles of HCP patient volume removes the size effect.
+
+| Share | Correlation, plan vs patient | Correlation, claim vs patient | AUC within volume terciles (avg distance from 0.5): plan / claim / patient | Month-over-month change within HCP (pp): plan / claim / patient |
+|---|---|---|---|---|
+| Unrestricted | 0.84 | 0.98 | 0.035 / **0.056** / 0.054 | 8.9 / 8.6 / **8.0** |
+| PA or ST | 0.84 | 0.98 | 0.038 / **0.052** / 0.049 | 9.7 / 9.3 / **8.7** |
+| Preferred | 0.85 | 0.98 | 0.027 / 0.045 / **0.048** | 10.7 / 10.7 / **9.9** |
+| Not covered | 0.86 | 0.97 | **0.024** / 0.017 / 0.015 | 3.2 / 2.8 / **2.6** |
+
+Readings:
+* Patient and claim weighting are almost the same feature (r 0.97-0.98, mean gap about 2.5 pp). The distinct-plan count is a different feature (r about 0.84, mean gap about 8 pp), because it gives a plan with one patient the same weight as a plan with hundreds.
+* Weighting by patients or claims carries about 1.5x the signal of the plan count for unrestricted, PA / ST and preferred, within volume terciles. Not covered is the only share where the plan count is slightly better, and all three are weak there.
+* Patient weighting is the most stable. True DRG status changes in only about 1.5% of plans per month, so most month-over-month movement is patient-mix noise. Patients reduce it by 7-10% vs plans and 3-7% vs claims, because patients with many refills do not dominate.
+* Patient weighting also matches how Market Access and the brand team read access ("x% of this HCP's patients have unrestricted Kerendia access").
+
+**Decision.** Use **patient weighting** as the primary unit for all share features (P0 and P1), in both the DRG history and MMIT. Keep the NBA 3.0 distinct-plan version only as the parity reference in ablation M2. Implementation:
+* Patient = LAAD `PATIENT_ID` with at least one paid claim with the HCP in the month. Weight 1 per patient per HCP-month, split equally across the patient's plans in that month.
+* `_LOOKBACK`: patient-months over 12 months (sum of monthly patient weights), so the denominator is the same as for the current-month share.
+* The Kerendia-claim EDA features (`share_*`) move to Kerendia patients in the same way.
+* Limits: univariate, 3 months, DRG status, proxy HCP universe. Confirm in ablation M2 (plan vs patient) on the 221,723-HCP universe.
 
 Interaction candidates for the learner (or explicit): restriction share x `RUNNING_TOTAL_HCP_RX_REJECTED_KERENDIA_CLAIMS`; access x F2F calls (does a rep visit offset a restriction?). The second one is the key NBA question: does access change which action is best.
 
@@ -222,7 +253,7 @@ DRG coverage: 202107-202511 (50 months). **The last month is 202511, not 202512.
 2. **Ablation on the baseline setup** (same target, Tweedie, hyperparameters, time split):
    * M0: baseline with DRG (reference)
    * M1: baseline minus all `PCT_PLANS_*` (cost of dropping DRG)
-   * M2: M1 + MMIT parity (P0)
+   * M2: M1 + MMIT parity (P0), patient-weighted; M2b: same with the NBA 3.0 distinct-plan count
    * M3: M2 + P1 / P2 families
    * Metrics: Tweedie deviance, Gini / lift at top deciles, calibration, SHAP share of access group.
 3. **Out-of-time** stability by month, especially across the 202601 plan-year reset and the 202607 Farxiga event.
@@ -246,7 +277,7 @@ DRG coverage: 202107-202511 (50 months). **The last month is 202511, not 202512.
 |---|---|---|
 | 0. Fix and align | 1-2 | Finish `DRG_MMIT_History_Linkage_Checks` (switch month decided: 202510); confirm crosswalk; HPM mapping fix; `bronze_plan_details` explicit schema; client decisions (Preferred source, APR, Farxiga) |
 | 1. Access foundation | 2-4 | Unified DRG + MMIT plan-month access table at `PAYER_PLAN_ID x month x drug` (harmonized, point-in-time, `access_source` flag); payer bridge QA (placeholder IDs); weekly DQ checks |
-| 2. HCP features | 4-6 | P0 parity on all paid LAAD claims (distinct plans, 12-month lookback) for Kerendia / Jardiance / Farxiga; P1 features; geo fallback; coverage for the 221,723-HCP universe |
+| 2. HCP features | 4-6 | P0 parity on all paid LAAD claims (patient-weighted, plus distinct-plan reference; 12-month lookback) for Kerendia / Jardiance / Farxiga; P1 features; geo fallback; coverage for the 221,723-HCP universe |
 | 3. Modeling | 6-8 | Ablations M0-M3; out-of-time tests; SHAP review |
 | 4. Productionize | 8-10 | Add MMIT features to NBA 3.1 feature pipeline and weekly scoring refresh; monitoring |
 

@@ -1,0 +1,5 @@
+LOINC_CD,TEST_NAME,test_family,patients_total,tests_total,club_members,n_members,in_752_features,is_clubbed,club_reason
+[CLUBBED],eGFR TEST (ALL LOINC VARIANTS),eGFR (CKD function),72337111,203874033,"33914-3, 48642-3, 50210-4, 62238-1, 88293-6, 88294-4, 88294-4, 98979-8, 98980-6, nan, nan, nan",12,YES,YES,12 eGFR LOINC variants rolled up — same clinical measurement (CKD function). Primary signal preserved.
+[CLUBBED],UACR TEST (ALL LOINC VARIANTS),UACR (CKD albuminuria),28735717,50807135,"13362-9, 14683-7, 14957-5, 14958-3, 1754-1, 19153-6, 2160-0, 2161-8, 34535-5, 35674-1, 49023-5, 61151-7, 9318-7, nan",14,YES,YES,14 UACR LOINC variants rolled up — same clinical measurement (CKD albuminuria). Primary signal preserved.
+2823-3,Potassium [Moles/volume] in Serum or Plasma,Potassium (Kerendia safety),27814909,76961236,,1,NO,NO,
+4548-4,Hemoglobin A1c/Hemoglobin.total in Blood,HbA1c (diabetes control),18268371,46705336,,1,YES,NO,

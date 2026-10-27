@@ -189,7 +189,117 @@ All 6 BlinkRx NDCs are present in LAAD. LAAD has 3 additional NDC variants not i
 
 ---
 
-## 6. Implications for NBA 3.1
+## 6. Prior Authorization & Access Barrier Signals
+
+The status table contains columns not available in LAAD that capture Rx-level access friction: `PA_INITIATED`, `PA_STATUS`, `REJECT_CODES`, `COVERAGE_CODE`, and `PURCHASE_STATUS`.
+
+### 6.1 Prior Authorization (PA) overview
+
+| PA Initiated | PA Status | Records | HCPs | Patients |
+| --- | --- | --- | --- | --- |
+| N | — | 8,472,816 | 3,181 | 8,252 |
+| Y | approved | 610,941 | 920 | 1,820 |
+| Y | closed | 444,997 | 873 | 1,506 |
+| Y | denied | 313,074 | 688 | 1,011 |
+| Y | open | 199,244 | 1,746 | 4,117 |
+| Y | null | 1,947 | 45 | 45 |
+
+About 15.6% of status records involve a PA. Among PA-initiated Rxs, 39% are approved, 28% closed, 20% denied, and 13% still open.
+
+### 6.2 Per-HCP PA denial rate
+
+For the 1,746+ HCPs with at least one PA-initiated Rx:
+
+| Statistic | PA denial rate |
+| --- | --- |
+| p25 | 0.0% |
+| Median | 0.0% |
+| p75 | 33.8% |
+| p90 | 97.5% |
+| Mean | 22.0% |
+
+The distribution is heavily right-skewed: the majority of HCPs have no denials, but HCPs above p75 face denial rates of 34%+, and those above p90 are denied on nearly all PA requests. This tail captures HCPs prescribing into restrictive formulary environments — a signal LAAD cannot provide.
+
+**Potential feature:** `BLINKRX_PA_DENIAL_RATE` — ratio of PA-denied to total PA-initiated records per HCP. Could proxy for formulary friction / access barriers that predict Rx abandonment.
+
+### 6.3 Pharmacy reject codes (top 15)
+
+| Reject code(s) | Records | HCPs | Meaning |
+| --- | --- | --- | --- |
+| 75 | 692,619 | 762 | Prior authorization required |
+| 569, 75 | 454,913 | 834 | Quantity limit exceeded + PA required |
+| 70 | 218,826 | 234 | Product not on formulary |
+| MR | 167,797 | 212 | Refill too soon (mail) |
+| 70, MR | 38,883 | 47 | Not on formulary + refill too soon |
+| 19, 569, 75, 76 | 21,219 | 54 | Multiple access barriers |
+| 70, 75, MR | 20,406 | 26 | Formulary + PA + refill too soon |
+| 50, 75 | 18,145 | 62 | Non-formulary drug + PA required |
+| 75, MR | 16,736 | 15 | PA required + refill too soon |
+| 608 | 16,162 | 70 | Coverage terminated |
+| 50 | 14,732 | 33 | Non-formulary drug |
+| 40 | 13,807 | 17 | Requires quantity override |
+| 560, MR | 5,456 | 9 | Plan limitations + refill too soon |
+| 70, 76 | 4,231 | 4 | Not on formulary + plan limitation |
+| 569, 75, 88 | 3,715 | 13 | Qty limit + PA + DUR reject |
+
+Codes 75 (PA required) and 70 (not on formulary) dominate. An HCP with frequent `70` / `75` rejects prescribes into restrictive formularies.
+
+**Potential feature:** `BLINKRX_REJECT_RATE` — ratio of records with non-null `REJECT_CODES` to total status records per HCP. Could also break out by code group (formulary-related vs. timing-related).
+
+### 6.4 Coverage code
+
+| Code | Meaning | Dispenses | % |
+| --- | --- | --- | --- |
+| P | Prior auth required | 557,385 | 53.6% |
+| null | Unknown | 307,421 | 29.5% |
+| R | Refill too soon | 175,664 | 16.9% |
+| D | Other | 65 | 0.0% |
+
+Over half of Kerendia dispenses carry a `P` (prior auth required) coverage code. Per-HCP `COVERAGE_PA_RATE` could flag prescribers in high-barrier payer environments.
+
+### 6.5 Rx conversion funnel
+
+Per-HCP conversion rate = `completed / (onboarding + completed + cancelled)` across 3,148 HCPs with onboarding events:
+
+| Statistic | Conversion rate |
+| --- | --- |
+| p25 | 0.2% |
+| Median | 3.5% |
+| p75 | 14.3% |
+| Mean | 15.3% |
+
+Wide variance: some HCPs convert nearly all Rxs while others lose most to cancellations. The low conversion rates partly reflect the snapshot nature of the data (many records in "onboarding" at any given time).
+
+**Potential feature:** `BLINKRX_CONV_RATE` — fulfillment efficiency per HCP, unique to BlinkRx.
+
+### 6.6 Additional signals
+
+| Signal | Source | Detail |
+| --- | --- | --- |
+| **Copay assistance rate** | dispense (`COPAY_ASSISTANCE_APPLIED`) | Y=30%, N=30%, U=40%. Per-HCP rate proxies patient affordability. |
+| **Patient cost** | dispense (`PATIENT_PURCHASE_PRICE`) | Median $0, p75 $99, avg $58.93. Most patients pay nothing (copay assistance). |
+| **Patient age** | status (`PATIENT_AGE`) | Median 70, IQR 61–77, max 90. Aligns with CKD elderly population. Not in LAAD. |
+| **Days supply mix** | dispense (`DISPENSE_DAYS_SUPPLY`) | 84.5% 30-day, 14.5% 90-day. Per-HCP 90-day rate signals prescriber confidence in long-term therapy. |
+| **Refills remaining** | dispense (`REFILLS_REMAINING`) | 0–11 range; 22% have 3, 20% have 1, 15% have 0. |
+
+---
+
+## 7. Potential Feature Summary
+
+| Feature | Source | Signal | LAAD equivalent? |
+| --- | --- | --- | --- |
+| `BLINKRX_PA_DENIAL_RATE` | status | PA denied / PA initiated per HCP | No |
+| `BLINKRX_REJECT_RATE` | status | Records with reject codes / total per HCP | No |
+| `BLINKRX_CONV_RATE` | status | completed / (onboarding + completed + cancelled) | No |
+| `BLINKRX_COVERAGE_PA_RATE` | dispense | Dispenses with coverage code P / total | No |
+| `BLINKRX_COPAY_ASSIST_RATE` | dispense | Copay assistance Y / total per HCP | No |
+| `BLINKRX_90DAY_RATE` | dispense | 90-day fills / total per HCP | Partial (LAAD has DAYS_SUPPLY) |
+| `BLINKRX_MEDIAN_PT_AGE` | status | Median patient age per HCP | No |
+| `BLINKRX_FLAG` | dispense | Binary: HCP ever dispensed via BlinkRx | No |
+
+---
+
+## 8. Implications for NBA 3.1
 
 1. **BlinkRx as a supplementary signal.** BlinkRx captures a niche pharmacy channel (3.2% of LAAD Kerendia HCPs). For the 349 HCPs not in LAAD Kerendia, BlinkRx provides unique prescribing evidence.
 2. **HCP-level features.** BlinkRx could contribute:
@@ -206,7 +316,7 @@ All 6 BlinkRx NDCs are present in LAAD. LAAD has 3 additional NDC variants not i
 
 ---
 
-## 7. Caveats
+## 9. Caveats
 
 * LAAD Kerendia claims are filtered by NDC prefix `50419054*` and `SVC_DT >= 2024-01-01`.
 * BlinkRx dispense counts may not represent individual Rx fills on a 1:1 basis; the data appears to contain snapshot-level records.

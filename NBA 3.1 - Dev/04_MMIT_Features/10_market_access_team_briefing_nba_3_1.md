@@ -254,34 +254,9 @@ Access features will be refreshed **weekly** between monthly model runs, so reco
 
 ---
 
-## 7. Answers (to fill in during the meeting)
+## 7. Answers
 
-| # | Answer | Owner | Follow-up |
-| --- | --- | --- | --- |
-| A1 | | | |
-| A2 | | | |
-| A3 | | | |
-| A4 | | | |
-| A5 | | | |
-| A6 | | | |
-| B1 | | | |
-| B2 | | | |
-| B3 | | | |
-| B4 | | | |
-| B5 | | | |
-| B6 | | | |
-| B7 | | | |
-| B8 | | | |
-| B9 | | | |
-| B10 | | | |
-| C1 | | | |
-| C2 | | | |
-| C3 | | | |
-| C4 | | | |
-| D1 | | | |
-| D2 | | | |
-| D3 | | | |
-| D4 | | | |
+Please answer in the Excel questionnaire **`NBA_3_1_Market_Access_Questionnaire.xlsx`** shared with this document. It has the same questions (plus two open-feedback questions, E1-E2), with drop-down answers where possible. The 8 **must-answer** questions are A1, A2, A3, B7, B8, B10, C1 and D1.
 
 ---
 

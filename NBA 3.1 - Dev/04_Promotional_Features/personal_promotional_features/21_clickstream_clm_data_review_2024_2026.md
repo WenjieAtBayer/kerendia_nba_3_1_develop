@@ -7,7 +7,7 @@
 
 ## What is this document about?
 
-During a call, a rep can show Kerendia slides, videos or PDFs on a tablet. This is **CLM** ("Closed Loop Marketing"); the record of what was shown and for how long is the **clickstream**. An **iVA** is an "interactive visual aid", one kind of CLM content. How the NBA 3.0 features are built from this data is explained in `clickstream_clm.md`; none of those features was kept in the final NBA 3.0 model.
+During a call, a rep can show Kerendia slides, videos or PDFs on a tablet. This is **CLM** ("Closed Loop Marketing"); the record of what was shown and for how long is the **clickstream**. An **iVA** is an "interactive visual aid", one kind of CLM content. How the NBA 3.0 features are built from this data is explained in `13_clickstream_clm_nba_3_0.md`; none of those features was kept in the final NBA 3.0 model.
 
 **How to read names.** Anything written `like this` is the exact name used in the data.
 
@@ -138,6 +138,6 @@ Possible explanations, to confirm (Q1, Q2):
 
 ## 9. References
 
-* `clickstream_clm.md`: how the NBA 3.0 CLM features are built, and why none is in the NBA 3.0 model
+* `13_clickstream_clm_nba_3_0.md`: how the NBA 3.0 CLM features are built, and why none is in the NBA 3.0 model
 * NBA 3.0 notebook `18_promotional_ClickStream_features` (NBA 3.0 Ops pipeline)
 * NBA 3.0 model: MLflow run `f583bcbc9d56477fae983d44c16f8c70`

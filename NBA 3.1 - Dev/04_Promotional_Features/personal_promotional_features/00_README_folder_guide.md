@@ -1,4 +1,4 @@
-# Personal Promotional Features — NBA 3.0 (Legacy): Introduction
+# Personal Promotional Features (Field Activity): Folder Guide and Introduction
 
 **Group:** Personal promotional features (promotion that involves a sales rep, or a speaker in person or live)  
 **Notebooks:** in `/Workspace/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`  
@@ -15,11 +15,22 @@ This folder explains the **personal** features: promotion delivered by people, m
 
 | Channel | Notebook | File | Saved table |
 | --- | --- | --- | --- |
-| Sales Rep Calls | `25_promotional_features_call` | `sales_rep_calls.md` | `kerendia_nba_3_hcp_model_call_features_for_inference` |
-| BHO (organisation) Calls | `13_promotional_features_bho_calls` | `bho_calls.md` | `kerendia_nba_3_hcp_model_call_features_bhoid_for_inference` |
-| iRep Emails | `16_promotional_features_irep` | `irep_emails.md` | `kerendia_nba_3_hcp_model_irep_features_for_inference` |
-| ClickStream / CLM | `18_promotional_ClickStream_features` | `clickstream_clm.md` | `kerendia_nba_3_hcp_model_clickstream_features_for_inference` |
-| Speaker Programs | `14_promotional_features_speaker_program` | `speaker_programs.md` | `kerendia_nba_3_hcp_model_speaker_program_for_inference` |
+| Sales Rep Calls | `25_promotional_features_call` | `10_sales_rep_calls_nba_3_0.md` | `kerendia_nba_3_hcp_model_call_features_for_inference` |
+| BHO (organisation) Calls | `13_promotional_features_bho_calls` | `11_bho_calls_nba_3_0.md` | `kerendia_nba_3_hcp_model_call_features_bhoid_for_inference` |
+| iRep Emails | `16_promotional_features_irep` | `12_irep_emails_nba_3_0.md` | `kerendia_nba_3_hcp_model_irep_features_for_inference` |
+| ClickStream / CLM | `18_promotional_ClickStream_features` | `13_clickstream_clm_nba_3_0.md` | `kerendia_nba_3_hcp_model_clickstream_features_for_inference` |
+| Speaker Programs | `14_promotional_features_speaker_program` | `14_speaker_programs_nba_3_0.md` | `kerendia_nba_3_hcp_model_speaker_program_for_inference` |
+
+**Files in this folder (numbered so they sort in reading order):**
+
+| Range | Purpose | Files |
+| --- | --- | --- |
+| `00` | This guide, and the key ideas shared by all channels (section 0) | `00_README_folder_guide.md` |
+| `10` – `14` | How each NBA 3.0 channel's features are built (legacy, from the notebook code) | `10_sales_rep_calls_nba_3_0.md`, `11_bho_calls_nba_3_0.md`, `12_irep_emails_nba_3_0.md`, `13_clickstream_clm_nba_3_0.md`, `14_speaker_programs_nba_3_0.md` |
+| `20` – `29` | Data reviews of the last two years (Nov 2024 – Oct 2026), with trends, gaps and open questions for NBA 3.1 | `20_field_activity_data_review_2024_2026.md` (calls, BHO, iRep, speaker programs, plus unused Veeva tables), `21_clickstream_clm_data_review_2024_2026.md` (CLM / iVA) |
+| `30` – `39` | Briefings for partner teams (plain-language summary of current state and NBA 3.1 proposals, with questions and an answers table) | `30_field_analytics_team_briefing_nba_3_1.md` (Field Analytics team, meeting 29 Oct 2026) |
+
+Files were renamed on 28 October 2026 (old names: `00_introduction.md`, `sales_rep_calls.md`, `bho_calls.md`, `irep_emails.md`, `clickstream_clm.md`, `speaker_programs.md`, `clickstream_clm_data_review_2024_2026.md`).
 
 Speaker Programs were previously documented with the non-personal features; they were moved here by decision of the team.
 

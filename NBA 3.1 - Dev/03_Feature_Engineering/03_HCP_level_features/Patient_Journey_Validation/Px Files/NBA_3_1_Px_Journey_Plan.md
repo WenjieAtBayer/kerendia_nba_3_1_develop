@@ -216,7 +216,7 @@ Notes:
 **Comparisons in every step:** (A) all US patients, first date same / earlier / later / gained / lost, with the median shift in days; (B, Step 2) the same split by the code that caused it; (C) validation patients = patients of the lab, Dx and Rx validation tables, `DIALYSIS_FLAG` per patient-month built with the exact rule of `06_patient_journey_combine`.
 
 **Things found while building:**
-* **`%run "../00_cohort_config"` no longer resolves** since the notebooks were moved into the `Lab Files` / `Dx Files` / `Px Files` subfolders (`00_cohort_config` is two levels up). Fixed to `../../00_cohort_config` in `05_patient_journey_px` and in the Px clone (the only change to the clone). **The same path is still `../` in `01_patient_journey_labs` and `02_patient_journey_dx`; not changed here (owners to fix).**
+* **`%run "../00_cohort_config"` no longer resolves** since the notebooks were moved into the `Lab Files` / `Dx Files` / `Px Files` subfolders (`00_cohort_config` is two levels up). Fixed to `../../00_cohort_config` in `05_patient_journey_px` and in the Px clone (the only change to the clone). Fixed the same way on 2026-10-29 in `01_patient_journey_labs`, `02_patient_journey_dx`, `03_patient_journey_rx` and their clones.
 * The Px notebook did not run the 3.0 `00_config`; it now does (needed for `date_end`), as the Dx notebook does.
 * Basket path: the notebook reads our basket folder in this repo. The Dx notebook reads `wenjie.chen@bayer.com/kerendia_nba_3_1_develop_sm/...`, which does not have the new Px files until they are pushed and synced.
 * The 3.0 query groups every row with an empty `PATIENT_ID` into one output row; Step 0 counts it and Step 4 drops it.

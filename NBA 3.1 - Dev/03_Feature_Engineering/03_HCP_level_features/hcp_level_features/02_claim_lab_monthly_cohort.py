@@ -663,24 +663,33 @@ display(null_counts)
 # ---- Validation 1: offset = 0 parity vs original claim_lab_monthly_ZS, every cohort ----
 import pandas as pd
 
-import os
 _npis = get_test_npis()
-# The parity needs Wenjie's 3.0 output. It was missing on 2026-10-26 (volume cleaned);
-# skip instead of failing so Run all still completes.
-_ref_missing = [p for p in [_NOTEBOOK_OUTPUT + "claim_lab_monthly_ZS"] if not os.path.exists(p)]
+# 3.0 output AND the Lab_03 it was built from both come from the reference snapshot
+# (HCP_REF_VOLUME, 00_cohort_config): the refreshed Lab_03 restates history, so comparing it with
+# the 3.0 output would mix two data versions. Skip (not fail) if the snapshot is gone.
+_ref_missing = hcp_ref_missing([HCP_REF_NOTEBOOK_OUTPUT + "claim_lab_monthly_ZS",
+                                HCP_REF_QUERY_OUTPUT + "Lab_03"])
 if _npis is None:
     print("Production mode — parity check skipped (runs on the test NPIs only)")
 elif _ref_missing:
     print("SKIPPED — 3.0 reference table(s) missing, rerun when restored:\n  " + "\n  ".join(_ref_missing))
 else:
+    # Same cleaning as the load cell, on the reference Lab_03 (full history, no DATA_START_DATE)
+    _df_lab_ref = apply_npi_filter(load_ref_input("Lab_03")
+                                   .withColumn("PATIENT_ID", F.col("PATIENT_ID").cast("string")), NPI_COL)
+    FAST_SOURCES["orig"] = lambda: _df_lab_ref
+    for _k in [k for k in _FAST_LONG if k[0] == "orig"]:
+        del _FAST_LONG[_k]
+    _REF_MAX_DT = _df_lab_ref.agg(F.max(SVC_COL)).first()[0]
+
     _orig_all = (
-        spark.read.format("delta").load(_NOTEBOOK_OUTPUT + "claim_lab_monthly_ZS")
+        spark.read.format("delta").load(HCP_REF_NOTEBOOK_OUTPUT + "claim_lab_monthly_ZS")
         .filter(F.col(NPI_COL).isin(_npis))
         .withColumn("_M", F.date_format("SVC_DT_M", "yyyy-MM"))
     )
     _orig_months = {r[0] for r in _orig_all.select("_M").distinct().collect()}
     # Same cohort range, but complete-data rule evaluated at offset 0
-    _months0 = [m for m in get_cohort_months(max_data_date=DATA_MAX_DT, offset_days=0) if m in _orig_months]
+    _months0 = [m for m in get_cohort_months(max_data_date=_REF_MAX_DT, offset_days=0) if m in _orig_months]
     pd_orig_all = _orig_all.filter(F.col("_M").isin(_months0)).toPandas()
 
     _skip = {"SVC_DT_M", "PULL_DT", "_M", NPI_COL}
@@ -689,7 +698,7 @@ else:
     _map = {oc: (oc if ("_IN_LAST_" in oc or oc.startswith("RUNNING_")) else f"{oc}_IN_LAST_1_MONTH")
             for oc in _orig_cols}
 
-    # Same input as the original: full lab history (no DATA_START_DATE). This checks the feature
+    # Same input as the original: reference Lab_03, full history (no DATA_START_DATE). This checks the feature
     # LOGIC of the engine that writes the output; the 2023 start is a config choice.
     # All parity months in ONE query (same engine as section 4), compared month by month in pandas.
     _cbs0 = {m: get_cohort_bounds(m, offset_days=0) for m in _months0}

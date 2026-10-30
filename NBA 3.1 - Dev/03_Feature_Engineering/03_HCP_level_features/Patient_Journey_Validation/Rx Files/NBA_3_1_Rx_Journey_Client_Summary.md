@@ -81,6 +81,7 @@ The output columns and the category texts are unchanged, so PJ06 does not need a
 | --- | --- | --- | --- |
 | Which drugs count, category | Snowflake view outside the project, matched on product name; categories with "other" dropped | Product basket (`ACTIVE_JOURNEY`, `TREATMENT_CATEGORY`) | A reviewed list in the project; a change is a file edit |
 | Brand labels | Typed in the code (23 DPP-IV and 19 GLP-1 names, of which only 1 could ever be used) | `BRAND_LABEL` in the basket | Visible and editable |
+| Patient flags | SGLT2 flag only | A flag for every journey category in section 3.3 (Calcium channel / Beta blocker, ACE/ ARB, Combo drug, Diuretic_NON_MRA, metformin, Insulin, SGLT2, MRA), not only SGLT2 | All treatments in the journey are usable as flags |
 | Data pulled | Full Rx claims table (≈ 6 billion rows) + 4 full tables | 160,029 rows (filters run in Snowflake) | Faster, cheaper |
 | Run settings | Table names, paths, dates, grace days in the code | One settings block (`RX_CONFIG`), checked before the run | One place to change; clear error if a table is renamed |
 | End date | Last date in the claims (2026-10-02) | End of the run window (2026-09-30) | Aligned with the other journeys |

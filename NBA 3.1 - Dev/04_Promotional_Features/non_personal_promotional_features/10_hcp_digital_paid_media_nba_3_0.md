@@ -49,7 +49,7 @@ The data comes from Bayer's marketing-mix table ("MMX"), which collects reports 
 | `DEEP_ENGAGEMENT` | Number of strong interactions (for example clicking through to read more) | 1 |
 | `TOTAL_ENGAGEMENT` | Number of interactions overall, as reported by the vendor | 2 |
 
-What exactly counts as "light" or "deep" is decided by the vendors and the marketing-mix (MMX) team, not by this notebook. One thing is visible in the data: total is **not** always light + deep. The notebook includes a check of HQ emails by month, and there total equals light every month (for example March 2026: light 26,341, total 26,341, deep 1,446). Ask the MMX team for the definitions before combining these measures.
+"Light" and "deep" engagement are **our internal definitions of engagement**, applied when the MMX table is built; they are **not** reported by the vendors, and they are not decided in this notebook. The rule for each vendor metric is not yet written down next to the NBA features. One thing is visible in the data: total is **not** always light + deep. The notebook includes a check of HQ emails by month, and there total equals light every month (for example March 2026: light 26,341, total 26,341, deep 1,446). Document the internal rule per vendor metric before combining these measures.
 
 **Which lines are kept:**
 
@@ -245,5 +245,5 @@ Because there is a row for every month, a later step has to choose the right mon
 * **"Since the start" (`RUNNING_`) features depend on when the data starts.** Since the start moves with every run, the same doctor in the same month can get a different running total in different runs.
 * **The features change from run to run.** Because the pivots are dynamic, a new vendor or tactic adds columns and a vanished one removes them. The model may then find columns missing or unexpected.
 * **Exact tactic matching.** A small change in a tactic name (other than Banner) silently moves its activity into `OTHER_TACTIC`.
-* **"Light" and "deep" are not documented.** Their definitions come from the vendors; total is not always light + deep (section 2).
+* **"Light" and "deep" are not documented.** They are our internal definitions (not vendor-reported), but the rule per vendor metric is not written down; total is not always light + deep (section 2).
 * **A later step must pick the right month.** Because every month is kept, the combining notebook must use the last full month before the anchor date; using a later month would let the model see data from after the lookback.

@@ -42,7 +42,7 @@
 | `BANNER_TACTIC` feature (rank 68) | Zero before April 2025; acts as a period marker | map, section 3.1 |
 | HQ email counted in notebook 15, in Digital as a channel, and in Digital as a vendor | Double (triple) counting | `11_...`, section 6 |
 | iRep email counted in Digital and in notebook 16 | Double counting | `10_...`, section 6 |
-| "Light" and "deep" engagement from vendors | Not documented; total is not light + deep | `10_...`, section 2 |
+| "Light" and "deep" engagement (our internal definitions, not vendor-reported) | Rule per vendor metric not written down; total is not light + deep | `10_...`, section 2 |
 | First lookback month dropped; current month may be incomplete; `RUNNING_` depends on data start | Inconsistent windows between runs | `10_...`, section 6 |
 | No content, no recency, no placement | The information OE uses most is missing | `12_...`, sections 5 to 7 |
 
@@ -53,7 +53,7 @@
 1. **One dictionary, fixed.** A placement dictionary (config table) maps `SRC_SYS_CD` + `TACTIC_NAME` (case-insensitive, trimmed, pattern-based) to a fixed **vendor**, **placement** and **channel**. Anything not mapped goes to `OTHER` and is reported, not silently pivoted.
 2. **All Kerendia brand values.** Filter `UPPER(BRND_NM) LIKE '%KERENDIA%'` (as the Digital refresh notebook already does). Keep the indication (HF / CKD / UACR / none) as an optional dimension, not as a filter.
 3. **One source per activity.** HQ email from one source only; iRep email only in the personal block; journey codes in the HQ email vendor column (`COPAY`, `KERENDIA_FTO`, vouchers) mapped to HQ email, not treated as vendors.
-4. **Documented engagement levels.** Use OE's R / I / E definition per vendor metric (flag file and `mdb_prep_config.xlsx`) where event data exists; document a crosswalk for MMX exposure / light / deep.
+4. **Documented engagement levels.** Use OE's R / I / E definition per vendor metric (flag file and `mdb_prep_config.xlsx`) where event data exists; write down our internal MMX light / deep rule per vendor metric and document a crosswalk between MMX exposure / light / deep and OE's R / I / E.
 5. **NPI and month, aligned to the anchor.** Keep NPI and monthly grain; windows end at the last **complete** month before the anchor date; include the first lookback month; no `RUNNING_` features with a moving start (replace with fixed 12-month windows).
 6. **Few, meaningful features.** Build a candidate set of about 150 columns and select down (target 30 to 60 in the model), rather than feeding hundreds of sparse pivots.
 7. **Language.** When OE output is used, doctors are **recommended** to vendors, not "reached".
@@ -179,7 +179,7 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | --- | --- | --- | --- |
 | Q1 | Source of truth for HQ email | Notebook 15 email event log; drop HQ email from the MMX block | NBA team |
 | Q2 | Where iRep email lives | Personal promotional block only | NBA team |
-| Q3 | Definitions of MMX "light" and "deep" engagement | Ask the MMX team; until then use exposure and total engagement only | MMX team |
+| Q3 | Definitions of MMX "light" and "deep" engagement | Answered: these are our internal engagement definitions, not vendor-reported (digital team meeting, Oct 2026). Next: write down the rule per vendor metric and map it to OE's R / I / E; until then use exposure and total engagement only | NBA and digital teams |
 | Q4 | Keep indication (HF / CKD / UACR) as a dimension? | Build at total level only in v1; test later if HF and CKD messaging differ | NBA and brand teams |
 | Q5 | Training window relative to the OE roll-out | Decide after O1 | NBA team |
 | Q6 | Owner of the placement dictionary and content tagging file updates | Digital team, with a monthly check of unmapped rows | Digital team |

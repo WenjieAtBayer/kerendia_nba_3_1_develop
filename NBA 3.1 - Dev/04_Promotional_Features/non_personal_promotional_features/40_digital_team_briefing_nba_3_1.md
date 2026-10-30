@@ -3,7 +3,7 @@
 **For:** Kerendia digital marketing team  
 **From:** NBA team  
 **Purpose of the meeting:** share what we found about digital in NBA 3.0, walk through what we propose for NBA 3.1, and **collect your concerns and suggestions** before we build anything  
-**Status:** draft for discussion; nothing is decided  
+**Status:** updated after the first meeting with the digital team (answers in section 7, new data assets in section 4.4); still a draft, nothing is decided  
 **Date:** October 2026
 
 ---
@@ -23,7 +23,7 @@ You know the media partners, the placements and how campaigns were actually exec
 
 | | Today (NBA 3.0) | What we propose (NBA 3.1) |
 | --- | --- | --- |
-| **HCP digital** (media partners, HQ email) | About 680 digital columns are built, but only 9 are kept by the model, and none of them names a media partner. The best one ranks 68th of 752. | A smaller, fixed set of features organised by **vendor and placement**, as in OE, plus engagement rates, recency and (later) content. |
+| **HCP digital** (media partners, HQ email) | About 680 digital columns are built, but only 9 are kept by the model, and none of them names a media partner. The best one ranks 68th of 752. | A smaller, fixed set of features organised by **vendor and placement** (every vendor kept on its own), as in OE, plus engagement rates, recency, indication and (later) content. A separate family for **high-intent signals** such as Request-a-Rep. |
 | **DTC** (patients) | 9 features kept (Health Union, WebMD, Sharecare, Healthline, Facebook / Instagram). Most of these channels **stopped in 2024 – early 2025**, so the features are now zero. | Hold until we know the DTC plans for the upcoming launch. Paid search is the one active channel; it now has regional data **by state** only. |
 | **CLM / clickstream** (rep tablet content) | Built, but no feature kept by the model. Less than 1% of Kerendia calls use CLM. | At most a few simple flags; revisit once the new iVA shows up in the data. |
 
@@ -57,7 +57,7 @@ We believe these are mostly **build problems**, which we can fix:
 | **Columns change from run to run** | New vendor or tactic names create new columns | The model cannot rely on a stable set of inputs |
 | **Double counting** | HQ email is counted in three places; iRep email in two | Same touch, several features |
 | **No content, no timing** | Only counts by channel | Nothing on what message was shown, or how recently |
-| **Engagement levels not defined** | "Light" and "deep" engagement come from vendors without a written definition | Not comparable across vendors |
+| **Engagement levels not written down** | "Light" and "deep" engagement are **our internal definitions** (not vendor-reported), but the rule for each vendor metric is not documented next to the NBA features | Hard to explain or compare across vendors; to be documented and aligned with OE's reach / interaction / engagement levels |
 
 ### 3.3 What OE does differently
 
@@ -94,6 +94,20 @@ MMX rows, January 2025 – October 2026, all Kerendia brand values. "OE" = place
 | Custom | Prescriber Point monograph | 115k | No |
 | HQ email | SFMC HQ email (incl. copay, FTO and voucher journeys) | 9.37M | Yes |
 
+**Smaller vendors, now listed on their own** (added after the meeting, A1 / A2). Same table and period; doctors = distinct NPIs.
+
+| Channel | Vendor | Rows | Doctors (NPI) | Active period in the data | Note |
+| --- | --- | --- | --- | --- | --- |
+| Banner | Biopharm | 301k | 11.3k | Dec 2025 – Mar 2026 | |
+| 3rd-party email | Biopharm | 190k | 27.2k | Dec 2025 – May 2026 | |
+| 3rd-party email | Haymarket | 245k | 25.5k | Sep 2025 – Jun 2026 | Also 11k banner and 3k custom rows |
+| Custom | ReachMD | 25k | 5.6k | Jul 2025 – Jun 2026 | Also 2k banner rows (Mar – May 2026); optional OE addition |
+| 3rd-party email | MJH Life Sciences | 13k | 1.2k | Feb 2025 – Apr 2026 | |
+| Custom | **Impiricus (SMS messages)** | 12k | 10.1k | Mar – Dec 2025 | Being added as an **SMS channel in the Q4 OE scope** |
+| Custom | MD Calc | 11k | 4.0k | Nov 2025 – Jul 2026 | |
+
+ConnectiveRx, Nativo and Healthcast did not appear under those names in 2025 – 2026; we will check their vendor codes with you.
+
 This is the first version of a **placement dictionary** we want to use for NBA 3.1 (section 5.1). The full table, with raw tactic names, is in `13_hcp_digital_nba_3_1_readiness_plan.md`, section 5.1.
 
 **OE roll-out.** OE ran a 3-month pilot with test and control groups and has been fully rolled out since 18 September 2026, with no control group after that date. We expect the digital mix and volume to shift around that date, and we will check it.
@@ -127,6 +141,20 @@ Full detail: `21_dtc_data_findings_2024_2026_and_open_questions.md`.
 
 Full detail: `personal_promotional_features/clickstream_clm_data_review_2024_2026.md`.
 
+### 4.4 New data assets raised in the meeting
+
+The meeting made clear that the historical MMX structure is **not complete**: several new or changed digital signals should be part of the NBA 3.1 data review.
+
+| Asset | What we would need | Why it matters | Status / source |
+| --- | --- | --- | --- |
+| **Request-a-Rep (RAR)** / hand-raisers | Request date, HCP, follow-up status and date, and later Rx behaviour | About **1,200 RARs since 2025, but follow-up for only about 340**; Samantha Meyers highlighted the potentially significant commercial value of these hand-raisers | Included in the Q4 OE scope; not found in the MMX table |
+| **New Writer** signal | HCP, date of first Kerendia Rx | Another input to OE's dynamic target list | OE dynamic-target-list input |
+| **iVA engagement** | Actual campaign and content IDs, Veeva metadata | New iVA campaign not yet visible in the clickstream data (4.3) | To be provided (C1) |
+| **Impiricus SMS** engagement | Sends, opens / clicks per HCP and date | Newly activated channel | In MMX as `SMS Messages` (Mar – Dec 2025); Q4 OE scope |
+| **Health-system formulary wins** | Health system, date of the win, affiliated HCPs | Access change that can drive prescribing | Included in the OE enhancement scope |
+| **Indication / T1D target list** | HCP with indication: HF = cardiologists, T1D = T1D target list, CKD = remaining HCPs | Lets NBA keep indication as a dimension (A6) | Samantha Meyers to provide the T1D target-list file; the digital-target table then receives an HF / T1D / CKD indication field |
+| **OE content mapping / message arc** | Content ID, content category, message-arc document | Moves NBA features from exposure counts to recognisable content categories | The OE SOW calls for Bayer stakeholder validation of historical content mapping and a message-arc / content ID document |
+
 ---
 
 ## 5. What we propose for NBA 3.1
@@ -134,8 +162,9 @@ Full detail: `personal_promotional_features/clickstream_clm_data_review_2024_202
 ### 5.1 HCP digital: three steps
 
 **Step 1. Fix the foundations** (no new features yet)
-* Include all Kerendia brand values (HF, CKD, UACR, ...).
-* One fixed **placement dictionary** (the table in 4.1): every MMX row is mapped to a vendor, placement and channel; anything unmapped is reported, not silently pivoted.
+* Include all Kerendia brand values (HF, CKD, UACR, ...), and **keep the indication** (HF / T1D / CKD) as a dimension rather than throwing it away (A6).
+* One fixed **placement dictionary** (the tables in 4.1): every MMX row is mapped to a vendor, placement and channel. **Each vendor keeps its own entry**, including the smaller ones (Biopharm, Haymarket, ReachMD, MJH, MD Calc, Impiricus, ...), as the team asked (A2). Anything unmapped is reported, not silently pivoted.
+* Write down our internal light / deep engagement rule per vendor metric, and align it with OE's reach / interaction / engagement levels (A3).
 * One source per activity: HQ email from the email event log only; iRep email only in the rep (personal) block.
 * The same columns every run.
 
@@ -151,10 +180,25 @@ Full detail: `personal_promotional_features/clickstream_clm_data_review_2024_202
 | Breadth | How many vendors / placements reach the doctor | Number of placements, last 3 months |
 | Trend | Rising or falling pressure | Last 3 months vs the 3 months before |
 | HQ email | Sent, open, click, rates, unsubscribe | Unique click rate, last 6 months |
+| Indication | The same families split by HF / T1D / CKD, next to the Kerendia total | HF banner exposure, last 3 months |
+
+**Step 2b. High-intent digital signals** (new family; our recommendation, not a meeting decision)
+
+An HCP who **asks** for something is a very different signal from an HCP who was **shown** a banner. We propose to keep these signals in their own family, never mixed into exposure totals:
+
+| Signal | Example features |
+| --- | --- |
+| Request-a-Rep | RAR in the last 3 / 6 months (flag and count), days since last RAR, RAR followed up yes / no, days from RAR to follow-up |
+| New Writer | New Kerendia writer in the last 3 months, months since first Rx |
+| Health-system formulary win | Formulary win at an affiliated health system in the last 6 months, days since the win |
+| Impiricus SMS | SMS engagement (open / click) in the last 3 months |
+
+RAR also gives the field a clear action (follow up the open requests); how it appears in the NBA dropdown list is to be agreed (D2).
 
 **Step 3. Reuse OE's richer view** (if it tests better)
 * OE's reach / interaction / engagement levels for Doximity, Medscape, PeerDirect, PulsePoint and SFMC.
-* **Content counts** by category (guidelines, access and coverage, MOA, ...).
+* **Content counts** by category (guidelines, access and coverage, MOA, ...), using the OE content mapping and message-arc document once it is validated.
+* iVA engagement, once the campaign and content IDs are available.
 * Test the 7-day response lag.
 * Check whether results differ before and after the OE roll-out.
 
@@ -169,7 +213,14 @@ Full detail: `personal_promotional_features/clickstream_clm_data_review_2024_202
 * At most a few simple flags (any CLM call, number of CLM calls, recency), using presentation duration.
 * Revisit when the iVA campaign appears in the data.
 
-### 5.4 How we will decide
+### 5.4 How NBA and OE fit together
+
+From the meeting and the related design work: **NBA = who and why; OE = when, what and how.**
+* NBA refreshes the HCP target list **monthly** and gives the drivers behind each HCP.
+* OE consumes that list and adds **weekly** sequencing, content, channel and cadence.
+* New signals such as Request-a-Rep and New Writers can **dynamically supplement** the list between NBA refreshes.
+
+### 5.5 How we will decide
 
 Each step is tested in the NBA 3.1 model against the NBA 3.0 digital block. A step is kept only if it improves the model, and every feature we keep must map to a vendor, placement or content you recognise. When NBA uses OE output, we speak of doctors **recommended** to vendors, not "reached".
 
@@ -181,7 +232,8 @@ Each step is tested in the NBA 3.1 model against the NBA 3.0 digital block. A st
 | --- | --- |
 | Vendors rename tactics, activity drops into "other" | Pattern-based dictionary, monthly unmapped report |
 | PulsePoint dominates volume, so totals = PulsePoint | Keep placement features next to totals; test totals without programmatic display |
-| Small placements are too sparse to learn from | Group them into an "other" per channel |
+| Small vendors are too sparse to learn from | Keep each vendor on its own (team request); let feature selection drop the ones with no signal, and report which were dropped |
+| High-intent signals are rare (about 1,200 RARs) | Use flags and recency rather than counts; check how many HCPs have each signal before modelling |
 | OE roll-out changes the data | Compare before / after 18 September 2026 |
 | Digital effect stays weak | Accept a small block; do not force digital into the model |
 
@@ -195,13 +247,13 @@ Please add comments or answers in the last column, or bring them to the meeting.
 
 | # | Question | Your answer |
 | --- | --- | --- |
-| A1 | Does the **placement dictionary** in 4.1 match how you think about placements? Names, groupings, anything missing or wrongly merged? | |
-| A2 | Is it acceptable to group small vendors (Biopharm, ConnectiveRx, Nativo, Haymarket, MJH, ReachMD, Impiricus, MD Calc, ...) into **"other" per channel**? Are any of them important enough to keep separately? | |
-| A3 | How do vendors define **"light" and "deep" engagement** in MMX? Is OE's reach / interaction / engagement split the right standard for NBA too? | |
-| A4 | Doceree, OpenEvidence and PeerDirect banners start in **April 2025**. Is that right, or were they tracked differently before? | |
-| A5 | Are there **tracking or naming changes** we should know about (vendor tactic renames, new placements, changes after the OE roll-out)? | |
-| A6 | Should HF and CKD activity be treated **separately** (the indication in the brand name), or is total Kerendia enough? | |
-| A7 | Who should **own the placement dictionary and the content tagging file** going forward? | |
+| A1 | Does the **placement dictionary** in 4.1 match how you think about placements? Names, groupings, anything missing or wrongly merged? | We discussed those small vendors in A2 were missed from 4.1. |
+| A2 | Is it acceptable to group small vendors (Biopharm, ConnectiveRx, Nativo, Haymarket, MJH, ReachMD, Impiricus, MD Calc, ...) into **"other" per channel**? Are any of them important enough to keep separately? | The team would rather to keep them as their own instead of clumping them into one bucket. Also Impiricus should not simply disappear into "other" because it is specifically being added as an SMS channel in the Q4 OE scope; ReachMD was also identified as an optional addition. |
+| A3 | How do vendors define **"light" and "deep" engagement** in MMX? Is OE's reach / interaction / engagement split the right standard for NBA too? | Light and deep engagement are **not from the vendors**; they are our internal definition of engagement. To document the rule per vendor metric and align it with OE's levels. |
+| A4 | Doceree, OpenEvidence and PeerDirect banners start in **April 2025**. Is that right, or were they tracked differently before? | Yes |
+| A5 | Are there **tracking or naming changes** we should know about (vendor tactic renames, new placements, changes after the OE roll-out)? | There are clearly new/changed digital signals that need to be incorporated, including iVA, Request-a-Rep, New Writers, Impiricus SMS, health-system formulary wins and dynamically refreshed NBA target lists. These should be added to the data/placement review rather than assuming the historical MMX structure is complete. |
+| A6 | Should HF and CKD activity be treated **separately** (the indication in the brand name), or is total Kerendia enough? | Evidence favors keeping indication available separately. A recent Q4 target-list workflow explicitly assigns an indication field using HF = CARDs, T1D = T1D target list, CKD = remaining HCPs. Therefore NBA 3.1 should avoid throwing away indication information. Total Kerendia can still be an aggregate feature, but indication should remain available as an additional dimension.|
+| A7 | Who should **own the placement dictionary and the content tagging file** going forward? | Not resolved in the meeting artifacts. Recommend explicit ownership: Digital/OE business team owns placement/content definitions; NBA/data team operationalizes and monitors the mappings. The original OE SOW also calls for Bayer stakeholder validation of historical content mapping and a message-arc/content ID document.|
 | A8 | Any placements you know work (or do not work) for Kerendia that we should make sure are visible to the model? | |
 
 ### B. DTC
@@ -227,16 +279,18 @@ Please add comments or answers in the last column, or bring them to the meeting.
 | --- | --- | --- |
 | D1 | Any **concerns** with the approach in section 5? | |
 | D2 | Anything you would like NBA 3.1 to **show or explain** about digital in the NBA dropdown list? | |
-| D3 | How should NBA and OE outputs be **presented together** so the field and the digital team get one consistent message? | |
+| D3 | How should NBA and OE outputs be **presented together** so the field and the digital team get one consistent message? | This one is fairly well answered by the related design work: **NBA = who/why; OE = when/what/how**. The proposed operating model is for NBA to refresh the HCP target list monthly and provide the underlying drivers, while OE consumes that list and adds weekly sequencing, content, channel and cadence. New signals such as Request-a-Rep and New Writers can dynamically supplement that list.|
 
 ---
 
 ## 8. Next steps
 
-1. Collect your feedback (this meeting and comments on this document).
-2. Update the placement dictionary and the plan.
-3. Step 1 (foundations), then Step 2 and Step 3, each tested in the model.
-4. Come back to you with results: which digital features the model keeps and how they rank.
+1. Collect your feedback (this meeting and comments on this document). Answered: A1 – A7 and D3; open: A8, B, C, D1 – D2.
+2. Update the placement dictionary with the smaller vendors as their own entries, and confirm the vendor codes for ConnectiveRx, Nativo and Healthcast.
+3. Get the new data assets (4.4): RAR with follow-up status, New Writers, iVA IDs, Impiricus SMS, formulary wins, the T1D target list (Samantha Meyers), and the OE content mapping / message arc.
+4. Document the internal light / deep engagement rule.
+5. Step 1 (foundations), then Steps 2, 2b and 3, each tested in the model.
+6. Come back to you with results: which digital features the model keeps and how they rank.
 
 ## 9. Background documents (in this folder)
 

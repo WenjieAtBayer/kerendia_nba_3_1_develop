@@ -51,7 +51,7 @@
 ## 4. Design principles for NBA 3.1
 
 1. **One dictionary, fixed.** A placement dictionary (config table) maps `SRC_SYS_CD` + `TACTIC_NAME` (case-insensitive, trimmed, pattern-based) to a fixed **vendor**, **placement** and **channel**. Anything not mapped goes to `OTHER` and is reported, not silently pivoted.
-2. **All Kerendia brand values.** Filter `UPPER(BRND_NM) LIKE '%KERENDIA%'` (as the Digital refresh notebook already does). Keep the indication (HF / CKD / UACR / none) as an optional dimension, not as a filter.
+2. **All Kerendia brand values.** Filter `UPPER(BRND_NM) LIKE '%KERENDIA%'` (as the Digital refresh notebook already does). Keep the indication (HF / T1D / CKD) as a dimension, not as a filter, next to the Kerendia total.
 3. **One source per activity.** HQ email from one source only; iRep email only in the personal block; journey codes in the HQ email vendor column (`COPAY`, `KERENDIA_FTO`, vouchers) mapped to HQ email, not treated as vendors.
 4. **Documented engagement levels.** Use OE's R / I / E definition per vendor metric (flag file and `mdb_prep_config.xlsx`) where event data exists; write down our internal MMX light / deep rule per vendor metric and document a crosswalk between MMX exposure / light / deep and OE's R / I / E.
 5. **NPI and month, aligned to the anchor.** Keep NPI and monthly grain; windows end at the last **complete** month before the anchor date; include the first lookback month; no `RUNNING_` features with a moving start (replace with fixed 12-month windows).
@@ -180,7 +180,7 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | Q1 | Source of truth for HQ email | Notebook 15 email event log; drop HQ email from the MMX block | NBA team |
 | Q2 | Where iRep email lives | Personal promotional block only | NBA team |
 | Q3 | Definitions of MMX "light" and "deep" engagement | Answered: these are our internal engagement definitions, not vendor-reported (digital team meeting, Oct 2026). Next: write down the rule per vendor metric and map it to OE's R / I / E; until then use exposure and total engagement only | NBA and digital teams |
-| Q4 | Keep indication (HF / CKD / UACR) as a dimension? | Build at total level only in v1; test later if HF and CKD messaging differ | NBA and brand teams |
+| Q4 | Keep indication (HF / T1D / CKD) as a dimension? | Answered: yes (digital team meeting, Oct 2026). Keep the Kerendia total and add indication as a dimension, following the Q4 target-list rule (HF = cardiologists, T1D = T1D target list, CKD = remaining HCPs). Needs the T1D target-list file (Samantha Meyers) | NBA and brand teams |
 | Q5 | Training window relative to the OE roll-out | Decide after O1 | NBA team |
 | Q6 | Owner of the placement dictionary and content tagging file updates | Digital team, with a monthly check of unmapped rows | Digital team |
 | Q7 | Use OE recommendations as an NBA input | Not in v1; revisit after O1 | NBA and OE teams |

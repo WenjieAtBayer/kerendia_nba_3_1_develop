@@ -47,7 +47,7 @@ The data comes from Bayer's marketing-mix table ("MMX"), which collects reports 
 | `EXPOSURE` | Number of times the doctor was shown / sent the content | 5 |
 | `LIGHT_ENGAGEMENT` | Number of small interactions (for example opening or viewing) | 2 |
 | `DEEP_ENGAGEMENT` | Number of strong interactions (for example clicking through to read more) | 1 |
-| `TOTAL_ENGAGEMENT` | Number of interactions overall, as reported by the vendor | 2 |
+| `TOTAL_ENGAGEMENT` | Number of interactions overall, by our internal engagement definition (not vendor-reported) | 2 |
 
 "Light" and "deep" engagement are **our internal definitions of engagement**, applied when the MMX table is built; they are **not** reported by the vendors, and they are not decided in this notebook. The rule for each vendor metric is not yet written down next to the NBA features. One thing is visible in the data: total is **not** always light + deep. The notebook includes a check of HQ emails by month, and there total equals light every month (for example March 2026: light 26,341, total 26,341, deep 1,446). Document the internal rule per vendor metric before combining these measures.
 

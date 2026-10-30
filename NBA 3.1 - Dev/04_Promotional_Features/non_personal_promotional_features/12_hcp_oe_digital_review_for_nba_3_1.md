@@ -166,9 +166,9 @@ The HQ email and iRep email features are vendor-level in the MMX table (`SRC_SYS
 | Topic | NBA 3.0 (`24_Features_Digital` and model `f583bcbc...`) | OE 2.0 |
 | --- | --- | --- |
 | Model | LightGBM, Tweedie objective, 752 features, target `TARGET` | TensorFlow CNN + dense, journey + 2,176 features, target `TOTAL_NBRX_C4` |
-| Main digital source | MMX aggregate table (vendor-reported totals) | Event-level non-personal promotion table, plus MMX for gaps |
+| Main digital source | MMX aggregate table (vendor activity, aggregated) | Event-level non-personal promotion table, plus MMX for gaps |
 | Doctor key | NPI | BH_ID (NPI through `kerendia_oe_npi_bhid_mapping_inference`) |
-| Definition of exposure / engagement | Light / deep / total as reported by vendors, not documented | R / I / E fixed per vendor metric in a mapping file (160 rules) |
+| Definition of exposure / engagement | Light / deep / total by our internal engagement definition (not vendor-reported); rule per vendor metric not documented | R / I / E fixed per vendor metric in a mapping file (160 rules) |
 | Channel detail | Channel (5), vendor (about 18), tactic (15 labels) as separate pivots | Vendor + placement combined (for example `DOXIMITY_DOCSPOT`), 51 channels in the journey |
 | Content | None | 14 to 21 content categories from litcode tagging |
 | Time windows | 1, 3, 6 months and running total | P3 for event metrics; 1, 2, 3, 6, 12 months for `DIGITAL_` |

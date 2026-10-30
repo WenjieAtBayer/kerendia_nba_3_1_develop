@@ -357,7 +357,7 @@ All new features need history: key messages from July 2025, co-detail from Janua
 | Q-A5 | | |
 | Q-A6 | | |
 | Q-B1 | Yes. `Analytical Model` = our Kerendia NBA output (`Kerendia NBA ML Alert`, `Kerendia NBA NW Alert`), same names and text as `kerendia_nba_3.kerendia_veeva_nba_alerts_pilot`, posted on the NBA cycle date, 99.9% HCP match. Content owner = NBA team (file built in Databricks); `DIM_SUGGESTION` itself is the data team's Veeva copy (`PROC_SURVEYNSUGGESTION`). `Business Rule` = other use cases (iRep engagement until Jun 2025, `Weekly New Writer` since May 2026; owner to confirm). See 6.5. | My check, 28 Oct 2026 (to confirm owner of `Weekly New Writer` with the data team) |
-| Q-B2 | | |
+| Q-B2 | Yes: an MSL interaction flag is within compliance. Built as MD-1 in `40_field_activity_nba_3_1_readiness_plan.md`; anything beyond a flag needs a separate confirmation | Wenjie Chen, 30 Oct 2026 |
 | Q-B3 | | |
 | Q-C1 | | |
 | Q-C2 | | |

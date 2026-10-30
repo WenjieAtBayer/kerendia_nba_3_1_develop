@@ -27,8 +27,9 @@ This folder explains the **personal** features: promotion delivered by people, m
 | --- | --- | --- |
 | `00` | This guide, and the key ideas shared by all channels (section 0) | `00_README_folder_guide.md` |
 | `10` – `14` | How each NBA 3.0 channel's features are built (legacy, from the notebook code) | `10_sales_rep_calls_nba_3_0.md`, `11_bho_calls_nba_3_0.md`, `12_irep_emails_nba_3_0.md`, `13_clickstream_clm_nba_3_0.md`, `14_speaker_programs_nba_3_0.md` |
-| `20` – `29` | Data reviews of the last two years (Nov 2024 – Oct 2026), with trends, gaps and open questions for NBA 3.1 | `20_field_activity_data_review_2024_2026.md` (calls, BHO, iRep, speaker programs, plus unused Veeva tables), `21_clickstream_clm_data_review_2024_2026.md` (CLM / iVA) |
+| `20` – `29` | Data reviews of the last two years (Nov 2024 – Oct 2026), with trends, gaps and open questions for NBA 3.1 | `20_field_activity_data_review_2024_2026.md` (calls, BHO, iRep, speaker programs, plus unused Veeva tables), `21_clickstream_clm_data_review_2024_2026.md` (CLM / iVA), `22_samples_reconciliation_call_vs_shipped_dropped_2024_2026.md` (call-level samples vs shipped / dropped table, strength) |
 | `30` – `39` | Briefings for partner teams (plain-language summary of current state and NBA 3.1 proposals, with questions and an answers table) | `30_field_analytics_team_briefing_nba_3_1.md` (Field Analytics team, meeting 29 Oct 2026) |
+| `40` – `49` | NBA 3.1 readiness plans (scope, data model, phased work plan, experiments, gates, decisions) | `40_field_activity_nba_3_1_readiness_plan.md` |
 
 Files were renamed on 28 October 2026 (old names: `00_introduction.md`, `sales_rep_calls.md`, `bho_calls.md`, `irep_emails.md`, `clickstream_clm.md`, `speaker_programs.md`, `clickstream_clm_data_review_2024_2026.md`).
 

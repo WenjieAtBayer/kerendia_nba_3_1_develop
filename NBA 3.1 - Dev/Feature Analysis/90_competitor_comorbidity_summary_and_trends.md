@@ -4,6 +4,55 @@ This document summarises the two feature families most directly tied to the Kere
 
 Detailed per-family analysis and change specs are in files `01–02` (comorbidity) and `09–10` (competitor). The adoption-speed features (Invokana / Farxiga adoption, files `03–04`) are adjacent to the competitor family and are summarised briefly here.
 
+*This document was updated in November 2026 to incorporate competitive intelligence from the internal CI Report (Joshua Buffington, 9/24/26), which provides the market context for why the existing features are insufficient and what new signals NBA 3.1 should capture.*
+
+---
+
+## 0. Why the Existing Features Are Insufficient: Competitive Context
+
+NBA 3.0's competitor and comorbidity features were designed around a static picture of the CKD market in 2022–2023. The competitive landscape in 2026 has changed materially on five dimensions, each pointing to specific feature gaps.
+
+### 0.1 The SGLT2 market was restructured by generic dapagliflozin (April 2026 LOE)
+
+Farxiga lost exclusivity on April 6, 2026. Generic dapagliflozin entered at roughly \$40/month, pulling SGLT2 out-of-pocket costs sharply lower. Our trend data (Section 2) confirms this: Farxiga NBRx surged from ~90K to ~373K in a single month, then stabilised above 280K — purely from generic volume, not new brand prescribing.
+
+**Feature impact.** NBA 3.0's `PERC_FARXIGA_NBRX_SHARE` now blends brand advocacy (early SGLT2 adopter signal) with generic cost-driven prescribing (very different HCP behaviour). An HCP who shifted their T2D patients to cheap generic dapagliflozin will look identical in the feature to one who has used brand Farxiga for CKD patients for years. Neither is distinguished by the current feature because (a) no indication-group filter separates CKD from T2D use, and (b) the IQVIA labels `FARXIGA BRAND` and `FARXIGA GENERICS` are collapsed into one group.
+
+**Positive signal for Kerendia.** The CI report notes this as a HIGH-impact opportunity: lower polypharmacy cost reduces the objection to adding Kerendia. An HCP's patients whose SGLT2i cost just fell by \$100+/month now have more budget headroom for Kerendia. A feature tracking the OOP cost environment or the generic transition timing for the HCP's patients could eventually quantify this.
+
+### 0.2 Entresto went generic (July 2025) — a new HF adoption signal
+
+Entresto (sacubitril/valsartan) lost exclusivity in July 2025, with generics available at ~\$40/month. HCPs who adopted Entresto early — before the LOE, when it was expensive — are archetypal early adopters of evidence-based HF therapy. These are exactly the HCPs NBA 3.1 needs to identify for its new HF (LVEF ≥ 40%) indication.
+
+NBA 3.0 built the `TIME_TO_ADOPT_FARXIGA` adoption feature (rank 13, 1.10% SHAP) which proved very powerful. The same logic applied to Entresto captures the HF-practice dimension that the current feature set entirely lacks.
+
+### 0.3 Baxfendy (baxdrostat) is now a live competitor — and NBA 3.0 cannot see it
+
+AstraZeneca's baxdrostat (Baxfendy) was approved for resistant hypertension in May 2026. As of the CI report date:
+- 4,712 HCPs have prescribed it; 898 weekly NBRx and climbing
+- 71% of prescribers are PCPs, 41% are outside our targeted segment
+- Sits at Step 4 (resistant HTN after three first-line agents fail) — **later-line than Kerendia today**
+- AstraZeneca's BaxDuo-CKD trial (baxdrostat + dapagliflozin) reads out ~Feb 2028; BaxDuo-Pacific (5,000 patients) ~2029
+
+Baxfendy prescribers fall into two NBA-relevant groups: (a) Kerendia-segment HCPs who are already managing aldosterone-pathway disease — a high-propensity group — and (b) non-target PCPs outside our footprint who may accumulate MRA-class experience. NBA 3.0 has no Baxfendy feature whatsoever. By the time NBA 3.2 is trained, Baxfendy could have a CKD indication, making this gap more serious.
+
+**Steroidal MRA parallel.** The CI report confirms that the ACC ECDP HFpEF algorithm allows steroidal MRAs (spironolactone, eplerenone) as a cost/tolerance alternative to nsMRAs. HCPs who already prescribe spironolactone or eplerenone for CKD/HF patients are the closest analogue to Kerendia adopters — exactly the signal the adoption-speed recommendations (file 04) propose. The CI report validates this direction independently.
+
+### 0.4 EASi-KIDNEY failed — but the ASI threat resurfaces in 2028
+
+Boehringer's vicadrostat EASi-KIDNEY trial was discontinued for **futility** on September 15, 2026. This is a clear near-term positive: no ASI holds hard-outcome CKD data. Kerendia has an uncontested runway until roughly February 2028 (BaxDuo-CKD readout). However:
+- Three Boehringer EASi studies continue in HF (EASi-HF Preserved, EASi-HF Reduced, EASi-PROTKT)
+- ASI trials **exclude MRAs from enrollment**, affecting 19% of US zip codes and 54,100 patients globally
+- NBRx in affected zip codes is currently tracking non-affected areas (low drag), but this could change if an ASI reaches a hard endpoint
+
+**Geographic feature implication.** The CI report identifies a geographic trial enrollment effect. A zip-code-level trial enrollment flag (is the HCP's practice area an active ASI trial site?) could serve as a risk/opportunity signal in NBA 3.1.
+
+### 0.5 GLP-1 guideline upgrades create an incretin competitor for the HFpEF prescribing moment
+
+The 2026 ESC and ACC guidelines both recommend semaglutide or tirzepatide in HFpEF at BMI ≥ 30, though neither carries an FDA HF indication — prescribing remains off-label. Wegovy OOP cost has risen above \$490/90 days, constraining adoption. Finerenone's Class I FDA-approved HF indication (LVEF ≥ 40%) is a stronger positioning.
+
+**Feature implication.** HCPs who prescribe GLP-1 (Ozempic, Wegovy, Mounjaro/Zepbound) in HF-relevant patient populations are treating the same comorbid profile (obese HFpEF with T2D) that Kerendia now covers. Tracking GLP-1 prescribing with HF-linked indications is a new signal NBA 3.0 cannot see.
+
 ---
 
 ## 1. NBA 3.0 Status at a Glance
@@ -82,15 +131,17 @@ Data source: `KERENDIA_LAAD_BASED_LRX_V6`, PERIOD_TYPE = W, all indication group
 
 **Key observations:**
 
-1. **Farxiga generic surge.** Farxiga (brand + generic) volume roughly doubled from late 2025 into 2026, driven by the generic dapagliflozin launch. The NBA 3.0 notebook uses `LIKE '%FARXIGA%'` which captures both `FARXIGA BRAND` and `FARXIGA GENERICS`, so the feature correctly reflects this growth. However, the share denominator now includes a much larger Farxiga volume, which mechanically depresses the Jardiance share even if Jardiance prescribing did not change.
+1. **Farxiga generic surge (Farxiga LOE: April 6, 2026).** Generic dapagliflozin entered at ~\$40/month, causing Farxiga NBRx to surge from ~90K to ~373K in May 2026, then stabilise above 280K. The NBA 3.0 notebook uses `LIKE '%FARXIGA%'` capturing both `FARXIGA BRAND` and `FARXIGA GENERICS`, so the raw count reflects this growth. However, the share denominator now includes massive generic volume, mechanically depressing the Jardiance share even if Jardiance prescribing was flat. More critically, the feature no longer distinguishes brand Farxiga advocacy (early CKD SGLT2 adopter) from generic dapagliflozin cost-switching (broad T2D use).
 
 2. **Jardiance relatively stable.** Monthly NBRx ranges from ~93K (Sep 2026, which appears partially incomplete) to ~191K. The seasonal dip in Q2 and Q4 is consistent across years. Jardiance is consistently the largest single branded SGLT2 in the market.
 
 3. **Kerendia growing modestly.** Monthly NBRx grew from ~6.3K (Nov 2024) to ~9.4K (Aug 2026), a ~49% increase over two years. HCPs writing Kerendia grew from ~17.8K to ~28.3K over the same period. This growth is meaningful but from a very small base relative to Jardiance (≈6% of Jardiance’s volume).
 
-4. **Invokana and Steglatro declining to near-zero.** Invokana dropped from 1.6K to <0.5K per month; Steglatro from 1.3K to <0.3K. Both remain in the NBA 3.0 feature denominator, diluting it without contributing signal.
+4. **Invokana and Steglatro declining to near-zero.** Invokana dropped from 1.6K to <0.5K per month; Steglatro from 1.3K to <0.3K. Both remain in the NBA 3.0 feature denominator, diluting it without signal.
 
-5. **Indication scope caveat.** For Oct 2025–Sep 2026, the INDICATION_GROUP breakdown shows:
+5. **Baxfendy (baxdrostat) is absent from all features.** As of the CI report (9/24/26), 4,712 HCPs have prescribed Baxfendy (898 weekly NBRx, growing). It is not in `KERENDIA_LAAD_BASED_LRX_V6` under any of the four tracked product groups. NBA 3.0 has no visibility into this emerging MRA-class competitor.
+
+6. **Indication scope caveat.** For Oct 2025–Sep 2026, the INDICATION_GROUP breakdown shows:
    - Jardiance: ~15% of NBRx labeled CKD-containing; ~40% T2D+CVD or T2D, ~12% HF-related
    - Farxiga: ~32% labeled CKD-containing; ~40% T2D+CVD or T2D, ~16% HF (CVD+HF, T2D+CVD+HF, CKD+CVD+HF)
    - Kerendia: ~57% labeled CKD-containing + multi-indication; ~24% T2D alone or T2D+CVD
@@ -183,6 +234,20 @@ Data source: NBA 3.0 comorbidity output at `/Volumes/.../kerendia_nba_3_hcp_mode
 | L2 | Drop Invokana and Steglatro from competitor denominator, or mark as low-priority in selection | Competitor | Both near-zero by 2026. Keep in drug list for completeness but set low selection priority |
 | L3 | Drop this notebook’s IQVIA channel features (05–06) | Channel | Superseded 0.94–0.99 by `1_Additional_HCP_level_features`, which is already in the 752 |
 
+### New features motivated by the CI report
+
+The CI report (Section 0) identifies five competitive developments that translate directly into new feature candidates. These are additive to the priority list above.
+
+| # | Feature / Signal | Source | CI motivation | Effort |
+| --- | --- | --- | --- | --- |
+| C1 | `PERC_FARXIGA_BRAND_NBRX_SHARE_CKD` vs `PERC_FARXIGA_GENERIC_NBRX_SHARE_CKD` | LRx (`FARXIGA BRAND` / `FARXIGA GENERICS` separately, CKD-scoped) | Farxiga LOE Apr 2026 mixed the brand-adoption signal with generic cost-switching. Splitting by IQVIA label recovers the early-adopter signal | Quick win (label split already in data) |
+| C2 | `TIME_TO_ADOPT_ENTRESTO` and `MIN_DAYS_TO_PRESCRIBE_ENTRESTO_POST_FIRST_CKD_DIAGNOSIS_ANY_HCP` | LAAD Rx (`Rx_01_new`) | Entresto LOE Jul 2025. HCPs who adopted Entresto early are archetypal evidence-based HF adopters. Same logic as `TIME_TO_ADOPT_FARXIGA` (rank 13, 1.10% SHAP) applied to the HF indication population (already included in adoption file 04) | Quick win (adoption notebook already extended) |
+| C3 | `PERC_BAXFENDY_NBRX_SHARE` / `TIME_TO_ADOPT_BAXFENDY` | LRx (`BAXFENDY` or `BAXDROSTAT`) | 4,712 HCPs already prescribing Baxfendy (898 weekly NBRx). Early Baxfendy adopters are MRA-class-aware; 20% are in Kerendia Segment A. NBA 3.0 cannot see them at all. By the time NBA 3.2 is trained, Baxfendy may have a CKD indication | Medium (confirm product in LRx feed first) |
+| C4 | GLP-1 NBRx with HF-labeled indication | LRx (semaglutide, tirzepatide, INDICATION_GROUP contains HF) | ESC/ACC 2026 guidelines both name semaglutide/tirzepatide in HFpEF. HCPs prescribing GLP-1 in HF patients treat the same obese HFpEF + T2D profile now covered by Kerendia's new HF indication | Medium |
+| C5 | ASI trial zip-code enrollment flag | ClinicalTrials.gov zip codes joined to HCP zip | ASI trials exclude MRAs, affecting 19% of US zip codes. Flagging HCPs in active trial zones identifies either at-risk patients (temporarily ineligible) or post-trial opportunity pools | Low (requires external data) |
+
+*C1 and C2 are the highest-priority CI-motivated additions and both reuse existing infrastructure.*
+
 ---
 
 ## 6. Summary Table: NBA 3.0 → NBA 3.1 Column Change
@@ -190,7 +255,7 @@ Data source: NBA 3.0 comorbidity output at `/Volumes/.../kerendia_nba_3_hcp_mode
 | Family | NBA 3.0 columns | Drop | Rebuild / keep | Add new | NBA 3.1 target |
 | --- | --- | --- | --- | --- | --- |
 | Comorbidity / Dx | 39 | 30 | 2 (running totals, fixed window) + 1 (12M share, rebuilt) | 12 (indication mix × NUM+PCT, stage shares, log-ratio) | ~15 |
-| Competitor NBRx share | 9 | 3 (Invokana/Steglatro shares + total count) | 3 (Jardiance + Farxiga 12M share + count, CKD-scoped) | ~12 (CKD scope, 3M window, steroidal MRA) | ~15 |
+| Competitor NBRx share | 9 | 3 (Invokana/Steglatro shares + total count) | 3 (Jardiance + Farxiga 12M share + count, CKD-scoped) | ~14 (CKD scope, 3M window, steroidal MRA, brand/generic split [C1], Baxfendy [C3], GLP-1 HF [C4]) | ~17 |
 | Adoption speed | 2 | 1 (TIME_TO_ADOPT_INVOKANA) | 1 (TIME_TO_ADOPT_FARXIGA, renamed + cohort-fixed) | 13 (3 variants × 4–5 drugs) | 14 |
 
 ---
@@ -204,3 +269,8 @@ Data source: NBA 3.0 comorbidity output at `/Volumes/.../kerendia_nba_3_hcp_mode
 | Q3 | Are the competitor share features currently in the 752-feature model? (check `Final NBA 3.0 Modeling Features.xlsx`) | Modelling team |
 | Q4 | For the CKD-scoped competitor features, which INDICATION_GROUP values should be included? Proposed list: CKD, T2D+CKD, T2D+CKD+CVD, T2D+CKD+HF, T2D+CKD+CVD+HF, CKD+CVD, CKD+HF, CKD+CVD+HF. Any others? | BA / Medical |
 | Q5 | Should generic dapagliflozin be explicitly added to the Farxiga product group in the LRx pull, or is the LIKE '%FARXIGA%' filter sufficient? (Currently `FARXIGA GENERICS` is the IQVIA label; check if this changes again with wider generic availability.) | Data engineering |
+| Q6 | Is Baxfendy (baxdrostat) yet visible in `KERENDIA_LAAD_BASED_LRX_V6` as a PRODUCT_GROUP? Approved May 2026; 4,712 HCPs prescribing per CI report. If not yet in the feed, when is the first expected data date? | Data engineering |
+| Q7 | For the Entresto adoption-speed feature (C2): should the clock start from the Entresto FDA approval date (2015) or from the HF-specific indication? Given LAAD data starts Jan 2021, both would be left-censored; the `MIN_DAYS...ANY_HCP` variant (feature #3 in file 04) avoids the launch-date issue. | Modelling team |
+| Q8 | CI report notes Baxfendy Segment A overlap is 20% (932 of 4,712 prescribers). Can the field team confirm whether those 932 HCPs are Kerendia writers and whether Baxfendy prescribing preceded or followed Kerendia adoption? | Field / BA |
+
+*Source for sections 0 and 5 (CI items): CI Report, Joshua Buffington PharmD, September 24, 2026 (internal). IQVIA LAAD; 2026 ESC Heart Failure Guidelines; 2025 AHA/ACC BP Guideline; ClinicalTrials.gov NCT06268873, NCT06742723, NCT06677060, NCT06424288; Boehringer EASi-KIDNEY statement Sept 15 2026.*

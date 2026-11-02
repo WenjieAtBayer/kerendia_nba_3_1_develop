@@ -6,12 +6,12 @@ NBA 3.1 scope: the model target is the HCP's **Kerendia NBRx in the 30-day predi
 
 SHAP ranks and shares come from `Final NBA 3.0 Modeling Features.xlsx` (752 features, mean absolute SHAP).
 
-**How the signal was measured (backtest).** Features were taken as of June 2026 (lookback end 2026-06-30). The target is "the HCP wrote at least one Kerendia NBRx in August 2026" (one-month gap, as in production), from `KERENDIA_LAAD_BASED_LRX_V6` with `PRODUCT_GROUP = 'KERENDIA'`. Population: the 234,405 HCPs in the ops universe, base rate 2.87%.
+**How the signal was measured (backtest).** Features were taken as of June 2026 (lookback end 2026-06-30). The target is "the HCP wrote at least one Kerendia NBRx in August 2026" (one-month gap, as in production), from `KERENDIA_LAAD_BASED_LRX_V6` with `PRODUCT_GROUP = 'KERENDIA'`. Population: the 314,920 HCPs in the NBA 3.1 universe (`kerendia_nba_3_1_volume/HCP_Universe/`), 6,704 writers, base rate 2.13%.
 
 * **AUC**: the chance that a random writer has a higher value than a random non-writer. 0.50 = no signal. Below 0.50 means lower values go with more writers, shown as "(inverse)".
 * **AUC in size**: median AUC inside 3 equal groups of all-market NBRx (January to June 2026). It shows signal that is not just "bigger HCP".
-* **Prior writers**: 46,915 HCPs (20%) with any Kerendia NBRx from January 2023 to June 2026. Their August writer rate is 11.1%.
-* **New writers**: the other 187,490 HCPs. Their writer rate is 0.8%, but they supply 22% of August writers.
+* **Prior writers**: 46,834 HCPs (14.9%) with any Kerendia NBRx from January 2023 to June 2026. Their August writer rate is 11.2%.
+* **New writers**: the other 268,086 HCPs. Their writer rate is 0.55%, but they supply 22.0% of August writers.
 
 ---
 
@@ -25,7 +25,7 @@ SHAP ranks and shares come from `Final NBA 3.0 Modeling Features.xlsx` (752 feat
 
 ### 1.1 The current features repeat `26_Features_NBRx` (#1)
 
-`26_Features_NBRx` reads the same LRx table (paid claims), pivots `PRODUCT_GROUP`, and builds 1/3/6/12-month and running totals. For the scoring month (September 2026), the Kerendia NBRx over the last 1, 3 and 6 months from `10_kerendia_prior_writing` matches `TOTAL_HCP_NBRX_CLAIMS_PRODUCT_GROUP_KERENDIA_IN_LAST_{1,3,6}_MONTH` for all 234,403 universe HCPs (0 differences). The 2, 4 and 5-month windows are adjacent windows of the same count. The Kerendia columns from `26_Features_NBRx` are already the strongest prior-writing features in the 752:
+`26_Features_NBRx` reads the same LRx table (paid claims), pivots `PRODUCT_GROUP`, and builds 1/3/6/12-month and running totals. For the scoring month (September 2026), the Kerendia NBRx over the last 1, 3 and 6 months from `10_kerendia_prior_writing` matches `TOTAL_HCP_NBRX_CLAIMS_PRODUCT_GROUP_KERENDIA_IN_LAST_{1,3,6}_MONTH` for all 234,403 HCPs in both NBA 3.0 output tables (0 differences; these tables only cover the NBA 3.0 ops universe). The 2, 4 and 5-month windows are adjacent windows of the same count. The Kerendia columns from `26_Features_NBRx` are already the strongest prior-writing features in the 752:
 
 | Feature in the 752 | Rank | SHAP share |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ SHAP ranks and shares come from `Final NBA 3.0 Modeling Features.xlsx` (752 feat
 
 The 12 Kerendia product-group features from `26_Features_NBRx` (NBRx, NRx, TRx) hold 4.6% of SHAP together. Kerendia recency is also covered by `KERENDIA_RX_TIME_MIN` (rank 3).
 
-Backtest of the paid Kerendia NBRx counts (June 2026 features, August 2026 target): AUC 0.650 / 0.739 / 0.787 / 0.820 for 1 / 3 / 6 / 12 months, 0.642 / 0.745 / 0.791 / 0.825 within size groups. This signal is already in the model through `26_Features_NBRx`.
+Backtest of the paid Kerendia NBRx counts (June 2026 features, August 2026 target): AUC 0.652 / 0.744 / 0.794 / 0.830 for 1 / 3 / 6 / 12 months, 0.626 / 0.735 / 0.783 / 0.819 within size groups. This signal is already in the model through `26_Features_NBRx`.
 
 **Decision**: keep `10_kerendia_prior_writing`, but stop building it from LRx V6. Rebuild it from the all-claims source in 1.2 so that it adds information instead of repeating `26_Features_NBRx`.
 
@@ -121,7 +121,7 @@ The paid columns (`NBRX_KERENDIA_PD`, `TRX_KERENDIA_PD`) are not features. They 
 
 ### 1.3 Window count (#3)
 
-Adjacent N-month windows share most of their months (for example 5M and 6M share 5 of 6 months), so they carry nearly the same information. The Kerendia NBRx counts gain signal mostly between 1, 3, 6 and 12 months (AUC 0.65, 0.74, 0.79, 0.82).
+Adjacent N-month windows share most of their months (for example 5M and 6M share 5 of 6 months), so they carry nearly the same information. The Kerendia NBRx counts gain signal mostly between 1, 3, 6 and 12 months (AUC 0.65, 0.74, 0.79, 0.83).
 
 **Decision**: the rebuilt `KERENDIA_NBRX_IN_LAST_{N}_MONTH` and `KERENDIA_TRX_IN_LAST_{N}_MONTH` keep the 1 to 6-month format of the NBA 3.0 table, and so do the rejected, reversed and approved versions. Feature selection drops the redundant windows and groups.
 

@@ -4,14 +4,14 @@
 **Purpose:** a step-by-step plan to turn HCP digital into a clean, stable and tested feature block for NBA 3.1  
 **Builds on:** `01_digital_entity_map_vendor_channel_tactic_content.md` (the map), `10_hcp_digital_paid_media_nba_3_0.md`, `11_hcp_hq_emails_nba_3_0.md`, `12_hcp_oe_digital_review_for_nba_3_1.md`, `30_nba_3_1_proposed_additional_features.md` (sections 1 and 2)  
 **NBA 3.1 notebooks concerned:** `04_Promotional_Features/24_Features_Digital`, `04_Promotional_Features/15_promotional_features_HQ_Emails`  
-**Status:** draft for discussion  
+**Status:** draft for discussion; the overall digital plan (all families, including high-intent signals and DTC) is `50_digital_nba_3_1_readiness_plan.md`, and this file holds the detailed HCP paid-media tasks  
 **Date:** October 26, 2026
 
 ## 1. Scope
 
 | In scope | Out of scope (owned elsewhere) |
 | --- | --- |
-| **Paid media to doctors** from the MMX table: Banner, 3rd Party Email, Custom (all vendors and placements) | **DTC** consumer media (`20_dtc_direct_buy_social_nba_3_0.md`); kept as in NBA 3.0 for now |
+| **Paid media to doctors** from the MMX table: Banner, 3rd Party Email, Custom (all vendors and placements) | **DTC** consumer media (`20_dtc_direct_buy_social_nba_3_0.md`, `21_...`); DTC refresh planned in `50_...` section 4.2. **High-intent signals** (Request-a-Rep, New Writers, formulary wins, Impiricus SMS): `50_...` section 4.1 |
 | **HQ emails** (Bayer head-office email, SFMC) from the MMX table and the email event log (`HCP_EMAIL_LIST`) | **iRep email** (rep-sent): owned by the personal promotional features (`personal_promotional_features/irep_emails.md`); removed from the digital block to avoid double counting |
 | Content of digital touches (OE content tagging) | Clickstream / CLM (personal features) |
 | Interaction with OE 2.0 (period effect of the roll-out) | Changing OE itself |
@@ -87,11 +87,11 @@ From the entity map. Rows are MMX rows January 2025 to October 2026, all Kerendi
 | Banner | Doceree | EHR banner | `EHR Banner` | 834k | No (journey only) |
 | Banner | PeerDirect | MDFI / MD Minute / MD Shuffle / PV Compendium banner | `* - Banner`, `MD Minute`, `MDFI` in Banner channel | 67k | No (journey only) |
 | Banner | OpenEvidence | Direct banner | `Direct Banner` | 26k | No |
-| Banner | Other banner | Biopharm, ConnectiveRx, Nativo, Haymarket, ... | (empty), campaign names | 474k | No |
+| Banner | Biopharm, Haymarket, ReachMD, ConnectiveRx, Nativo, ... (**one entry per vendor**) | Banner | (empty), campaign names | 474k in total (Biopharm 301k, Haymarket 11k, ReachMD 2k) | No |
 | 3rd Party Email | Medscape | Email Alert | `Email Alert`, (empty), `Formulary Access Package`, `Digital Data Trends` | 1.75M | Yes (`MEDSCAPE_3RD_PARTY_EMAIL`) |
 | 3rd Party Email | PeerDirect | MDFI email | `MDFI - Email`, `MDFI` | 493k | Yes (`PEERDIRECT_MDFI_EMAIL`) |
 | 3rd Party Email | PeerDirect | MD Minute email | `MD Minute - Email`, `MD Minute` | 266k | Yes (`PEERDIRECT_MD_MINUTE_EMAIL`) |
-| 3rd Party Email | Other 3rd-party email | Haymarket, Biopharm, MJH, Healthcast | campaign names, (empty) | 460k | No |
+| 3rd Party Email | Haymarket, Biopharm, MJH, Healthcast (**one entry per vendor**) | 3rd-party email | campaign names, (empty) | 460k in total (Haymarket 245k, Biopharm 190k, MJH 13k) | No |
 | Custom | Doximity | DocNews | `DocNews` | 1.14M | Yes |
 | Custom | Doximity | DocPoint | `DocPoint` | 133k | Yes |
 | Custom | Doximity | DocSpot | `DocSpot` | 112k | Yes |
@@ -105,10 +105,10 @@ From the entity map. Rows are MMX rows January 2025 to October 2026, all Kerendi
 | Custom | Epocrates | Search suggestion | `Search Suggestion` | 55k | No |
 | Custom | Prescriber Point | Monograph | `Monograph` | 115k | No |
 | Custom | PeerDirect | Web (MDFI, MD Minute, MD Shuffle, PV Compendium) | `* - Web`, `MD Minute`, `MDFI` in Custom channel | 34k | Yes (`PEERDIRECT_MDFI_WEB`) |
-| Custom | Other custom | ReachMD, Impiricus, MD Calc, Haymarket, MJH | various | 71k | No |
+| Custom | ReachMD, Impiricus (SMS messages), MD Calc, Haymarket, MJH (**one entry per vendor**) | Custom / SMS | various | 71k in total (ReachMD 25k, Impiricus 12k, MD Calc 11k, Haymarket 3k) | No (Impiricus SMS in Q4 OE scope) |
 | HQ Email | Bayer HQ (SFMC) | HQ email | vendor `HQ EMAIL` and journey codes | 9.37M | Yes (`SFMC_HQ_EMAIL`) |
 
-The dictionary must be reviewed with the digital team (vendor and placement names, and whether "Other" groups are acceptable).
+The dictionary must be reviewed with the digital team (vendor and placement names). Following the meeting (A1, A2), **every vendor keeps its own entry**; there are no "Other" vendor groups, and only truly unmapped rows go to `OTHER`. Vendor codes for ConnectiveRx, Nativo and Healthcast still need checking.
 
 ### Phase 1: MMX-based feature block (low risk)
 
@@ -190,7 +190,7 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | Risk | Effect | Mitigation |
 | --- | --- | --- |
 | Vendors rename tactics | Activity moves to `OTHER` | Pattern-based dictionary, unmapped report and alert (F4) |
-| Sparse placements | Many near-zero columns, unstable importance | Group small placements into "Other" per channel; select features |
+| Sparse placements | Many near-zero columns, unstable importance | Keep each vendor on its own (team request); let feature selection drop the ones with no signal and report which were dropped |
 | PulsePoint dominates volume | Totals reflect PulsePoint only | Keep channel and placement features alongside totals; consider totals excluding programmatic display |
 | Different keys (NPI vs BH_ID) | Lost doctors in event-level features | Measure mapping coverage before Phase 2 (G2) |
 | Digital effect is weak in NBA | Little gain whatever the design | Judge on S4 and S5; accept a small block if it does not improve the model |

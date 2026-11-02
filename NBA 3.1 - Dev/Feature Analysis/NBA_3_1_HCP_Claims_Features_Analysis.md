@@ -3,7 +3,10 @@
 **Scope:** the six HCP-level claim notebooks (`01_claim_rx_monthly` … `06_claim_eligible_hcp`) and the six patient-journey notebooks they depend on, all under
 `/Workspace/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`.
 
-**Companion file:** `NBA_3_1_HCP_Claims_Features_Recommendations.md` (what to change, add, or remove for 3.1).
+**Companion files:**
+* `NBA_3_1_HCP_Claims_Features_Recommendations.md` (what to change, add, or remove for 3.1).
+* `NBA_3_1_HCP_Claims_Selected_Features_277.csv` (the 277 selected claim features, with source HCP notebook, feature family, window and patient-journey dependency).
+
 **Structure reference:** `NBA_3_1_Patient_Features_Analysis.md` (patient-level features, Sehar). The patient-level features are a separate pipeline and are not covered here.
 
 **Evidence used**
@@ -40,7 +43,7 @@ Snowflake (IQVIA LAAD Rx/Dx/Px, Quest Lab)
 
 ### 0.3 Feature funnel (claims notebooks only)
 
-| Notebook | Produced cols | Final 752 | Yield | SHAP share of model |
+| Notebook | Produced cols | Final 752 | Modeling Selection (%) | SHAP share of model |
 | --- | --- | --- | --- | --- |
 | NB01 claim_rx_monthly | 5,411 | 172 | 3.2% | 17.5% |
 | NB02 claim_lab_monthly | 116 | 0 | 0% | 0.0% |
@@ -51,6 +54,8 @@ Snowflake (IQVIA LAAD Rx/Dx/Px, Quest Lab)
 | **Total (unique)** | **9,617** | **277** | **2.9%** | **25.1%** |
 
 Notes:
+* Modeling Selection (%) = features in the final 752 / columns produced by the notebook.
+* The full list of the 277 selected features, with the HCP notebook (NB01–NB06) each comes from and the patient-journey notebooks (PJ01–PJ06) it depends on, is in `NBA_3_1_HCP_Claims_Selected_Features_277.csv` (same folder).
 * 2 features (`TOTAL_RX_CLAIMS_IN_LAST_1_MONTH`, `TOTAL_RX_CLAIMS_IN_LAST_12_MONTH`) are produced identically by NB01 and NB04 (100% value match), so the per-notebook counts sum to 279 but the unique count is 277.
 * The claims notebooks produce ~38% of the 25,048 combined columns but ~37% of final features and 25% of SHAP. The other 475 final features come from prior writing, F2F/promotion, HCP demographics, recency, Kerendia claims, NBRx/NRx/TRx, competitor shares, etc.
 * Rank position: 3 of the top 25, 7 of the top 50 and 21 of the top 100 features come from these notebooks. Highest: `RUNNING_TOTAL_RX_CLAIMS_ACE_OR_ARB_COMMERCIAL` (rank 14), `TOTAL_RX_CLAIMS_PATIENT_WITH_1_ACTIVE_TREATMENT_IN_LAST_1_MONTH` (18), `TOTAL_PATIENTS_START_SGLT2_IN_LAST_6_MONTH` (19).
@@ -115,12 +120,128 @@ Folder `Patient_Journey_For_Claim_Eligible_HCP/`. Builds patient × month state 
 
 | # | Notebook | Input | Logic | Output (grain) |
 | --- | --- | --- | --- | --- |
-| 01 | patient_journey_labs | `kerendia_nba_3_0_lab_query_output` (Quest lab via `IQV_QUEST_LAB`; GFR_STAGE, UACR_STAGE) | Forward-fill each test result to the month before the next test | `kerendia_nba_3_0_lab_journey_output` (patient × month: GFR_STAGE, UACR_STAGE) |
+| 01 | patient_journey_labs | `kerendia_nba_3_0_lab_query_output` (Quest lab results from `STG_CAR_IQV_QUEST_TO_LAAD_HIST`, written by `00_Write_Input_Files` cell 61; GFR_STAGE, UACR_STAGE) | Forward-fill each test result to the month before the next test | `kerendia_nba_3_0_lab_journey_output` (patient × month: GFR_STAGE, UACR_STAGE) |
 | 02 | patient_journey_dx | `pat_journey_dx` (LAAD Dx + DIM_DIAGNOSIS; DX_STAGE from description) | Patient × month CKD stage, forward filled; `DX_STAGE_UPDATED` | `df_dx_combine` (patient × month) |
 | 03 | patient_journey_rx | LAAD Rx + product mapping, restricted to HCP universe | 7-day gap buffer, explode SVC_DT→END_DT daily, collapse to patient × month with arrays of TREATMENT_CATEGORY and CATEGORY | `df_rx_clean` (~3.3–3.5B rows) |
 | 04 | patient_journey_t2d_flag | LAAD Dx (`%TYPE 2 DIABETES%`) ∪ LAAD Rx × diabetes product mapping | Patient-level union | `df_t2d_patient` (PATIENT_ID, DIABETIC_FLAG = 1) |
 | 05 | patient_journey_px | LAAD Px × DIM_PROCEDURE (`%DIALYSIS%`) | First dialysis date | `df_px` (PATIENT_ID, FIRST_DIALYSIS_DATE, DIALYSIS_FLAG) |
 | 06 | patient_journey_combine | Outputs of 01–05 | Full-outer join lab + dx + rx on patient × month; add T2D and dialysis flags; derive five tables | See 1.2 |
+
+### GFR and UACR definitions
+
+Two lab measures define a patient's CKD status. Both come from Quest lab results and are staged in `00_Write_Input_Files`.
+
+* **GFR (estimated glomerular filtration rate, eGFR)** measures how well the kidneys filter blood, in mL/min/1.73m². It is calculated from serum creatinine. Lower values mean worse kidney function, and the G stage (CKD stage 1–5) is based on it.
+* **UACR (urine albumin-to-creatinine ratio)** measures albumin leaking into the urine, in mg/g. It is a marker of kidney damage (albuminuria). Higher values mean more damage, and the A stage (A1–A3) is based on it.
+* Kerendia's CKD-with-T2D population is described on both axes (reduced eGFR and/or raised albuminuria), so both measures are carried through the patient journey.
+
+**GFR staging** (standard KDIGO GFR categories)
+
+| GFR range (mL/min/1.73m²) | Stage Description | Stage | KDIGO meaning |
+| --- | --- | --- | --- |
+| 90 – 150 | CHRONIC KIDNEY DISEASE, STAGE 1 | 1 | G1: normal or high |
+| 60 – 89 | CHRONIC KIDNEY DISEASE, STAGE 2 (MILD) | 2 | G2: mildly decreased |
+| 30 – 59 | CHRONIC KIDNEY DISEASE, STAGE 3 (MODERATE) | 3 | G3a (45–59) and G3b (30–44), not split in the code |
+| 15 – 29 | CHRONIC KIDNEY DISEASE, STAGE 4 (SEVERE) | 4 | G4: severely decreased |
+| < 15 | CHRONIC KIDNEY DISEASE, STAGE 5 | 5 | G5: kidney failure |
+| > 150 | Dropped (`IGNORE`) | 0 | Implausible value |
+
+**UACR staging** (standard KDIGO albuminuria categories)
+
+| UACR range (mg/g) | Stage Description | Stage | KDIGO meaning |
+| --- | --- | --- | --- |
+| < 30 | A1 | 1 | Normal to mildly increased |
+| 30 – 299 | A2 | 2 | Moderately increased |
+| ≥ 300 | A3 | 3 | Severely increased |
+
+The same thresholds appear in two places:
+* **Cell 17 (`Lab_03`)** writes the text labels shown above (NB02 turns them into column names such as `STAGE_2_MILD`). It is the input to NB02 and is marked `%skip`, so the current run reuses the previously written `Lab_03` table.
+* **Cell 61 (`kerendia_nba_3_0_lab_query_output`)** writes numeric `GFR_STAGE` (1–5) and `UACR_STAGE` (1–3). It is the active input to `01_patient_journey_labs`. A GFR row has `UACR_STAGE` = null and a UACR row has `GFR_STAGE` = null.
+
+**How a lab result becomes a stage (both cells)**
+1. Source: `PHCDW.PHCDW_STG_CAR.STG_CAR_IQV_QUEST_TO_LAAD_HIST` (Quest results linked to LAAD patient IDs).
+2. Test type from the test name: `GFR` if it contains GFR or GLOMERULAR; `UACR` if it contains ALB or RATIO; all other tests are dropped.
+3. Units kept: `ML/MIN/1.73M2` for GFR; `MCG/MGCREAT`, `MG/GCREAT`, `MG/GCR`, `MG/G{CREAT}` for UACR.
+4. Only plain numeric results are kept. Values containing `<`, `>` or `-` are excluded, so results reported as text such as ">60" or "<15" are dropped. This may under-count the highest and lowest GFR bands.
+5. Ordering HCP primary specialty must be one of FM, FPG, GP, GPM, IFP, IM, IMG, IPM, NRP, PHA, and the NPI must not be null.
+6. Several results for the same patient, HCP, date and test are reduced to their median, and the median is mapped to a stage with the thresholds above.
+7. Cell 61 also keeps only results from 2021-11-30 onward, which is why lab history starts later than Rx/Dx (see 1.3).
+
+**Dx-based CKD stage (input to `02_patient_journey_dx`)**
+
+`pat_journey_dx` (cell 71) assigns `DX_STAGE` from the diagnosis description: "STAGE 1" = 1, "STAGE 2 (MILD)" = 2, "STAGE 3 (MODERATE)" = 3, "STAGE 4 (SEVERE)" = 4, any "STAGE 5" = 5, everything else = 0 (CKD, stage not specified). The ICD code list in that query includes N18.1, N18.2, N18.3, N18.4 and N18.9 but not N18.30, N18.31, N18.32, N18.5 or N18.6. This is the cause of the near-empty Dx stage 3 and missing stage 5 described in 1.3.
+
+**Dx codes per Dx CKD stage**
+
+The cell 71 code list has 163 codes. Applying the description rule above to their standard ICD-9 / ICD-10 descriptions gives:
+
+| Stage Description | Stage | Dx codes | Codes |
+| --- | --- | --- | --- |
+| CHRONIC KIDNEY DISEASE, STAGE 1 | 1 | 1 | N18.1 |
+| CHRONIC KIDNEY DISEASE, STAGE 2 (MILD) | 2 | 1 | N18.2 |
+| CHRONIC KIDNEY DISEASE, STAGE 3 (MODERATE) | 3 | 1 | N18.3 (retired Oct-2020; replaced by N18.30 / N18.31 / N18.32, which are not in the list) |
+| CHRONIC KIDNEY DISEASE, STAGE 4 (SEVERE) | 4 | 1 | N18.4 |
+| Any "STAGE 5" | 5 | 0 | None (N18.5, N18.6, I12.0, I13.11, I13.2 are not in the list) |
+| Everything else (stage not specified) | 0 | 159 | See breakdown below |
+| **Total** | | **163** | |
+
+Breakdown of the 159 stage-0 codes:
+
+| Group | Dx codes | Codes |
+| --- | --- | --- |
+| CKD, stage unspecified | 4 | N18, N18.9, 585, 585.9 |
+| ICD-9 CKD stage I–IV (Roman numerals, so the "STAGE 1" text rule does not match) | 4 | 585.1, 585.2, 585.3, 585.4 |
+| Diabetes with kidney complications | 22 | 249.4x, 250.4x, E08.2x, E09.2x, E11.2x, E13.2x |
+| Hypertensive CKD / heart and CKD | 23 | 403.x, 404.x, I12, I12.9, I13, I13.0, I13.1, I13.10 |
+| Anemia in CKD | 2 | D63.1, 285.21 |
+| Other renal | 2 | 588.81, N25.81 |
+| Transplant / dialysis status | 3 | Z94.0, V42.0, Z99.2 |
+| Not valid diagnosis codes (procedure-style or unrelated values, e.g. 0TY0.0Z0, 5A1.D00Z, 909.xx, G03.xx, 800–889) | 99 | Most of these are probably dropped by the join to `STG_IQVIA_LAAD_DIM_DIAGNOSIS` |
+
+Only 4 of the 163 codes can produce a known Dx stage, and none can produce stage 5. These counts come from the code list and standard ICD descriptions, not from the data. They should be checked against the descriptions in `STG_IQVIA_LAAD_DIM_DIAGNOSIS` (for example, whether IQVIA spells ICD-9 stages as "STAGE I" or "STAGE 1").
+
+**Treatment categories (`TREATMENT_CATEGORY` and `CATEGORY`)**
+
+Rx claims are kept only if the product is in `PHCDW.PHCDW_DSAA.CKD_PRODUCT_MAPPING_VW`, and the mapping's `Treatment_Category` must not be "other" (`00_Write_Input_Files`, Rx_01 cell 6). Each claim then gets two labels:
+* `TREATMENT_CATEGORY`: the drug class.
+* `CATEGORY`: a brand or sub-class label. It is set by product-name rules for SGLT2 brands, spironolactone, DPP-IV and GLP-1, and otherwise equals `TREATMENT_CATEGORY`.
+
+`03_patient_journey_rx` carries both as monthly arrays per patient, and they drive the class/brand features in NB01, NB04 and NB05.
+
+`TREATMENT_CATEGORY` values (9 in the data):
+
+| TREATMENT_CATEGORY | Meaning | Examples | Claims (12M to 2026-08) |
+| --- | --- | --- | --- |
+| ACE/ ARB | Renin-angiotensin system blockers: ACE inhibitors and angiotensin receptor blockers. Standard CKD / hypertension backbone on top of which Kerendia is added | Lisinopril, ramipril, losartan, valsartan | 124.7M |
+| Calcium channel / Beta blocker | Blood-pressure and heart-rate drugs: calcium channel blockers and beta blockers | Amlodipine, diltiazem, metoprolol, carvedilol | 210.7M |
+| Combo drug | Fixed-dose blood-pressure combinations (ARB + diuretic, ACE + diuretic, ACE + CCB, ARB + CCB, BB + diuretic, ARB + BB + diuretic) | Losartan/HCTZ, amlodipine/benazepril | 97.5M |
+| Diuretic_NON_MRA | Diuretics other than MRAs (thiazide and loop diuretics) | HCTZ, chlorthalidone, furosemide | 77.8M |
+| MRA | Steroidal mineralocorticoid receptor antagonists, the class closest to Kerendia (a non-steroidal MRA, which is not in this table) | Spironolactone, eplerenone | 18.2M |
+| SGLT2 | SGLT2 inhibitors, kidney-protective glucose-lowering drugs, recommended alongside RAS blockers in CKD with T2D | Empagliflozin, dapagliflozin, canagliflozin, ertugliflozin | 41.4M |
+| metformin | First-line T2D therapy | Metformin | 71.8M |
+| Insulin | Insulins | Insulin glargine, lispro | 44.5M |
+| Other- glucose mgmt | All other glucose-lowering drugs, including GLP-1 and DPP-IV | Sulfonylureas, TZDs, semaglutide, sitagliptin | 86.8M |
+
+`CATEGORY` values (brand or sub-class):
+
+| CATEGORY | Parent TREATMENT_CATEGORY | Meaning / assignment rule | Claims (12M to 2026-08) |
+| --- | --- | --- | --- |
+| JARDIANCE | SGLT2 | Empagliflozin; product name contains JARDIANCE | 27.7M |
+| FARXIGA | SGLT2 | Dapagliflozin; product name contains FARXIGA | 10.1M |
+| INVOKANA 300MG | SGLT2 | Canagliflozin 300 mg; name contains INVOKANA and strength = 300 MG | 163K |
+| INVOKANA 100MG | SGLT2 | Canagliflozin 100 mg; name contains INVOKANA and strength = 100 MG | 113K |
+| SGLT2 | SGLT2 | All other SGLT2 products: combinations (e.g. Synjardy, Xigduo, Glyxambi) and Steglatro | 3.3M |
+| SPIRONOLACTONE-MRA | MRA (377K under Diuretic_NON_MRA) | Any product whose name contains SPIRONOLACTONE. Spironolactone/HCTZ combinations keep class Diuretic_NON_MRA, so brand and class disagree | 17.3M + 377K |
+| MRA | MRA | Other MRAs, mainly eplerenone | 0.86M |
+| GLP-1 | Other- glucose mgmt (53K under Insulin) | Named GLP-1 RA list: semaglutide (Ozempic, Rybelsus), dulaglutide (Trulicity), liraglutide (Victoza), exenatide (Byetta, Bydureon), lixisenatide (Adlyxin), albiglutide (Tanzeum), and insulin degludec/liraglutide (Xultophy, class Insulin). Tirzepatide (Mounjaro) is not in the list | 48.6M + 53K |
+| DPP-IV | Other- glucose mgmt | Named DPP-4 inhibitor list: sitagliptin (Januvia, Janumet), linagliptin (Tradjenta, Jentadueto), saxagliptin (Onglyza, Kombiglyze), alogliptin (Nesina, Kazano, Oseni) | 8.9M |
+| Same as TREATMENT_CATEGORY | ACE/ ARB, Calcium channel / Beta blocker, Combo drug, Diuretic_NON_MRA, metformin, Insulin, Other- glucose mgmt | No brand rule applies; the class label is reused | See class table |
+| Diuretic + MRA | n/a | Hard-coded in the NB01 / NB04 brand lists but never present in the data | 0 |
+
+Notes:
+* "Other- glucose mgmt" at class level mixes GLP-1, DPP-IV and older agents. The GLP-1 and DPP-IV signal is only visible at `CATEGORY` level.
+* Claim volumes are taken from the Rx_01_new EDA in section 0.6. Class totals are the sums of all brand rows under each class (for example, Diuretic_NON_MRA includes the 377K spironolactone/HCTZ claims and Insulin includes the 53K GLP-1 combination claims).
+* No finerenone (Kerendia), tirzepatide or sotagliflozin claims appear in Rx_01_new (see 0.6).
 
 ### 1.2 Tables produced by 06_patient_journey_combine
 
@@ -165,7 +286,7 @@ Folder `Patient_Journey_For_Claim_Eligible_HCP/`. Builds patient × month state 
 * No stage 5 / ESRD descriptions at all.
 * The top Dx categories (dialysis dependence 31.7M, anemia in CKD 22.9M, T2D with diabetic CKD 18.3M, hypertensive CKD 16.3M, CKD unspecified 6.1M) all map to stage 0.
 
-Stage 3 is clinically the most common CKD stage, so this is a mapping defect, not a population fact. The likely cause is that ICD-10 N18.3 was split into N18.30/N18.31/N18.32 (stage 3 unspecified / 3a / 3b) and these new descriptions do not match the text rule; N18.5/N18.6 (stage 5 / ESRD) appear to be outside the Dx pull. Result: Dx-based stage 3 and stage 5 are almost empty and most CKD patients are "unknown" stage.
+Stage 3 is clinically the most common CKD stage, so this is a mapping defect, not a population fact. The cause is confirmed in the `pat_journey_dx` query (see 1.1.1): ICD-10 N18.3 was split into N18.30/N18.31/N18.32 (stage 3 unspecified / 3a / 3b), and these codes are not in the Dx code list (only legacy N18.3 is). N18.5/N18.6 (stage 5 / ESRD) are also not in the list. Result: Dx-based stage 3 and stage 5 are almost empty and most CKD patients are "unknown" stage.
 
 **Other quirks**
 * 01_labs: `na.fill({"LAST_TEST_DATE": end_date_limit})` silently does nothing on a date column, so the last test of each patient is not forward-filled to the end date (fixed in the 3.1 validation version).
@@ -186,9 +307,9 @@ Stage 3 is clinically the most common CKD stage, so this is a mapping defect, no
 
 | Family | Definition | Produced | Final 752 | SHAP |
 | --- | --- | --- | --- | --- |
-| Category/brand volume | Claims by 9 treatment classes and 8 brands | 194 | 14 | 1.27% |
+| Category/brand volume | Claims by the 9 treatment classes and 8 brands listed below | 194 | 14 | 1.27% |
 | Age | Class/brand × 10-year patient age bin | 1,991 | 39 | 3.15% |
-| Payer | Class/brand × METHOD_OF_PAYMENT (7 types) | 1,122 | 35 | 4.28% |
+| Payer | Class/brand × METHOD_OF_PAYMENT (the 7 payer types listed below) | 1,122 | 35 | 4.28% |
 | Duration | Class/brand × DAYS_SUPPLY bin (30/60/90/other/unknown) | 880 | 27 | 3.26% |
 | Gender | Class/brand × F/M/U | 561 | 18 | 1.80% |
 | Refill | Brand × new Rx / refill | 176 | 11 | 1.07% |
@@ -199,6 +320,42 @@ Stage 3 is clinically the most common CKD stage, so this is a mapping defect, no
 | DIFF / RATIO | 3-vs-prior-3 month change and ratio (total-level; brand-level DIFF/RATIO columns are counted in their brand family) | 12 | 1 | 0.05% |
 
 By window type in the 172 used: 63 plain windows, 56 PCT, 52 RUNNING, 1 RATIO.
+
+**Classes, brands and payer types used in the NB01 features**
+
+The column token is the value as it appears in feature names (for example `RUNNING_TOTAL_RX_CLAIMS_ACE_OR_ARB_COMMERCIAL`). NB01 builds it from the raw value by replacing `/` with `OR`, `+` with `AND`, and `-` and spaces with `_`, then upper-casing. Claim figures are the last 12 months to 2026-08 from Rx_01_new (see 0.6 and 1.1).
+
+| Group | Raw value | Column token | Definition | Claims (12M) / share |
+| --- | --- | --- | --- | --- |
+| Treatment class (`TREATMENT_CATEGORY`) | ACE/ ARB | `ACE_OR_ARB` | ACE inhibitors and angiotensin receptor blockers (RAS blockers), the CKD / hypertension backbone | 124.7M |
+| Treatment class | Calcium channel / Beta blocker | `CALCIUM_CHANNEL_OR_BETA_BLOCKER` | Calcium channel blockers and beta blockers | 210.7M |
+| Treatment class | Combo drug | `COMBO_DRUG` | Fixed-dose blood-pressure combinations (ARB / ACE / BB with a diuretic or CCB) | 97.5M |
+| Treatment class | Diuretic_NON_MRA | `DIURETIC_NON_MRA` | Thiazide and loop diuretics (not MRAs) | 77.8M |
+| Treatment class | MRA | `MRA` | Steroidal mineralocorticoid receptor antagonists (spironolactone, eplerenone) | 18.2M |
+| Treatment class | SGLT2 | `SGLT2` | SGLT2 inhibitors (empagliflozin, dapagliflozin, canagliflozin, ertugliflozin and combinations) | 41.4M |
+| Treatment class | metformin | `METFORMIN` | Metformin, first-line T2D therapy | 71.8M |
+| Treatment class | Insulin | `INSULIN` | Insulins | 44.5M |
+| Treatment class | Other- glucose mgmt | `OTHER_GLUCOSE_MGMT` | All other glucose-lowering drugs (sulfonylureas, TZDs, GLP-1, DPP-IV) | 86.8M |
+| Brand (`CATEGORY`) | JARDIANCE | `JARDIANCE` | Empagliflozin (product name contains JARDIANCE) | 27.7M |
+| Brand | FARXIGA | `FARXIGA` | Dapagliflozin (product name contains FARXIGA) | 10.1M |
+| Brand | INVOKANA 100MG | `INVOKANA_100MG` | Canagliflozin 100 mg | 113K |
+| Brand | INVOKANA 300MG | `INVOKANA_300MG` | Canagliflozin 300 mg | 163K |
+| Brand | SPIRONOLACTONE-MRA | `SPIRONOLACTONE_MRA` | Any product containing spironolactone, including spironolactone/HCTZ | 17.7M |
+| Brand | GLP-1 | `GLP_1` | GLP-1 receptor agonists from a fixed product list (semaglutide, dulaglutide, liraglutide, exenatide, lixisenatide, albiglutide, Xultophy); tirzepatide not included | 48.7M |
+| Brand | DPP-IV | `DPP_IV` | DPP-4 inhibitors from a fixed product list (sitagliptin, linagliptin, saxagliptin, alogliptin) | 8.9M |
+| Brand | Diuretic + MRA | `DIURETIC_AND_MRA` | Hard-coded in the brand filter but never present in the data, so all its columns are empty | 0 |
+| Payer (`METHOD_OF_PAYMENT`) | Commercial | `COMMERCIAL` | Private insurance (employer or individual plans) | 41.9% |
+| Payer | Medicare Part D | `MEDICARE_PART_D` | Medicare prescription drug coverage (standalone Part D or Medicare Advantage drug plans) | 46.3% |
+| Payer | Medicare | `MEDICARE` | Medicare paid outside Part D | 0.15% |
+| Payer | Managed Medicaid | `MGD_MEDICAID` | Medicaid delivered through managed-care organisations | 5.5% |
+| Payer | FFS Medicaid | `FFS_MEDICAID` | State fee-for-service Medicaid | 4.4% |
+| Payer | Cash | `CASH` | Patient paid out of pocket; no insurer billed | 1.8% |
+| Payer | Unknown | `METHOD_OF_PAYMENT_UNKNOWN` | Null METHOD_OF_PAYMENT, relabelled in NB01 | ≈ 0% |
+
+Notes:
+* Brand features only use the 8 brands above (`Category IN (...)` filter in NB01). The generic `SGLT2` and `MRA` CATEGORY values are not part of the brand set; they are covered only at class level.
+* Brand claims cross classes: SPIRONOLACTONE-MRA includes 377K claims whose class is Diuretic_NON_MRA, and GLP-1 includes 53K claims whose class is Insulin.
+* Payer figures are shares of all NB01 claims, not claim counts.
 
 **Top NB01 features:** `RUNNING_TOTAL_RX_CLAIMS_ACE_OR_ARB_COMMERCIAL` (14), `TOTAL_RX_CLAIMS_PATIENT_WITH_1_ACTIVE_TREATMENT_IN_LAST_1_MONTH` (18), `RUNNING_TOTAL_RX_CLAIMS_METFORMIN_COMMERCIAL` (31), `RUNNING_TOTAL_RX_CLAIMS_GLP_1_30_DAYS_SUPPLY` (41), `TOTAL_RX_CLAIMS_CALCIUM_CHANNEL_OR_BETA_BLOCKER_90_DAYS_SUPPLY_IN_LAST_12_MONTH` (44), `PCT_TOTAL_RX_CLAIMS_NEW_PRESCRIPTION_IN_LAST_6_MONTH` (61).
 
@@ -312,7 +469,7 @@ All three are effectively Dx-volume proxies.
 Top: `TOTAL_PATIENTS_START_SGLT2_IN_LAST_6_MONTH` (rank 19, 0.69% SHAP — third-highest-ranked feature across the six claims notebooks), `TOTAL_NEW_PATIENT_START_IN_LAST_1_MONTH` (62), `PCT_TOTAL_PATIENTS_START_ACE_OR_ARB_IN_LAST_3_MONTH` (76).
 
 **EDA findings**
-* Highest yield of the six notebooks (7.4%) — "initiation" behaviour is less collinear with raw volume than the NB01 slices.
+* Highest Modeling Selection (%) of the six notebooks (7.4%) — "initiation" behaviour is less collinear with raw volume than the NB01 slices.
 * Left censoring: starts spike in the first months of LAAD history because patients with existing therapy look "new".
 * 1,014,149 filled months have null instead of 0 for visit/start counts; `TOTAL_NEW_PATIENT_START` is null (not 0) for HCPs without starts.
 * `Diuretic + MRA` never appears as a start.
@@ -347,7 +504,7 @@ Top: `TOTAL_PATIENTS_START_SGLT2_IN_LAST_6_MONTH` (rank 19, 0.69% SHAP — third
 | NB02 | HCP lab ordering | 0 | 0% | 44% HCP coverage; Quest-only | Weak in current form |
 | NB03 | Dx volume by CKD stage | 3 | 0.13% | Stage mapping; volume proxy | Weak |
 | NB04 | Rx × patient stage × patient therapy | 89 | 5.1% | Family C 8× double count; family B empty | Moderate; mostly "patients on drug X" proxy |
-| NB05 | New patient starts | 14 | 2.3% | Left censoring; null vs 0 | Strong per column (highest yield) |
+| NB05 | New patient starts | 14 | 2.3% | Left censoring; null vs 0 | Strong per column (highest Modeling Selection %) |
 | NB06 | Eligible (CKD 2–4, non-dialysis) patients | 1 | 0.04% | Eligibility rule bug → ≈ everyone eligible; avg-lag | Weak in current form |
 
 ---
@@ -357,5 +514,5 @@ Top: `TOTAL_PATIENTS_START_SGLT2_IN_LAST_6_MONTH` (rank 19, 0.69% SHAP — third
 * Fill-rate and distribution checks are a single snapshot month (2026-08). Training cohorts span 2022–2025; rates may differ for earlier months (especially lab, which starts Nov-2021).
 * Correlation checks use a 20% random HCP sample and log1p transform.
 * SHAP shares come from the final 752-feature model; features dropped earlier (Boruta / correlation filter) may still carry signal that was absorbed by a correlated survivor. Low SHAP share therefore means "not uniquely informative given the other features", not "no signal".
-* The Dx stage 3/5 root cause (ICD-10 N18.3x split, N18.5/N18.6 exclusion) is inferred from description text and should be confirmed against the ICD code list in `00_Write_Input_Files`.
+* The Dx stage 3/5 root cause (N18.30/N18.31/N18.32, N18.5 and N18.6 missing from the code list) was checked against the `pat_journey_dx` query in `00_Write_Input_Files` (cell 71).
 * EDA was run on the backup (`ops_pipeline_bkp`) outputs, not on the 3.1 validation tables.

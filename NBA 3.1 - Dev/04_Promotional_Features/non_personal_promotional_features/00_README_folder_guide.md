@@ -23,9 +23,11 @@ The digital team runs two kinds of non-personal promotion, and the files are gro
 | `20_dtc_direct_buy_social_nba_3_0.md` | NBA 3.0 reference | DTC | How notebook `34_promotional_features_DTC` builds the consumer media features, and its known problems. |
 | `21_dtc_data_findings_2024_2026_and_open_questions.md` | Findings and open questions | DTC | What Kerendia DTC data exists in 2024 to 2026 (Flashtalking V1, SA360, Facebook / Instagram), how it compares with NBA 3.0, and the questions to clear in meetings before planning DTC for NBA 3.1. |
 | `30_nba_3_1_proposed_additional_features.md` | NBA 3.1 proposals | Both | Proposed new features for each channel (volume, rates, recency, diversity, trend, cross-channel). Sections 4 to 6 (Samples, Speaker Programs, FTP) belong to other folders now. |
+| `40_digital_team_briefing_nba_3_1.md` | Briefing and meeting answers | Both | Briefing for the digital team meeting, with the team's answers (section 7) and the new data assets raised (section 4.4). |
+| `50_digital_nba_3_1_readiness_plan.md` | NBA 3.1 plan (overall) | Both | **Main plan** for digital in NBA 3.1: evidence, decisions, five feature families (HCP paid media, HQ email, high-intent signals, DTC, depth and content), data readiness, phases, experiments, gates, roles and risks. File 13 holds the detailed HCP paid-media tasks. |
 | `90_archive_nba_3_0_combined_review.md` | Archive | Both | Earlier single-file version of the NBA 3.0 review. Replaced by files 00, 10, 11 and 20; still holds the Samples and Speaker Programs sections, which now live in other folders. Keep for reference only. |
 
-**Reading order.** Start with 00 and 01 (the map). For NBA 3.0: 10 and 11 (HCP digital), then 20 (DTC). For NBA 3.1 planning: 12, then 13 (HCP digital plan) and 30.
+**Reading order.** Start with 00 and 01 (the map). For NBA 3.0: 10 and 11 (HCP digital), then 20 (DTC). For NBA 3.1 planning: 12, 40 (meeting answers), then **50 (overall plan)**, with 13 (detailed HCP paid-media tasks) and 30 (feature ideas).
 
 ## What is this folder about?
 

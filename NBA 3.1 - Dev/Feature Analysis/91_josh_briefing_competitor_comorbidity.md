@@ -15,7 +15,7 @@ Your CI report gave us five market developments that point directly at gaps in t
 1. **Capturing the right drugs.** Does the list we’re tracking match what you consider the live competitive set?
 2. **Reading the right signals.** Are there HCP-level patterns in the competitive data that a model should look for, that we haven’t thought of?
 3. **Not building something that looks good in data but is wrong in the market.** For example, is high Jardiance prescribing always a proxy for a CKD-active HCP, or does it sometimes mean something else?
-4. **Answering the specific questions at the end** — your view on six of them directly changes what we build.
+4. **Answering the specific questions at the end** — your view on eight of them directly changes what we build.
 
 ---
 
@@ -27,6 +27,7 @@ Your CI report gave us five market developments that point directly at gaps in t
 | **Which SGLT2s the HCP writes** (competitor share) | Track Farxiga, Invokana, Jardiance, Steglatro — but **across all indications mixed together** (most is T2D, not CKD). After Farxiga’s generic launch, the signal is now partly noise. Invokana and Steglatro are near-zero. **No Baxfendy.** | Filter to CKD-labeled prescribing only. Split Farxiga brand vs generic. Add steroidal MRAs. Track Baxfendy once it appears in the data. |
 | **How fast the HCP adopts new CKD therapies** (adoption speed) | One strong feature: how quickly a CKD patient got Farxiga from the same HCP. Rank 13 of 752, very predictive. **Nothing for HF drugs (no Entresto).** | Keep Farxiga. Add Jardiance, spironolactone/eplerenone, **Entresto** (your report’s LOE finding is exactly why), Invokana. |
 | **New competitors** | **None.** Baxfendy approved May 2026, 4,712 HCPs writing it — model cannot see any of this. GLP-1 in HFpEF not tracked. | Add Baxfendy, GLP-1 with HF indication. Flag ASI trial zip codes as a risk/opportunity signal. |
+| **Market event timing** | **None.** A Farxiga share of 0.6 in 2024 and 2026 are indistinguishable to the model. The pre-LOE Entresto brand adopter looks identical to a post-LOE generic switcher. | Add regime-state, event-response, and behaviour-change features anchored on CI report event dates. |
 
 **Bottom line: the model currently ignores HF patients, mislabels most of the SGLT2 activity as CKD when it’s actually T2D, and has no visibility into Baxfendy at all.** These are fixable, and most of the fixes come directly from your report.
 
@@ -152,6 +153,32 @@ Your September 2026 CI report gave us five market developments. Here is how each
 
 **NBA 3.1 response:** Add GLP-1 (semaglutide, tirzepatide) NBRx feature filtered to HF-labeled indications (C4).
 
+### 5.6 The time dimension — market events as prescribing breakpoints
+
+Your CI report is a log of dated events that changed how HCPs should prescribe. Each event is also a **breakpoint** where the same raw number means something different on either side of it. The model currently has no way to see any of this.
+
+The strongest feature in the competitor family today — `TIME_TO_ADOPT_FARXIGA` (rank 13 of 752) — is already an event-time feature: it measures how many days an HCP took to respond to a clinical event (patient CKD diagnosis) with a drug decision. We want to generalise the same logic to the market events in your report.
+
+Three types of signal come out of this:
+
+| Type | What it captures | Example |
+| --- | --- | --- |
+| **Regime state** | Which side of the event is this scoring cohort on? | `DAYS_SINCE_FARXIGA_LOE` (negative = pre-LOE, positive = post-LOE). Without this, a Farxiga share of 0.6 in October 2024 and in October 2026 look identical to the model — but in 2026 it is a generic-flooded market. |
+| **Event response speed** | How fast did this HCP react to the market event? | `ENTRESTO_BRAND_ADOPTER_FLAG`: was the HCP's first Entresto Rx written before the LOE, when it was expensive? That HCP made an active evidence-based choice against a cost barrier — the exact profile expected to adopt Kerendia for HF. |
+| **Behaviour change** | Did volume or mix shift around the event? | Log-ratio: Farxiga NBRx (3M post-LOE) / (3M pre-LOE). An HCP whose Farxiga volume tripled post-LOE was cost-constrained before; their patients now have freed-up OOP budget for Kerendia alongside generic dapagliflozin. |
+
+**Proposed event-date reference table (one row per event, maintained centrally):**
+
+| Event | Date | Regime feature | Response / change feature |
+| --- | --- | --- | --- |
+| Farxiga LOE | 2026-04-06 | `DAYS_SINCE_FARXIGA_LOE` | Brand vs generic volume ratio pre/post; days to first generic Rx |
+| Entresto LOE (amorphous) | 2025-07-15 | `DAYS_SINCE_ENTRESTO_LOE` | `ENTRESTO_BRAND_ADOPTER_FLAG`; Entresto volume log-ratio |
+| Baxfendy approval | 2026-05-15 | `DAYS_SINCE_BAXFENDY_APPROVAL` | Days from approval to first Baxfendy Rx |
+| EASi-KIDNEY halted | 2026-09-15 | `DAYS_SINCE_EASI_KIDNEY_HALT` | Geographic trial-zone flag (C5) |
+| GLP-1 in HFpEF guidelines | 2026-08 (approx.) | `DAYS_SINCE_GLP1_HF_GUIDELINE` | GLP-1 HF NBRx pre/post guideline |
+
+Adding new events in the future (e.g., BaxDuo-CKD readout ~Feb 2028, Jardiance LOE) requires only a new row in the reference table — no code changes. See Q7 and Q8 below.
+
 ---
 
 ## 6. What we’re planning to build (full list)
@@ -179,6 +206,16 @@ Your September 2026 CI report gave us five market developments. Here is how each
 | Baxfendy NBRx and share | MRA-class-aware HCPs; 20% overlap with Segment A |
 | GLP-1 NBRx with HF indication | Same HFpEF + T2D patient population |
 
+### Market event signals (new family, ~10 features)
+
+| What | Event anchor | Signal type |
+| --- | --- | --- |
+| Regime state at each cohort date | Farxiga LOE, Entresto LOE, Baxfendy approval, GLP-1 guidelines | Tells the model which competitive era the cohort belongs to. Same share value means different things before vs after each date. |
+| Farxiga brand vs generic volume log-ratio (post/pre LOE) | Farxiga LOE (Apr 2026) | Cost-sensitive prescribers vs committed CKD brand users. HCPs with tripled generic volume post-LOE had previously cost-constrained patients. |
+| Entresto brand adopter flag | Entresto LOE (Jul 2025) | First Rx before LOE = evidence-based HF adopter. Strongest proxy for Kerendia HF adoption propensity. |
+| Days from Baxfendy approval to first Rx | Baxfendy approval (May 2026) | Early Baxfendy adopters are MRA-class-aware. Same logic as TIME_TO_ADOPT_FARXIGA applied to a market event date. |
+| GLP-1 HF volume shift (post/pre guideline) | ESC/ACC GLP-1 HFpEF guidelines (Aug 2026) | HCPs who responded to the guideline treat the same obese HFpEF + T2D population as Kerendia's new HF indication. |
+
 ### Adoption-speed signals (14 new features across 5 drugs)
 
 For each drug: *How fast does this HCP start a CKD patient on the drug after diagnosis?*
@@ -205,6 +242,8 @@ Your answers directly change what we build. We’d like to go through these in t
 | Q4 | Your report says Balcinrenone + dapagliflozin (AstraZeneca) is in Phase III. Should we plan a monitoring feature now — even if it’s just an ‘HCP is enrolled in AstraZeneca trials’ flag — so the model is ready when enrollment data becomes visible? | Shapes how we approach the ASI/competitor monitoring pipeline |
 | Q5 | For GLP-1 in HFpEF: in your view, is the main risk to Kerendia that GLP-1 *replaces* the prescribing moment (doctor picks one drug) or that it *delays* it (doctor addresses obesity first, then comes back to Kerendia)? | Changes whether we model GLP-1 HF prescribing as a negative signal (competitor risk) or a positive one (same-practice indicator) |
 | Q6 | You noted that Finerenone holds a mechanistic edge over ASIs because it also blocks cortisol-driven MR activation. Is this messaging already landing with HCPs, and if so, through which channels or specialties? | If certain HCP profiles already respond to this differentiation, we may be able to build a ‘receptive to MRA class distinction’ signal from their engagement data |
+| Q7 | Are there other dated market events from the last two years — guideline publications, label expansions, key trial readouts — that you believe caused a visible step-change in HCP prescribing in the CKD/HF space? We have five events in the reference table; you likely track more. | Each additional event becomes a new feature family. Once the reference table pattern is in place, adding a new event requires only one new row — no code changes. |
+| Q8 | Before the Entresto LOE (pre-July 2025), brand Entresto was ~$400+/month. Which specialties were writing the most brand Entresto in 2023–2024? We expect HF specialists and cardiologists — but if adoption was significant among nephrologists or PCPs, that changes how we interpret the brand-adopter flag. | The flag's predictive value for Kerendia HF adoption depends on whether pre-LOE Entresto writers overlap meaningfully with the Kerendia target segment. |
 
 ---
 
@@ -212,11 +251,12 @@ Your answers directly change what we build. We’d like to go through these in t
 
 | Step | Owner | When |
 | --- | --- | --- |
-| Meeting: review this doc, collect answers to Q1–Q6 | Josh + Wenjie | Nov 2026 |
+| Meeting: review this doc, collect answers to Q1–Q8 | Josh + Wenjie | Nov 2026 |
 | Confirm Baxfendy and GLP-1 data availability in IQVIA | Data engineering | After meeting |
 | Build comorbidity features (H1–H3, M1–M3) | NBA team | Nov–Dec 2026 |
 | Build competitor features (H4–H5, M4–M5, C1–C2) | NBA team | Nov–Dec 2026 |
 | Build adoption-speed features (M6, C2 Entresto) | NBA team | Dec 2026 |
+| Build market event features (regime state, event response, behaviour change) | NBA team | Dec 2026 |
 | Feature selection + backtest review | NBA + BA | Jan 2027 |
 | NBA 3.1 training | NBA team | Q1 2027 |
 

@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # DBTITLE 1,Phase 0: Field Activity Validation — NBA 3.1 Readiness
 # MAGIC %md
 # MAGIC ## Phase 0: Field Activity Validation — NBA 3.1 Readiness
@@ -83,7 +87,23 @@ print("Setup complete.")
 # Year 2 = Nov 2025 – Oct 2026
 # Expected from data review: ~660K doctor calls, ~104K called doctors
 
-v1_query = """
+# Account / office codes live in FACT_CALL_KEY_MESSAGE.KEY_MSG_NM (not in CALL_REC_TYP_NM).
+# A call can have several key messages, so they are aggregated to one row per call before the join:
+#   KEY_MSG_NMS          = all distinct key-message names on the call, ' | ' separated
+#   HAS_ACCT_OFFICE_MSG  = 1 if any key message is an account / office (no HCP) code
+ACCOUNT_OFFICE_MSGS = ['5- Acct Call', 'vOffice call (no HCP)', '2-Account Call Only',
+                       'Account Call', 'Office call (no HCP)']
+acct_office_sql = ", ".join(f"'{m}'" for m in ACCOUNT_OFFICE_MSGS)
+
+v1_query = f"""
+WITH km AS (
+    SELECT
+        CALL_ID,
+        LISTAGG(DISTINCT KEY_MSG_NM, ' | ') WITHIN GROUP (ORDER BY KEY_MSG_NM) AS KEY_MSG_NMS,
+        MAX(IFF(KEY_MSG_NM IN ({acct_office_sql}), 1, 0)) AS HAS_ACCT_OFFICE_MSG
+    FROM CPH_DB_PROD.MODEL_V2.FACT_CALL_KEY_MESSAGE
+    GROUP BY CALL_ID
+)
 SELECT
     fc.CALL_ID,
     xref.BAYER_CUST_ID AS BHID,
@@ -94,10 +114,14 @@ SELECT
     fc.PAR_CALL_ID,
     fc.PAR_CALL_FLAG,
     fc.CALL_TYP,
-    fc.CALL_PURPS
+    fc.CALL_PURPS,
+    km.KEY_MSG_NMS,
+    COALESCE(km.HAS_ACCT_OFFICE_MSG, 0) AS HAS_ACCT_OFFICE_MSG
 FROM CPH_DB_PROD.MODEL_V2.FACT_CALL fc
 LEFT JOIN CPH_DB_PROD.MODEL_V2.MAP_CUSTOMER_XREF xref
     ON fc.SOURCE_CUST_ID = xref.SOURCE_CUST_ID
+LEFT JOIN km
+    ON fc.CALL_ID = km.CALL_ID
 WHERE UPPER(fc.STAT) = 'SUBMITTED_VOD'
   AND fc.CALL_DATE >= '2024-11-01'
   AND fc.CALL_DATE < '2026-11-01'
@@ -217,17 +241,31 @@ df_monthly.show(30, truncate=False)
 # V2: Record classification
 # Rules from readiness plan section 4, principle 3:
 #   HCP_INTERACTION: doctor call (BHID not BHO, not account-only, not medical)
-#   ACCOUNT_OFFICE: '5- Acct Call', 'vOffice call (no HCP)'; before Jul 2025 '2-Account Call Only'
+#   ACCOUNT_OFFICE: key message (FACT_CALL_KEY_MESSAGE.KEY_MSG_NM) in ACCOUNT_OFFICE_MSGS
+#                   ('5- Acct Call', 'vOffice call (no HCP)'; before Jul 2025 '2-Account Call Only';
+#                    plus 'Account Call', 'Office call (no HCP)' as in notebook 41)
+#                   -> flag HAS_ACCT_OFFICE_MSG built in the V1a query
 #   BHO_CHILD: PAR_CALL_ID is not null (organisation copy of a doctor call)
 #   BHO_TOP_LEVEL: BHID contains 'BHO' and PAR_CALL_ID is null
-#   MEDICAL: product text like 'Finerenone%' or medical record types
+#   MEDICAL: product text contains 'Finerenone' or a medical record type
+#            Medical record types are matched by pattern, not a fixed list, because Veeva uses
+#            several spellings (spaces vs underscores, Non-F2F / Group / Remote Group variants):
+#              - name ends with ' Med' or '_Med'  (e.g. 'Face2Face Interaction Med',
+#                'BPH_MED_Face2Face_Interaction_Med', 'Non Face2Face Interaction Med',
+#                'Group Interaction Med', 'Remote Group Interaction Med')
+#              - name starts with 'BPH_MED_'
+#              - 'Event Call Report' (medical event report)
+#            'Event_vod' is NOT matched by record type (mixed use); it is MEDICAL only via product text.
+#            Checked 3 Nov 2026: every record type containing 'MED' in FACT_CALL is a medical type
+#            (12 values), so the pattern has no false positives.
 
-medical_rec_types = [
-    'Face2Face Interaction Med', 'BPH_MED_Face2Face Interaction Med',
-    'Remote Interaction Med', 'BPH_MED_Remote Interaction Med',
-    'Event Call Report', 'BPH_MED_Event Call Report'
-]
-account_office_types = ['5- Acct Call', 'vOffice call (no HCP)', '2-Account Call Only']
+MEDICAL_REC_TYPE_REGEX = r"(?i)(^BPH_MED_|[ _]MED$)"
+MEDICAL_REC_TYPES_EXTRA = ['Event Call Report']
+
+is_medical_rec_type = (
+    col("CALL_REC_TYP_NM").rlike(MEDICAL_REC_TYPE_REGEX) |
+    col("CALL_REC_TYP_NM").isin(MEDICAL_REC_TYPES_EXTRA)
+)
 
 df_classified = df_all_calls.withColumn(
     "RECORD_CLASS",
@@ -238,12 +276,11 @@ df_classified = df_all_calls.withColumn(
         col("BHID").like("%BHO%") & col("PAR_CALL_ID").isNull(),
         lit("BHO_TOP_LEVEL")
     ).when(
-        col("CALL_REC_TYP_NM").isin(medical_rec_types) |
-        upper(col("DETL_PROD")).like("FINERENONE%"),
+        is_medical_rec_type |
+        upper(col("DETL_PROD")).contains("FINERENONE"),   # 'contains', not 'starts with': product text can start with another {Med} product
         lit("MEDICAL")
     ).when(
-        col("CALL_REC_TYP_NM").isin(account_office_types) |
-        (col("CALL_PURPS").like("%no HCP%")),
+        col("HAS_ACCT_OFFICE_MSG") == 1,
         lit("ACCOUNT_OFFICE")
     ).otherwise(lit("HCP_INTERACTION"))
 )
@@ -260,6 +297,26 @@ print("\n--- Record class by year ---")
 df_classified.groupBy("YEAR", "RECORD_CLASS").agg(
     count("*").alias("records")
 ).orderBy("YEAR", "RECORD_CLASS").show(20, truncate=False)
+
+# Split of the V1 Kerendia doctor calls (non-BHO) by record class, per year
+print("\n--- Kerendia doctor calls (excl. BHO) by record class ---")
+(df_classified
+    .filter(col("BHID").isNotNull() & ~col("BHID").like("%BHO%"))
+    .join(df_ker_detail_calls, on="CALL_ID", how="left_semi")
+    .groupBy("YEAR", "RECORD_CLASS")
+    .agg(countDistinct("CALL_ID").alias("calls"), countDistinct("BHID").alias("doctors"))
+    .orderBy("YEAR", "RECORD_CLASS")
+    .show(truncate=False))
+
+print("\n--- Medical record types matched by the rule (all classes) ---")
+(df_classified.filter(is_medical_rec_type)
+    .groupBy("CALL_REC_TYP_NM", "RECORD_CLASS").agg(count("*").alias("records"))
+    .orderBy("CALL_REC_TYP_NM", "RECORD_CLASS").show(40, truncate=False))
+
+print("\n--- Account / office key messages found ---")
+(df_classified.filter(col("RECORD_CLASS") == "ACCOUNT_OFFICE")
+    .groupBy("KEY_MSG_NMS").agg(count("*").alias("records"))
+    .orderBy(col("records").desc()).show(10, truncate=False))
 
 # COMMAND ----------
 
@@ -321,6 +378,38 @@ df_bho_spread = (
     .orderBy(col("n_bho_recipients").desc())
 )
 df_bho_spread.show(10)
+
+# COMMAND ----------
+
+# DBTITLE 1,V3 explained: examples and n_bho_recipients
+# MAGIC %md
+# MAGIC ### V3 explained: examples and `n_bho_recipients`
+# MAGIC
+# MAGIC A **BHO child** is a copy of a doctor call, written by Veeva on the doctor's organisation; `PAR_CALL_ID` points to the original call. The `left_semi` join keeps a child only if its parent is an `HCP_INTERACTION` (it filters, adds no columns, never duplicates).
+# MAGIC
+# MAGIC **Examples from the data**
+# MAGIC
+# MAGIC | Case | Record | PAR_CALL_ID | Result in V3 |
+# MAGIC | --- | --- | --- | --- |
+# MAGIC | Normal copy | Doctor call `V630000001G4987` (BH15094776, Kerendia CKD, 2026-06-22) and BHO child `V630000001G4988` (BHO3071800, same day, same message) | `V630000001G4987` | Matched: counted in the 88.2% |
+# MAGIC | Copy of a no-HCP visit | Child `V630000001EP704` of account / office call `V630000001EP703` (`vOffice call (no HCP)`) | `V630000001EP703` | Not matched: parent is `ACCOUNT_OFFICE` |
+# MAGIC | Real organisation call? | `V630000001B3133` (BHO3253453, Group Call Signed, Kerendia + Lynkuet) | NULL | `BHO_TOP_LEVEL`: to confirm with CRM team |
+# MAGIC | Data trap | `a04Vt00000Aa9jmIAB` (BHO3272662) | `""` (empty text, not NULL) | Classed as child, but has no real parent |
+# MAGIC
+# MAGIC **What `n_bho_recipients` means**
+# MAGIC
+# MAGIC `df_bho_spread` groups `BHO_CHILD` records by `PAR_CALL_ID` (the original doctor call) and counts distinct `BHID`. So `n_bho_recipients` = **number of different organisations that received a copy of one doctor call**. It counts organisations, not doctors; the printed title "per BHO organisation" should read "per parent call".
+# MAGIC
+# MAGIC | PAR_CALL_ID | n_bho_recipients | Why |
+# MAGIC | --- | --- | --- |
+# MAGIC | `""` (empty text) | 7,096 | Not a real parent: all 7,096 children with an empty parent ID fall into one group, so 7,096 different organisations are counted together |
+# MAGIC | `V630000001G4987` and every other real parent | 1 | A doctor call happens at one organisation, so Veeva writes one copy, on that organisation |
+# MAGIC
+# MAGIC Children per real parent: 1,264,091 parents have exactly 1 child; only 18 have more than one (12 with 2, 4 with 3, 1 with 4, 1 with 9).
+# MAGIC
+# MAGIC **Link to NBA 3.0.** The "about 80 doctors per call" in NBA 3.0 does not come from Veeva, which makes 1 copy per call (table above). NBA 3.0 then gave that copy to every doctor affiliated with the organisation in master data (`MDM_STG_HCP_ACCT_AFFL`), including the visited doctor. That is where one visit was counted many times. NBA 3.1 counts it once, on the doctor.
+# MAGIC
+# MAGIC **To do:** treat empty `PAR_CALL_ID` as NULL in V2 (moves 7,096 records to `BHO_TOP_LEVEL`); the top row of the recipients table then shows 1.
 
 # COMMAND ----------
 
@@ -547,12 +636,29 @@ df_medical.groupBy("DETL_PROD").agg(
     count("*").alias("cnt")
 ).orderBy(col("cnt").desc()).show(20, truncate=False)
 
-# Confirm: none counted as HCP_INTERACTION
+# Finerenone-only MSL volume (the review figure refers to Finerenone MSL interactions)
+print("\n--- MEDICAL records with a Finerenone product (compare with review) ---")
+df_medical.filter(upper(col("DETL_PROD")).contains("FINERENONE")).groupBy("YEAR").agg(
+    countDistinct("CALL_ID").alias("distinct_interactions"),
+    countDistinct("BHID").alias("distinct_doctors")
+).orderBy("YEAR").show(truncate=False)
+
+# Independent sanity check (not the same rule as V2): any record type containing 'MED',
+# or 'Event Call Report', or Finerenone product text, must not be an HCP_INTERACTION
 df_medical_as_hcp = df_classified.filter(
     (col("RECORD_CLASS") == "HCP_INTERACTION") &
-    (col("CALL_REC_TYP_NM").isin(medical_rec_types) | upper(col("DETL_PROD")).like("FINERENONE%"))
+    (upper(col("CALL_REC_TYP_NM")).contains("MED") |
+     (col("CALL_REC_TYP_NM") == "Event Call Report") |
+     upper(col("DETL_PROD")).contains("FINERENONE"))
 )
 print(f"\nSanity check: medical-looking records classified as HCP_INTERACTION: {df_medical_as_hcp.count()} (should be 0)")
+
+# Medical records on BHO IDs: classified as BHO first, so they are NOT in MEDICAL
+print("\n--- Medical-type records on BHO IDs (kept in BHO classes) ---")
+df_classified.filter(
+    (upper(col("CALL_REC_TYP_NM")).contains("MED") | (col("CALL_REC_TYP_NM") == "Event Call Report")) &
+    col("RECORD_CLASS").startswith("BHO")
+).groupBy("YEAR", "RECORD_CLASS").agg(count("*").alias("records")).orderBy("YEAR", "RECORD_CLASS").show(truncate=False)
 
 # COMMAND ----------
 
@@ -633,7 +739,7 @@ print("=" * 80)
 # MAGIC %md
 # MAGIC # Phase 0 Validation — Main Findings
 # MAGIC
-# MAGIC **Run date:** Nov 2, 2026  |  **Reference period (Year 2):** Nov 2025 – Oct 2026  |  **Source:** Snowflake CPH_DB_PROD (FACT_CALL, FACT_CALL_DETAIL, FACT_CALL_KEY_MESSAGE, ANLT_BASE_FACT_EVNT_PRSNL_PROM, FACT_SENT_EMAIL, FACT_EMAIL_ACTIVITY)
+# MAGIC **Run date:** Nov 2, 2026 (re-run Nov 3, 2026: all V1–V4, V10 figures identical; V6/V7 differ by <0.5% due to late-arriving records — see the scorecard cell below)  |  **Reference period (Year 2):** Nov 2025 – Oct 2026  |  **Source:** Snowflake CPH_DB_PROD (FACT_CALL, FACT_CALL_DETAIL, FACT_CALL_KEY_MESSAGE, ANLT_BASE_FACT_EVNT_PRSNL_PROM, FACT_SENT_EMAIL, FACT_EMAIL_ACTIVITY)
 # MAGIC
 # MAGIC ---
 # MAGIC
@@ -697,7 +803,7 @@ print("=" * 80)
 # MAGIC - **67,086** event-attendee records, **7,958** distinct events, **37,066** distinct HCPs
 # MAGIC - Attendee status: Closed (57,333), NULL (5,832), Completed (3,077), Planned (816), Cancelled (28)
 # MAGIC - Attendance value: Attended (21,763), NULL (45,323)
-# MAGIC - **0 Signed_vod records without ATND** — the Q-D1 concern does not materialise in this data
+# MAGIC - **0 Signed_vod records without ATND** — but this test is not valid: `ATTENDEE_STATUS` is mapped from `EVNT_STAT` (the *event* status: Closed / Completed / Planned), which never holds `Signed_vod`. Q-D1 remains open until the attendee-level status column is used.
 # MAGIC - Speaker Programs dominate (54,947 records, 4,162 events); Kerendia topics are prominent
 # MAGIC - **Issue:** 5,832 records have NULL attendee status and 45,323 have NULL attendance value — these may need mapping rules for NBA 3.1.
 # MAGIC
@@ -733,7 +839,8 @@ print("=" * 80)
 # MAGIC
 # MAGIC - Medical record types: Face2Face Interaction Med dominates (22,680 records)
 # MAGIC - Top products: Finerenone variants (multiple sub-indications), Asundexian, Elinzanetant
-# MAGIC - Sanity check: **0 medical-looking records misclassified as HCP_INTERACTION** — classification logic is clean
+# MAGIC - Sanity check: **0 medical-looking records misclassified as HCP_INTERACTION** — but this check reuses the same list as the rule, so it is circular. An independent check (record type contains `MED`) finds 9,240 (Y1) / 5,045 (Y2) MSL records still in HCP_INTERACTION (`BPH_MED_Face2Face_Interaction_Med` with underscores, `Non Face2Face Interaction Med`, `Group Interaction Med`, ...). None carries a Kerendia detail, so Kerendia counts are not affected.
+# MAGIC - Restricted to Finerenone products, MSL volume is 10,372 interactions / 6,332 doctors (Y1) and 11,161 / 6,861 (Y2) — matching the review's ~10.5–10.9K / ~6.4–6.8K. The 2.4x excess comes from non-Kerendia MSL products (Asundexian, Elinzanetant, Nubeqa, Radiology).
 # MAGIC
 # MAGIC ---
 # MAGIC
@@ -745,3 +852,24 @@ print("=" * 80)
 # MAGIC 4. **iRep open-rate collapse:** From ~35% to ~19% starting April 2026, not recovering. Likely an upstream data or tracking change.
 # MAGIC 5. **BHO_CHILD with blank PAR_CALL_ID:** 7,096 records (0.6% of BHO_CHILD) have no parent link.
 # MAGIC 6. **Event records with NULL status:** 5,832 attendee records have NULL EVNT_STAT; 45,323 have NULL ATND value — mapping rules needed for NBA 3.1.
+
+# COMMAND ----------
+
+# DBTITLE 1,Phase 0 Scorecard (V1–V10) — Re-run 3 Nov 2026
+# MAGIC %md
+# MAGIC ## Phase 0 Scorecard (V1–V10) — re-run 3 Nov 2026
+# MAGIC
+# MAGIC | ID | Task | Status | Evidence | What is missing |
+# MAGIC |----|------|--------|----------|-----------------|
+# MAGIC | V1 | Interaction grain | **PASS** | Y2 Kerendia doctor calls 676,136 / 104,752 doctors (target ~660K / ~104K); NBA 3.0 sees 421,295 / 84,548 (gap 37.7%, 30–46% monthly from Jan 2026, Lynkuet 435,777 co-details); Kerendia priority 1 on 91.6% (target 87–92%) | 676K includes ~69.9K account/office records (10.3%), so the HCP-interaction part is ~606K. Priority % computed on all Y2 records (incl. BHO copies), not only 2026 doctor interactions |
+# MAGIC | V2 | Record classification | **PASS on rules** (account / office and medical fixed 3 Nov); 2 points to confirm | `KEY_MSG_NM` now brought into the V1a query (`KEY_MSG_NMS`, `HAS_ACCT_OFFICE_MSG`). ACCOUNT_OFFICE 155,700 records (Y1 76,671; Y2 79,029). Y2 Kerendia doctor calls: 606,239 HCP_INTERACTION + 69,897 ACCOUNT_OFFICE = 676,136 (Y1: 472,236 + 76,662). Medical rule now pattern-based (record type ends ` Med` / `_Med`, starts `BPH_MED_`, or `Event Call Report`; product text contains `Finerenone`): MEDICAL 53,446 (Y1 22,773; Y2 30,673); independent check 0 medical-looking HCP_INTERACTION | Some account / office calls also carry an HCP message (e.g. `1-HCP Call \| 2-Account Call Only` 6,090; `1-Position 1 KER CKD \| 5- Acct Call` 2,809): confirm with Field Analytics which wins. Medical-type records on BHO IDs (about 32K) are classed BHO first: confirm they should feed organisation context or be dropped |
+# MAGIC | V3 | BHO parent / child | **Data part done; CRM confirmation OPEN** | 88.2% of BHO_CHILD point to an HCP_INTERACTION (97.0% before the account / office and medical fixes; the rest point to ACCOUNT_OFFICE or MEDICAL calls); 32,126 medical-type BHO children (Y1 14,670; Y2 17,456) stay in BHO classes; 1 BHO recipient per parent; 7,096 children with blank (not NULL) `PAR_CALL_ID` | F-3 / Q-A2 confirmation from CRM team; blank PAR_CALL_ID should be treated as NULL |
+# MAGIC | V4 | Key-message consistency | **PARTIAL** | ~100% of Kerendia doctor calls have some key message every month (83.6% Dec 2024) | Measures *any* entry (incl. `1-HCP Call`, `5- Acct Call`), not indication/position code share; no per-rep / per-territory analysis; Maria Kontorinakis review pending |
+# MAGIC | V5 | Sample reconciliation | **DONE elsewhere** | `22_samples_reconciliation_...md` (30 Oct 2026) | Not in this notebook |
+# MAGIC | V6 | Event states | **PARTIAL / OPEN** | 67,173 records, 7,962 events, 37,091 HCPs; 21,764 `Attended`; event types split (Speaker Program 55,024; Scientific Presentation 5,102; Round Tables 620; ...) | Signed_vod test invalid (column is event status). No invited / registered / attended mapping built. Q-D1, Q-D2 with events team |
+# MAGIC | V7 | iRep checks | **PASS (diagnostic); Q-C1 OPEN** | `Delivered` exact = 0, `Delivered_vod` = 462,108, so `ILIKE 'Delivered%'` fix confirmed. Open rate 32–38% to Mar 2026, 25.7% Apr, 18.6–20% Jun–Oct | Cause of the April drop (tracking change?) not confirmed; opens should not be used until it is |
+# MAGIC | V8 | Asundexian readiness | **NOT STARTED (not due)** | No Asundexian commercial detail co-detailed with Kerendia yet (only MSL `Asundexian {Med}`) | Run at ISS co-promotion launch |
+# MAGIC | V9 | Fixed schema / config | **NOT IN THIS NOTEBOOK** | Config-generated schema exists in notebook 41 (53 columns) | Two-run identical-column check not recorded |
+# MAGIC | V10 | MSL records | **PASS** (Finerenone volume; classification) | Finerenone MSL: 10,496 / 6,409 (Y1), 11,401 / 6,947 (Y2) vs ~10.5–10.9K / ~6.4–6.8K (Y2 about 5% above the top of the range). Independent sanity check (any `MED` record type or Finerenone text) = 0 | All-product MEDICAL (30,673 Y2) is about 2.8x the target because of non-Kerendia MSL products; MD-1 scope (Finerenone only?) to confirm |
+# MAGIC
+# MAGIC **G0 gate:** not yet fully met — V1 reconciles, classes are reported monthly, V3–V7 outcomes are recorded, but V9 (two identical schema runs) and E1 are outstanding. The V2 / V10 classification fixes were applied in this notebook on 3 Nov 2026.

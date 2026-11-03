@@ -131,6 +131,20 @@ Built from `field_interaction` (class `HCP_INTERACTION`, Kerendia detail) and `f
 
 Candidate set: about 40 to 60 columns.
 
+**Status (Nov 2026): built and run in `41_field_activity_phase1_core_features`; G1 passed (3 Nov 2026).** 53 columns (C1 16, C2 6, C3 12 including `FLD_CODETAIL_PERIOD_FLAG`, C4 4, C5 4, C6 5, C7 4, C8 2), generated from the config in the notebook. 3,650,827 HCP-cohort rows across 26 cohorts (C01–C26).
+
+G1 results (all PASS): 22 invariant checks with 0 violations, 0 duplicate keys, 0 nulls. Year 2 reconciliation: 676,422 Kerendia doctor calls (HCP_INTERACTION 606,502 + ACCOUNT_OFFICE 69,920) and 105,015 doctors — Phase 0 target 676,136 / 104,752, match within 0.05% / 0.03%. Independent Snowflake recompute matched all 10 sample HCPs on 4 metrics. Feature profile plausible: F2F 96.8% of Year 2 HCP interactions, co-detail 0 for all training cohorts (pre-2026). NBA 3.1 F2F is ~84% of NBA 3.0, reflecting the stricter HCP_INTERACTION classification.
+
+Bug fixed during the run: `FLD_DAYS_SINCE_LAST_INT` was filled with 0 instead of sentinel 999 for 1.8M HCP-cohort keys without HCP interactions, because `fillna(0, subset=count_cols)` included it. Fixed by excluding it from `count_cols`.
+
+Checks against Snowflake led to these changes to the Phase 0 rules:
+
+* `ACCOUNT_OFFICE` comes from `FACT_CALL_KEY_MESSAGE.KEY_MSG_NM` (`5- Acct Call`, `2-Account Call Only`, `vOffice call (no HCP)`, `Account Call`, `Office call (no HCP)`), not from `CALL_REC_TYP_NM`. That rule is why Phase 0 found 0 records. The class covers 11 – 16% of Kerendia doctor records a year, so the S1 target (about 660K) has to be split into HCP interactions and account / office records.
+* Record types: old names (`BPH_Face2Face_SIG`, `BPH_Group_Call_SIG`, `BPH_Remote_Meeting`) are used until mid-2025 and new names (`Face2Face Signed`, `Group Call Signed`, `BPH_REMOTE_MEETING`) after that. Both are mapped. With the NBA 3.0 patterns alone, F2F would read 0 from mid-2025.
+* Doctor records that have a `PAR_CALL_ID` are still HCP interactions. Before 2025, most doctor calls are child records with no parent row, and group-call attendees are children of a BHO group record.
+* Organisation link: either a BHO child of the doctor call, or a doctor attendee of a BHO group call. Linking siblings through a shared `PAR_CALL_ID` is not used, because before 2025 it fans out to about 1B pairs a month. BHO top-level calls stay out until V3.
+* The cohort anchor file ends at C26 (2025-04-16), before co-detail started. Co-detail features are about 0 for all training cohorts until later cohorts are added (needed for E6).
+
 ### Phase 2: Message-derived features (only if V4 passes)
 
 | ID | Feature family | Example names | Condition |

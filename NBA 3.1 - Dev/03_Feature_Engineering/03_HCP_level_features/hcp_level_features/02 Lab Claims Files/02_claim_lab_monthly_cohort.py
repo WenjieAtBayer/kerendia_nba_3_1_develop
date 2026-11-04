@@ -16,11 +16,16 @@
 # MAGIC * **Outputs**: `notebook_output/claim_lab_monthly_cohort` and `provider_claim_lab_monthly_cohort`, partitioned by `COHORT_ID` (Wenjie's `_ZS` tables are not touched)
 # MAGIC
 # MAGIC Source notebook: `/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/02_claim_lab_monthly`
+# MAGIC
+# MAGIC **3.1 patient-journey sync (2026-11-03):** plan and client summary in `02 Lab Claims Files/`. Input = the NPI x patient x day lab pull of the 3.1 lab journey (PJ01 Step 4: lab basket, valid ranges, preferred eGFR equation, `>90` results), `query_output/full_2026_11_02/_stage/lab_step4_pull`, instead of the 3.0 `Lab_03`, which holds about half of the lab tests of the lab journey. Stages are mapped to the `Lab_03` texts, so the 102 column names are unchanged. Switch back with `HCP_LAB_SOURCE = "3.0"` (`00_cohort_config`). Open: where the pull is stored (D2), specialty filter / HCP universe (D3).
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Feature Engineering - Lab Test
+# MAGIC
+# MAGIC > **3.1 note:** notes below are from the 3.0 notebook (input `Lab_03`). In 3.1 the input is the 3.1 lab journey pull (Quest, `PHCDW.PHCDW_STG_CAR.STG_CAR_IQV_QUEST_TO_LAAD_HIST`, from 2023-01-01 = `DATA_START_DATE`): tests from the lab basket (LOINC codes + test-name backup), valid range eGFR 1–200 (150–200 = stage 1) and UACR 0–10,000, same stage cut-offs as below.
+# MAGIC
 # MAGIC #### Data source used
 # MAGIC * PHCDW.PHCDW_DSAA.KERENDIA_LAB_QUEST_LABCORP_VIEW
 # MAGIC * PHCDW.PHCDW_STG_CAR.STG_IQVIA_LAAD_DIM_PRODUCT 
@@ -58,7 +63,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Load cohort config (all params + helpers)
-# MAGIC %run "../00_cohort_config"
+# MAGIC %run "../../00_cohort_config"
 
 # COMMAND ----------
 
@@ -82,7 +87,31 @@ print(f"Offset: {OFFSET_DAYS} | Cohorts: {_cohort_setting} | Validation: {VALIDA
 _QUERY_OUTPUT    = HCP_QUERY_OUTPUT
 _NOTEBOOK_OUTPUT = HCP_NOTEBOOK_OUTPUT
 # Lookbacks: LOOKBACK_WINDOWS from the config (= HCP_LOOKBACK_WINDOWS["lab"], 1/3/6/12)
-df_lab_raw = spark.read.format("delta").load(_QUERY_OUTPUT + "Lab_03")
+# 3.1 (plan C1, 02 Lab Claims Files/): the lab input is HCP_LAB_TABLE from 00_cohort_config.
+#   HCP_LAB_SOURCE = "3.1" (default): NPI x patient x day lab pull of the 3.1 lab journey (PJ01 Step 4).
+#     GFR_STAGE / UACR_STAGE (1-5 / 1-3) are mapped to the Lab_03 stage texts, so every feature
+#     column keeps its 3.0 name. Every row of the pull has a stage (checked below).
+#   HCP_LAB_SOURCE = "3.0": Lab_03 (3.0 query in 00_Write_Input_Files).
+LAB_STAGE_TEXT = {
+    "GFR":  {1: "CHRONIC KIDNEY DISEASE, STAGE 1", 2: "CHRONIC KIDNEY DISEASE, STAGE 2 (MILD)",
+             3: "CHRONIC KIDNEY DISEASE, STAGE 3 (MODERATE)", 4: "CHRONIC KIDNEY DISEASE, STAGE 4 (SEVERE)",
+             5: "CHRONIC KIDNEY DISEASE, STAGE 5"},
+    "UACR": {1: "A1", 2: "A2", 3: "A3"},
+}
+
+def load_lab_input():
+    _df = spark.read.format("delta").load(_QUERY_OUTPUT + HCP_LAB_TABLE)
+    if HCP_LAB_SOURCE == "3.0":
+        return _df
+    _map = {t: F.create_map(*[x for k, v in m.items() for x in (F.lit(k), F.lit(v))])
+            for t, m in LAB_STAGE_TEXT.items()}
+    return (_df
+            .withColumn("STAGE", F.when(F.col("TEST_TYPE") == "GFR", _map["GFR"][F.col("GFR_STAGE")])
+                                  .when(F.col("TEST_TYPE") == "UACR", _map["UACR"][F.col("UACR_STAGE")]))
+            .select("NPI_NUMBER", "SVC_DT", "PATIENT_ID", "TEST_TYPE", "MEDIAN_TEST_RESULT", "STAGE", "PROVIDER_ID"))
+
+df_lab_raw = load_lab_input()
+print(f"Lab input (HCP_LAB_SOURCE = {HCP_LAB_SOURCE}): {_QUERY_OUTPUT + HCP_LAB_TABLE}")
 
 # Month truncation (date_trunc('MM', SVC_DT)) removed: daily SVC_DT is kept and
 # windows are date ranges from each cohort month + OFFSET_DAYS (00_cohort_config).
@@ -90,6 +119,8 @@ df_lab = df_lab_raw.withColumn("PATIENT_ID", F.col("PATIENT_ID").cast('string'))
 
 # Validation mode: restrict to the 10 test HCPs (no-op when VALIDATION_MODE = False)
 df_lab = apply_npi_filter(df_lab, NPI_COL)
+_no_stage = df_lab.filter(F.col("STAGE").isNull()).count()
+assert HCP_LAB_SOURCE == "3.0" or _no_stage == 0, f"{_no_stage:,} lab rows without a stage after mapping"
 
 # Team rule (3.1, option B): every feature, RUNNING_ included, uses lab claims from DATA_START_DATE on.
 # df_lab_all keeps the full history only for the offset-0 parity check against the 3.0 original.
@@ -99,7 +130,7 @@ df_lab = df_lab.filter(F.col(SVC_COL) >= F.lit(DATA_START_DATE))
 # ---------- Cohorts to process ----------
 # Every cohort (COHORT_ORIGIN..COHORT_LAST, or the COHORT_MONTHS list) whose cutoff is on or
 # before the common last service date of all HCP inputs (get_hcp_cohort_months, 00_cohort_config),
-# so every HCP feature table has the same COHORT_IDs. DATA_MAX_DT (Lab_03 only) is kept for parity.
+# so every HCP feature table has the same COHORT_IDs. DATA_MAX_DT (lab input only) is for information.
 import builtins
 DATA_MAX_DT   = df_lab_raw.agg(F.max(SVC_COL)).first()[0]
 COHORT_LIST   = get_hcp_cohort_months()
@@ -109,8 +140,13 @@ print(f"Lab data through {DATA_MAX_DT} -> {len(COHORT_LIST)} complete cohorts: "
       f"{COHORT_LIST[0]} .. {COHORT_LIST[-1]}")
 
 # ---------- Fixed pivot values: same columns for every cohort (as in the original) ----------
-TEST_TYPE_VALUES = sorted(r[0] for r in df_lab_raw.select("TEST_TYPE").distinct().collect() if r[0] is not None)
-STAGE_VALUES     = sorted(r[0] for r in df_lab_raw.select("STAGE").distinct().collect() if r[0] is not None)
+# 3.1: the full list from LAB_STAGE_TEXT (same 2 + 8 values as Lab_03, no scan of the input needed)
+if HCP_LAB_SOURCE == "3.1":
+    TEST_TYPE_VALUES = sorted(LAB_STAGE_TEXT)
+    STAGE_VALUES     = sorted(v for m in LAB_STAGE_TEXT.values() for v in m.values())
+else:
+    TEST_TYPE_VALUES = sorted(r[0] for r in df_lab_raw.select("TEST_TYPE").distinct().collect() if r[0] is not None)
+    STAGE_VALUES     = sorted(r[0] for r in df_lab_raw.select("STAGE").distinct().collect() if r[0] is not None)
 print(f"TEST_TYPE values: {TEST_TYPE_VALUES}")
 print(f"STAGE values ({len(STAGE_VALUES)}): {STAGE_VALUES}")
 

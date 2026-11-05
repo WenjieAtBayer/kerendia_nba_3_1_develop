@@ -487,50 +487,78 @@ df_keymsg.groupBy("KEY_MSG_NM").agg(count("*").alias("cnt")).orderBy(col("cnt").
 # Map Veeva statuses to invited / registered / attended
 # Check Signed_vod without ATND for closed events (Q-D1)
 # Split speaker programs from other event types (Q-D2)
+#
+# FIXED 4 Nov 2026:
+#  * Kerendia only, same filters as NBA 3.0 notebook 14 (PROD_BRAND_NM = 'KERENDIA', CUST_HCP_ID like '%BH%').
+#    The earlier version had no brand filter (all brands: Lynkuet, Nubeqa, ...).
+#  * Attendee status = EVNT_ATNDE_RSVP_STAT (Signed_vod, Invited_vod, Accepted_vod, ...).
+#    EVNT_STAT is the status of the event (Closed, Completed), so the Signed_vod check always returned 0.
+#  * EVNT_CAT added: it holds 'SPEAKER PROGRAMS' / 'NON-SPEAKER PROGRAMS', the labels NBA 3.0 tests on EVNT_TYP.
 
 v6_query = """
-SELECT
-    xref.BAYER_CUST_ID AS BHID,
+SELECT DISTINCT
+    ea.CUST_HCP_ID AS BHID,
     ea.EVNT_ID,
     ea.EVNT_NM,
+    ea.EVNT_CAT,
     ea.EVNT_TYP,
     ea.EVNT_START_DATE AS EVNT_STRT_DT,
-    ea.EVNT_STAT AS ATTENDEE_STATUS,
+    ea.EVNT_STAT AS EVENT_STATUS,
+    ea.EVNT_ATNDE_RSVP_STAT AS ATTENDEE_STATUS,
     ea.ATND AS ATTENDANCE_VALUE,
     ea.EVNT_TPIC_NM AS EVNT_TOPIC_NM
 FROM CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM ea
-LEFT JOIN CPH_DB_PROD.MODEL_V2.MAP_CUSTOMER_XREF xref
-    ON ea.CUST_ID = xref.SOURCE_CUST_ID
-WHERE ea.EVNT_START_DATE >= '2024-11-01'
+WHERE ea.PROD_BRAND_NM = 'KERENDIA'
+  AND ea.CUST_HCP_ID LIKE '%BH%'
+  AND ea.EVNT_START_DATE >= '2024-11-01'
   AND ea.EVNT_START_DATE < '2026-11-01'
 """
 
-df_events = Get_Data_Snowflakes(v6_query)
+df_events = (Get_Data_Snowflakes(v6_query)
+             .withColumn("YEAR", when(col("EVNT_STRT_DT") < "2025-11-01", lit("Y1")).otherwise(lit("Y2")))
+             .withColumn("PAIR", concat(col("BHID"), lit("|"), col("EVNT_ID"))))
 df_events.cache()
 
-print("=== V6: Event States ===")
+print("=== V6: Event States (Kerendia, NBA 3.0 filters) ===")
 print(f"Total event-attendee records: {df_events.count():,}")
 print(f"Distinct events: {df_events.select('EVNT_ID').distinct().count():,}")
 print(f"Distinct HCPs: {df_events.filter(col('BHID').isNotNull()).select('BHID').distinct().count():,}")
 
-print("\n--- Attendee Status distribution ---")
-df_events.groupBy("ATTENDEE_STATUS").agg(count("*").alias("cnt")).orderBy(col("cnt").desc()).show(20, truncate=False)
+print("\n--- Event status (status of the event, not of the attendee) ---")
+df_events.groupBy("EVENT_STATUS").agg(countDistinct("PAIR").alias("doctor_event_pairs")).orderBy(col("doctor_event_pairs").desc()).show(20, truncate=False)
 
-print("\n--- Attendance Value distribution ---")
-df_events.groupBy("ATTENDANCE_VALUE").agg(count("*").alias("cnt")).orderBy(col("cnt").desc()).show(20, truncate=False)
+print("\n--- Attendee status x attendance value, by year (doctor-event pairs) ---")
+df_events.groupBy("YEAR", "ATTENDEE_STATUS", "ATTENDANCE_VALUE").agg(countDistinct("PAIR").alias("doctor_event_pairs")) \
+    .orderBy("YEAR", col("doctor_event_pairs").desc()).show(40, truncate=False)
 
-# Signed_vod without attendance
-df_signed_no_atnd = df_events.filter(
-    (upper(col("ATTENDEE_STATUS")) == "SIGNED_VOD") &
-    (col("ATTENDANCE_VALUE").isNull() | (col("ATTENDANCE_VALUE") == ""))
-)
-print(f"Signed_vod records without ATND value: {df_signed_no_atnd.count():,}")
+# Signed_vod without attendance, and overlap with an Attended row for the same doctor and event
+signed = df_events.filter((upper(col("ATTENDEE_STATUS")) == "SIGNED_VOD") &
+                          (col("ATTENDANCE_VALUE").isNull() | (col("ATTENDANCE_VALUE") == ""))).select("YEAR", "PAIR").distinct()
+attended = df_events.filter(upper(col("ATTENDANCE_VALUE")) == "ATTENDED").select("PAIR").distinct().withColumn("ALSO_ATTENDED", lit(1))
+print("\n--- Signed_vod without ATND value: also has an Attended row for the same doctor and event? ---")
+signed.join(attended, "PAIR", "left").groupBy("YEAR").agg(
+    count("*").alias("signed_no_atnd_pairs"),
+    spark_sum(coalesce(col("ALSO_ATTENDED"), lit(0))).alias("also_attended"),
+).orderBy("YEAR").show(truncate=False)
 
-print("\n--- Event Type distribution ---")
-df_events.groupBy("EVNT_TYP").agg(
-    count("*").alias("records"),
-    countDistinct("EVNT_ID").alias("distinct_events")
-).orderBy(col("records").desc()).show(20, truncate=False)
+print("\n--- Attended (NBA 3.0 rule) by event category and type, by year ---")
+df_att = df_events.filter(upper(col("ATTENDANCE_VALUE")) == "ATTENDED")
+df_att.groupBy("YEAR", "EVNT_CAT", "EVNT_TYP").agg(
+    countDistinct("PAIR").alias("attendances"),
+    countDistinct("BHID").alias("doctors"),
+    countDistinct("EVNT_ID").alias("events"),
+).orderBy("YEAR", col("attendances").desc()).show(40, truncate=False)
+df_att.groupBy("YEAR").agg(countDistinct("PAIR").alias("attendances"), countDistinct("BHID").alias("doctors"),
+                           countDistinct("EVNT_ID").alias("events")).orderBy("YEAR").show(truncate=False)
+
+# NBA 3.0 type labels: tested on EVNT_TYP (never matches) vs EVNT_CAT (where the labels live)
+print("\n--- NBA 3.0 type features: label tested on EVNT_TYP vs EVNT_CAT (attendances) ---")
+df_att.agg(
+    countDistinct(when(col("EVNT_TYP").isin("SPEAKER PROGRAMS"), col("PAIR"))).alias("SPKR_PRGM_on_EVNT_TYP"),
+    countDistinct(when(col("EVNT_TYP").isin("NON-SPEAKER PROGRAMS"), col("PAIR"))).alias("NON_SPKR_PRGM_on_EVNT_TYP"),
+    countDistinct(when(col("EVNT_CAT").isin("SPEAKER PROGRAMS"), col("PAIR"))).alias("SPKR_PRGM_on_EVNT_CAT"),
+    countDistinct(when(col("EVNT_CAT").isin("NON-SPEAKER PROGRAMS"), col("PAIR"))).alias("NON_SPKR_PRGM_on_EVNT_CAT"),
+).show(truncate=False)
 
 print("\n--- Event Topic distribution (top 20) ---")
 df_events.groupBy("EVNT_TOPIC_NM").agg(count("*").alias("cnt")).orderBy(col("cnt").desc()).show(20, truncate=False)
@@ -609,6 +637,81 @@ df_open_rate = (
 
 print("\n--- Monthly Open Rate (check for April 2026 drop) ---")
 df_open_rate.show(30, truncate=False)
+
+# COMMAND ----------
+
+# DBTITLE 1,V7b: Kerendia-only iRep checks and open-rate drop by brand and template
+# V7b: the V7 cell above covers ALL brands (no Kerendia filter).
+# Here: Kerendia only (template name contains 'Kerendia', as in NBA 3.0), and Kerendia vs other brands,
+# to test whether the April 2026 open-rate drop is Kerendia-specific or platform-wide (tracking change, Q-C1).
+
+v7b_query = """
+SELECT
+    DATE_TRUNC('month', se.EMAIL_SNT_DATE)::DATE AS MONTH,
+    -- Kerendia iRep rule (readiness plan V7, 4 Nov 2026): Kerendia alone or co-promoted (e.g. Kerendia + Lynkuet);
+    -- name contains Kerendia, the word KER / PP-KER-, or CKD / HF / T1D speaker-program templates.
+    -- Lynkuet-only and medical templates are excluded. No template names both Kerendia and Lynkuet (Oct 2026).
+    CASE
+      WHEN (d.NM ILIKE '%medical email%' OR d.NM ILIKE '%MSL%' OR d.NM ILIKE 'unsolicited request%') THEN 'OTHER BRANDS'
+      WHEN (d.NM ILIKE '%kerendia%' OR REGEXP_LIKE(d.NM, '.*(^|[^A-Za-z])KER([^A-Za-z]|$).*', 'i') OR d.NM ILIKE '%PP-KER-%'
+            OR REGEXP_LIKE(d.NM, '^(CKD|HF|T1D) Speaker Program.*', 'i')) THEN 'KERENDIA'
+      ELSE 'OTHER BRANDS' END AS BRAND,
+    IFF(d.NM ILIKE '%kerendia%', 1, 0) AS NBA30_KERENDIA_NAME,
+    IFF((d.NM ILIKE '%kerendia%' OR REGEXP_LIKE(d.NM, '.*(^|[^A-Za-z])KER([^A-Za-z]|$).*', 'i'))
+        AND (d.NM ILIKE '%lynkuet%' OR d.NM ILIKE '%elinzanetant%'), 1, 0) AS KER_LYN_COPROMO,
+    d.NM AS TEMPLATE,
+    se.STAT,
+    COUNT(*) AS EMAILS,
+    SUM(IFF(se.OPENED > 0, 1, 0)) AS OPENED,
+    SUM(IFF(se.CLK_CNT > 0, 1, 0)) AS CLICKED
+FROM CPH_DB_PROD.MODEL_V2.FACT_SENT_EMAIL se
+LEFT JOIN CPH_DB_PROD.MODEL_V2.DIM_APPROVED_DOCUMENT d
+    ON se.APV_EMAIL_TEMPLATE = d.APV_DOC_ID
+WHERE se.EMAIL_SNT_DATE >= '2024-11-01'
+  AND se.EMAIL_SNT_DATE < '2026-11-01'
+GROUP BY 1, 2, 3, 4, 5, 6
+"""
+df_v7b = Get_Data_Snowflakes(v7b_query).cache()
+deliv = df_v7b.filter(upper(col("STAT")).like("DELIVERED%"))
+
+print("=== Kerendia status check (NBA 3.0 delivered label tests STAT == 'Delivered') ===")
+df_v7b.filter(col("BRAND") == "KERENDIA").groupBy("STAT").agg(spark_sum("EMAILS").alias("emails")) \
+    .orderBy(col("emails").desc()).show(truncate=False)
+
+print("=== Kerendia rule vs NBA 3.0 name rule, and Kerendia + Lynkuet co-promotion templates (delivered) ===")
+deliv.filter(col("BRAND") == "KERENDIA") \
+    .withColumn("YEAR", when(col("MONTH") < "2025-11-01", lit("Y1")).otherwise(lit("Y2"))) \
+    .groupBy("YEAR", "NBA30_KERENDIA_NAME", "KER_LYN_COPROMO").agg(spark_sum("EMAILS").alias("delivered"),
+             countDistinct("TEMPLATE").alias("templates")).orderBy("YEAR", "NBA30_KERENDIA_NAME").show()
+
+print("=== Kerendia delivered by year ===")
+deliv.filter(col("BRAND") == "KERENDIA") \
+    .withColumn("YEAR", when(col("MONTH") < "2025-11-01", lit("Y1")).otherwise(lit("Y2"))) \
+    .groupBy("YEAR").agg(spark_sum("EMAILS").alias("delivered"), spark_sum("OPENED").alias("opened"),
+                         spark_sum("CLICKED").alias("clicked")).orderBy("YEAR").show()
+
+print("=== Monthly open rate: Kerendia vs other brands (delivered emails) ===")
+m = deliv.groupBy("MONTH").pivot("BRAND", ["KERENDIA", "OTHER BRANDS"]).agg(
+        spark_sum("EMAILS").alias("deliv"), spark_sum("OPENED").alias("open"), spark_sum("CLICKED").alias("click"))
+m.select("MONTH",
+         col("KERENDIA_deliv").alias("ker_delivered"),
+         F.round(col("KERENDIA_open") / col("KERENDIA_deliv") * 100, 1).alias("ker_open_pct"),
+         F.round(col("KERENDIA_click") / col("KERENDIA_deliv") * 100, 1).alias("ker_click_pct"),
+         col("OTHER BRANDS_deliv").alias("other_delivered"),
+         F.round(col("OTHER BRANDS_open") / col("OTHER BRANDS_deliv") * 100, 1).alias("other_open_pct"),
+         F.round(col("OTHER BRANDS_click") / col("OTHER BRANDS_deliv") * 100, 1).alias("other_click_pct"),
+        ).orderBy("MONTH").show(30, truncate=False)
+
+print("=== Same template before (Nov 2025 - Mar 2026) vs after (Jun - Oct 2026) the drop, Kerendia ===")
+per = (deliv.filter(col("BRAND") == "KERENDIA")
+       .withColumn("PERIOD", when((col("MONTH") >= "2025-11-01") & (col("MONTH") < "2026-04-01"), lit("before"))
+                            .when(col("MONTH") >= "2026-06-01", lit("after")))
+       .filter(col("PERIOD").isNotNull())
+       .groupBy("TEMPLATE").pivot("PERIOD", ["before", "after"]).agg(spark_sum("EMAILS").alias("n"), spark_sum("OPENED").alias("o")))
+per.filter((col("before_n") >= 100) & (col("after_n") >= 100)).select(
+    "TEMPLATE", "before_n", F.round(col("before_o") / col("before_n") * 100, 1).alias("before_open_pct"),
+    "after_n", F.round(col("after_o") / col("after_n") * 100, 1).alias("after_open_pct"),
+).orderBy(col("before_n").desc()).show(20, truncate=False)
 
 # COMMAND ----------
 

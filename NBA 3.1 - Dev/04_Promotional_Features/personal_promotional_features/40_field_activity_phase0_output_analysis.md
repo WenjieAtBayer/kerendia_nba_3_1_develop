@@ -19,8 +19,8 @@
 | V3 | BHO calls repeated to about 80 colleagues per organisation | New (3.0 used BHO calls without this logic) | Data yes; business answer missing | Yes: CRM team questions |
 | V4 | No key-message information in 3.0 | New | Partly | Yes: entry process and HF decline |
 | V5 | Samples only as "call type with sample" | New | Yes (30 Oct) | Yes: who fixes the market access table |
-| V6 | Registration treated as attendance; all event types mixed | Attendance existed in 3.0; separate states are new | No | Yes: `Signed_vod` meaning, event groups, attendee data |
-| V7 | Delivered filter never matched (feature always 0) | Fix of a 3.0 feature | Fix yes; opens open | Yes: April 2026 open-rate drop |
+| V6 | Registration treated as attendance; all event types mixed | Attendance existed in 3.0; separate states are new | Partly (fixed 4 Nov: Kerendia filter, attendee status column; type labels sit in `EVNT_CAT`) | Yes: `Signed_vod` meaning, event groups, attendee data |
+| V7 | Delivered filter never matched (feature always 0) | Fix of a 3.0 feature | Fix yes; opens open (drop is platform-wide, clicks stable: likely tracking change) | Yes: April 2026 open-rate drop |
 | V8 | Text rule would break again with a new co-detailed product | New | Not due | Yes: launch date and recording |
 | V9 | Columns not driven by a config | New (engineering standard) | No | No (internal) |
 | V10 | MSL visits not handled explicitly | New (MSL flag, compliance-approved 30 Oct 2026) | Yes (volume and classification, fixed 3 Nov) | Yes: Finerenone-only scope |
@@ -158,21 +158,75 @@ What the example shows:
 
 * **Why we expect this.** NBA 3.0 counted a doctor as attending if `ATND = 'Attended'`, mixed speaker programs with scientific presentations and round tables, and had about 8,000 registrations a year (`Signed_vod`) without attendance. Registration is not attendance (example: 22 registered, 12 attended). NBA 3.1 keeps invited, registered and attended apart.
 * **NBA 3.0 or new.** Attendance existed in 3.0; separate states and event-type groups are new.
-* **Status.** Not met. The event-type split works. The state map cannot be built: the table used (`ANLT_BASE_FACT_EVNT_PRSNL_PROM`) gives the status of the *event* (Closed, Completed), not of the attendee, so the `Signed_vod` check always returns 0.
+* **Status.** Partly met (V6 cell fixed 4 Nov 2026). The first version had two errors: (1) no brand filter, so it counted events of every brand (67,173 records, including Lynkuet and Nubeqa); (2) it read `EVNT_STAT`, the status of the *event* (Closed, Completed), as the attendee status, so the `Signed_vod` check always returned 0. The cell now uses the NBA 3.0 filters (`PROD_BRAND_NM = 'KERENDIA'`, `CUST_HCP_ID` like `BH`) and the attendee status column `EVNT_ATNDE_RSVP_STAT`. Numbers below are from the same logic run directly on Snowflake (4 Nov 2026); the notebook cell itself still needs to be run.
+* **What we found (Kerendia, doctor-event pairs).**
+
+  *Event types among confirmed attendances (`ATND = 'Attended'`, the NBA 3.0 rule):*
+
+  | Category (`EVNT_CAT`) | Type (`EVNT_TYP`) | Year 1 | Year 2 |
+  | --- | --- | --- | --- |
+  | SPEAKER PROGRAMS | Speaker Program | 3,375 | 3,736 |
+  | NON-SPEAKER PROGRAMS | Scientific Presentation | 1,015 | 967 |
+  | NON-SPEAKER PROGRAMS | Scientific Round Tables | 55 | 206 |
+  | NON-SPEAKER PROGRAMS | `medical_event__c` | 0 | 90 |
+  | NON-SPEAKER PROGRAMS | Sponsorship, Advisory Board, Other External Meeting, Symposium, Congress, Market Access, Investigator Meeting | 70 | 86 |
+  | **Total** | | **4,515** (4,220 doctors, 507 events) | **5,085** (4,812 doctors, 607 events) |
+
+  About 25% (Year 1) and 27% (Year 2) of the attendances NBA 3.0 counts as "speaker programs" are other event types.
+
+  *NBA 3.0 type features.* NBA 3.0 tests the labels `SPEAKER PROGRAMS` and `NON-SPEAKER PROGRAMS` on `EVNT_TYP`, but these labels are the values of a different column, `EVNT_CAT` (event category). `EVNT_TYP` holds `Speaker Program`, `Scientific Presentation`, ... So `TOTAL_SPKR_EVNT_TYP_SPKR_PRGM` and `TOTAL_SPKR_EVNT_TYP_NON_SPKR_PRGM` are always 0. The split exists in the data: testing the same labels on `EVNT_CAT` gives 3,375 / 1,140 (Year 1) and 3,736 / 1,349 (Year 2).
+
+  *Attendee states:*
+
+  | Attendee status (`EVNT_ATNDE_RSVP_STAT`) | `ATND` | Year 1 | Year 2 |
+  | --- | --- | --- | --- |
+  | (empty) | Attended | 4,515 | 5,085 |
+  | `Signed_vod` | empty | 5,851 | 8,098 |
+  | `Invited_vod` | empty | 456 | 1,125 |
+  | `Accepted_vod` | empty | 343 | 893 |
+  | `Nominated` | empty | 213 | 302 |
+  | `Confirmed` | empty | 2 | 33 |
+
+  `Attended` rows carry no attendee status, and `Signed_vod` rows carry no attendance value. Only 1 `Signed_vod` pair (Year 2) also has an `Attended` row for the same doctor and event. So the two are separate groups of doctors, not two records of the same attendance: if `Signed_vod` means "signed in", NBA 3.0 misses more than half of the real attendances (8,098 vs 5,085 in Year 2).
 * **Raise with client (events team).**
   * What does `Signed_vod` without `ATND` mean on a closed event: no-show, not recorded, or attended? (Q-D1)
   * Which event types count as speaker programs, scientific events, medical events, sponsorship? (Q-D2)
   * Confirm access to attendee-level status (`FACT_EVENT_ATTENDEE`).
   * Reason: without these, an event feature mixes doctors who attended with doctors who only registered.
-* **Suggestions.** Re-run V6 on the attendee table; until Q-D1 is answered, use only confirmed attendance (`Attended`).
+* **Suggestions.** Run the fixed V6 cell in the notebook. Build the event type from `EVNT_CAT` (speaker programs vs non-speaker programs) plus `EVNT_TYP` for the sub-groups, not from the NBA 3.0 labels on `EVNT_TYP`. Keep `Signed_vod` as its own state (`SPKR_SIGNED_12M`) next to confirmed attendance until Q-D1 is answered; do not merge it into attendance. Cross-check a sample of `Signed_vod` pairs against `FACT_EVENT_ATTENDEE`.
 
 #### V7 – iRep checks
 
 * **Why we expect this.** NBA 3.0 filtered delivered emails on `Delivered`, but Veeva stores `Delivered_vod`, so the feature was always 0. Separately, the open rate dropped in April 2026, possibly because tracking changed.
 * **NBA 3.0 or new.** Correction of a 3.0 feature.
-* **Status.** Fix met (`Delivered` = 0, `Delivered_vod` = 462,108). Opens not cleared: about 33 – 38% until March 2026, 19 – 20% from June, with similar email volumes.
-* **Raise with client (CRM email team).** Was there a tracking or privacy change around April 2026 (Q-C1)? Reason: if so, opens before and after are not comparable and an opens feature would teach the model a false trend.
-* **Suggestions.** Use delivered and clicked now; add opens only after the answer, with a before / after flag if needed.
+* **Status.** Fix met; opens not cleared, but the evidence now points clearly to a tracking change (re-checked 4 Nov 2026).
+  * *Caveat on the first V7 cell:* it has no brand filter, so its figures are for **all brands** (481,973 emails, `Delivered_vod` 462,108, open rate 33 – 38% then 19 – 20%). A new cell `V7b` repeats the checks for Kerendia (NBA 3.1 Kerendia rule below, with the NBA 3.0 name rule shown alongside) and compares with other brands. Numbers below come from the same logic run directly on Snowflake; the V7b cell still needs to be run in the notebook.
+  * *Delivered fix (Kerendia):* 72,981 `Delivered_vod`, 0 with the exact value `Delivered` that NBA 3.0 tests, so `TOTAL_IREP_EMAILS_DELIVERED` is 0 for every doctor. Other statuses: `Bounced_vod` 1,477, `Dropped_vod` 1,039, `Unsubscribed_vod` 367, `Marked_Spam_vod` 39. Delivered Kerendia emails: Year 1 40,257 (16,470 opened, 941 clicked); Year 2 32,724 (8,705 opened, 631 clicked).
+  * *Which emails count as Kerendia (decided 4 Nov 2026).* NBA 3.1 keeps iRep emails that promote Kerendia, alone or co-promoted with another brand such as Lynkuet. The NBA 3.0 rule (name contains "Kerendia") is not enough: many Kerendia templates use the abbreviation `KER`. Delivered emails by template group:
+
+  | Template group | Example | Year 1 | Year 2 | Counted in NBA 3.1 |
+  | --- | --- | --- | --- | --- |
+  | Name contains `Kerendia` (NBA 3.0 rule) | `Kerendia HF Content Share iRep Template` | 40,250 (37 templates) | 32,632 (19) | Yes |
+  | Word `KER` / `PP-KER-` | `PP-KER-US-3624-1 KER CKD HCP Branded Content Share iRep Refresh 2025`, `KER HF National Broadcast iRep`, `KER T1D Now Approved`, `Ker Veeva Dig Live Invite Compliance` | 42,920 (18) | 41,533 (8) | Yes (missed by NBA 3.0) |
+  | CKD / HF / T1D speaker-program pre- / post-meeting | `HF Speaker Program Pre-Meeting iRep` | 0 | 465 (6) | Yes |
+  | Kerendia + Lynkuet co-promotion | — | 0 | 0 | Yes, when they appear (no approved document names both brands) |
+  | Cardiorenal | `Cardiorenal Connection_Live` (Y1), `Cardiorenal Unbranded Content Share` (Y2) | 481 | 1,920 | To confirm (unbranded) |
+  | Kerendia medical | `KER HF Indication Approval Medical Email to HCPs`, unsolicited request | 2,222 | 92 | No (medical, not rep promotion) |
+  | Lynkuet only | `LYNKUET HCP iRep Email : Now Approved` | 0 | 68,602 (23) | No (not Kerendia) |
+
+  With the NBA 3.1 rule, Kerendia iRep is about 83,200 delivered emails in Year 1 and 74,600 in Year 2, about **2.1 – 2.3 times** what NBA 3.0 sees. The open / click figures above use the NBA 3.0 name rule; the V7b cell now uses the NBA 3.1 rule and also flags co-promotion templates.
+  * *Open-rate drop is not Kerendia-specific:*
+
+  | Period | Kerendia open % | Other brands open % | Kerendia click % | Other brands click % |
+  | --- | --- | --- | --- | --- |
+  | Nov 2024 – Dec 2025 | 36.3 – 43.6 | 30.3 – 36.7 | 1.8 – 3.3 | 2.3 – 4.3 |
+  | Jan – Mar 2026 | 28.2 – 36.0 | 29.8 – 33.9 | 1.6 – 2.3 | 2.7 – 3.6 |
+  | Apr 2026 | 24.8 | 25.9 | 1.9 | 3.2 |
+  | May – Oct 2026 | 18.5 – 23.5 | 18.6 – 23.6 | 1.3 – 3.1 | 2.2 – 2.8 |
+
+  Both Kerendia and other brands fall at the same time and to the same level (about 18 – 24%), while **click rates stay in their usual range** (Kerendia 1.3 – 3.1%, other brands 2.2 – 2.8%). The same Kerendia templates also drop: `Kerendia HF Content Share iRep Template` 34.8% (Nov 2025 – Mar 2026) to 19.9% (Jun – Oct 2026), `BACC Kerendia - Medicare Access` 32.6% to 17.6%, `Prior Authorization Support Resources` 35.9% to 22.2%, `HF Epic` 43.0% to 16.3%. A real drop in doctor interest would be specific to a brand or template and would also show in clicks. This pattern fits a change in how opens are tracked (for example image blocking or a new email client privacy setting) in April 2026.
+* **Raise with client (CRM email team).** Was there a tracking, vendor or privacy change around April 2026 (Q-C1)? The data now strongly suggests it; we need the date and the cause. Reason: opens before and after are not comparable, so an opens feature would teach the model a false trend (all training cohorts end before April 2026, while inference is after).
+* **Suggestions.** Use delivered and clicked now (both stable). Keep opens out of the model (I-3) until Q-C1 is answered; if it is confirmed as a tracking change, either drop opens or use them only with a before / after flag. Also note that rep emails are counted again in the digital block (`IREP_EMAILS` channel), which breaks S3; the digital plan moves iRep to this block, so the digital block must drop it.
 
 #### V8 – Asundexian readiness
 

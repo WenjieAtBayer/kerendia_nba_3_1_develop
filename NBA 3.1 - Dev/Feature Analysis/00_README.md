@@ -22,6 +22,8 @@ The companion file `90_competitor_comorbidity_summary_and_trends.md` is the cros
 | 10 | `10_competitor_nbrx_share_features_nba31_changes.md` | **NEW.** NBA 3.1 changes: fix indication scope, denominator, cohort logic, and drug list | `31_Competitor_drugs_NBRX_share` (to be rebuilt) |
 | — | `NBA_3_1_HCP_Feature_Recommendations.xlsx` | Cross-family tracker of all proposed feature changes. Not renamed (binary). | — |
 | 90 | `90_competitor_comorbidity_summary_and_trends.md` | **NEW.** Summary across the competitor and comorbidity families: NBA 3.0 status, 2-year market trend data, data-quality gaps, and a prioritised NBA 3.1 improvement list | Both families |
+| 91 | `91_josh_briefing_competitor_comorbidity.md` | Plain-language briefing for Josh Buffington (CI). Section 9 holds the Nov 2026 meeting decisions | Both families + market events |
+| 92 | `92_competitor_comorbidity_nba31_readiness_plan.md` | NBA 3.1 readiness plan: validations V1-V10, build phases (comorbidity, competitor, adoption, market events), experiments E0-E6, gates G0-G3, decisions, open questions | All four families |
 
 ---
 

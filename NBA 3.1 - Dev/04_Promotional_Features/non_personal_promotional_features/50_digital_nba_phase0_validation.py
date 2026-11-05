@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # DBTITLE 1,Digital in NBA 3.1: Data Readiness Validation
 # MAGIC %md
 # MAGIC ## Digital in NBA 3.1: Data Readiness Validation
@@ -206,48 +210,69 @@ else:
 # DBTITLE 1,Family 4: DTC — Facebook/Instagram + SA360 Check
 # Family 4: DTC Market Context
 # Check Facebook/Instagram (DMA) and SA360 search (state) tables
+#
+# Fixes vs the first version:
+#   * `rows` is a Snowflake reserved word -> alias renamed to ROW_CNT
+#   * Facebook columns follow the Funnel naming (same as NBA 3.0 00_Write_Input_Files):
+#     DMA_REGION__FACEBOOK_ADS, IMPRESSIONS__FACEBOOK_ADS, CLICKS_ALL__FACEBOOK_ADS
+#   * Facebook table holds several brands -> filter DATA_SOURCE_NAME = 'Bayer_Kerendia'
+#   * SA360 region column is REGION__NEW_SEARCH_ADS_360 (US state, not DMA)
+#   * SA360 table holds all Bayer brands -> keep Kerendia campaigns (KER_DTC_ / KER_HCP_) and split DTC vs HCP
+#   * Snowflake returns unquoted aliases in upper case -> sum over "ROW_CNT"
 
 # Facebook/Instagram
 print("=== Family 4a: DTC Social (Facebook/Instagram) ===")
 try:
     fb_q = """
     SELECT
-        DATE_TRUNC('MONTH', DATE) AS MONTH,
-        COUNT(*) AS rows,
-        COUNT(DISTINCT DMA_NAME) AS n_dmas,
-        SUM(IMPRESSIONS) AS total_impressions
+        DATE_TRUNC('MONTH', TO_DATE("DATE")) AS MONTH,
+        COUNT(*) AS ROW_CNT,
+        COUNT(DISTINCT LOWER(DMA_REGION__FACEBOOK_ADS)) AS N_DMAS,
+        SUM(IMPRESSIONS__FACEBOOK_ADS) AS TOTAL_IMPRESSIONS,
+        SUM(CLICKS_ALL__FACEBOOK_ADS) AS TOTAL_CLICKS
     FROM FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_FACEBOOKADS_GEO_DMA
-    WHERE DATE >= '2025-01-01' AND DATE < '2026-11-01'
-    GROUP BY DATE_TRUNC('MONTH', DATE)
-    ORDER BY MONTH
+    WHERE DATA_SOURCE_NAME = 'Bayer_Kerendia'
+      AND TO_DATE("DATE") >= '2025-01-01' AND TO_DATE("DATE") < '2026-11-01'
+    GROUP BY 1
+    ORDER BY 1
     """
     df_fb = sf_dsaa(fb_q)
     df_fb.show(30, truncate=False)
-    fb_total = df_fb.select(spark_sum("rows")).first()[0]
+    fb_total = df_fb.select(spark_sum("ROW_CNT")).first()[0] or 0
     print(f"Total DTC social rows: {fb_total:,}")
 except Exception as e:
-    print(f"Facebook/Instagram table not accessible: {e}")
+    print(f"Facebook/Instagram query failed: {e}")
 
-# SA360 search
-print("\n=== Family 4b: DTC Search (SA360) ===")
+# SA360 search (state level), Kerendia campaigns split into DTC and HCP
+print("\n=== Family 4b: Paid Search (SA360, by state) ===")
 try:
     sa_q = """
     SELECT
-        DATE_TRUNC('MONTH', DATE) AS MONTH,
-        COUNT(*) AS rows,
-        COUNT(DISTINCT REGION) AS n_regions,
-        SUM(CLICKS) AS total_clicks
+        DATE_TRUNC('MONTH', TO_DATE("DATE")) AS MONTH,
+        CASE WHEN STARTSWITH(UPPER(CAMPAIGN__NEW_SEARCH_ADS_360), 'KER_DTC_') THEN 'DTC'
+             ELSE 'HCP' END AS CAMPAIGN_TYPE,
+        COUNT(*) AS ROW_CNT,
+        COUNT(DISTINCT CAMPAIGN__NEW_SEARCH_ADS_360) AS N_CAMPAIGNS,
+        COUNT(DISTINCT REGION__NEW_SEARCH_ADS_360) AS N_REGIONS,
+        SUM(IMPRESSIONS) AS TOTAL_IMPRESSIONS,
+        SUM(CLICKS) AS TOTAL_CLICKS
     FROM FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_NEW_SA360_REGION
-    WHERE DATE >= '2025-01-01' AND DATE < '2026-11-01'
-    GROUP BY DATE_TRUNC('MONTH', DATE)
-    ORDER BY MONTH
+    WHERE (STARTSWITH(UPPER(CAMPAIGN__NEW_SEARCH_ADS_360), 'KER_DTC_')
+        OR STARTSWITH(UPPER(CAMPAIGN__NEW_SEARCH_ADS_360), 'KER_HCP_'))
+      AND TO_DATE("DATE") >= '2025-01-01' AND TO_DATE("DATE") < '2026-11-01'
+    GROUP BY 1, 2
+    ORDER BY 1, 2
     """
     df_sa = sf_dsaa(sa_q)
-    df_sa.show(30, truncate=False)
-    sa_total = df_sa.select(spark_sum("rows")).first()[0]
-    print(f"Total SA360 search rows: {sa_total:,}")
+    df_sa.show(50, truncate=False)
+    sa_total = df_sa.select(spark_sum("ROW_CNT")).first()[0] or 0
+    print(f"Total Kerendia SA360 rows: {sa_total:,}")
+    df_sa.groupBy("CAMPAIGN_TYPE").agg(
+        spark_sum("TOTAL_IMPRESSIONS").alias("IMPRESSIONS"),
+        spark_sum("TOTAL_CLICKS").alias("CLICKS"),
+    ).show()
 except Exception as e:
-    print(f"SA360 table not accessible: {e}")
+    print(f"SA360 query failed: {e}")
 
 # COMMAND ----------
 
@@ -372,11 +397,45 @@ print("\n" + "=" * 80)
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## Family 4 — DTC Social + Search: NOT VERIFIED (query syntax errors)
+# MAGIC ## Family 4 — DTC Social + Search: READY (social ends June 2026; search at state level only)
 # MAGIC
-# MAGIC The Facebook/Instagram (`FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_FACEBOOKADS_GEO_DMA`) and SA360 search table queries **failed due to Snowflake reserved keyword `rows`** in the SQL alias (`COUNT(*) AS rows`). The tables may exist but the queries need `AS row_cnt` instead. This is the same issue fixed in Families 1 and the 13_hcp_digital notebook.
+# MAGIC **Query fixes applied (Nov 5, 2026):** alias `rows` (Snowflake reserved word) renamed to `ROW_CNT`; Funnel column names used (`DMA_REGION__FACEBOOK_ADS`, `IMPRESSIONS__FACEBOOK_ADS`, `CLICKS_ALL__FACEBOOK_ADS`, `REGION__NEW_SEARCH_ADS_360`); Kerendia filters added (`DATA_SOURCE_NAME = 'Bayer_Kerendia'` for social; campaigns starting `KER_DTC_` / `KER_HCP_` for search).
 # MAGIC
-# MAGIC **Status:** Query fix required before data availability can be confirmed.
+# MAGIC ### 4a. Facebook / Instagram (`FUNNEL_DATA_FACEBOOKADS_GEO_DMA`, DMA x day)
+# MAGIC
+# MAGIC | Metric | Value |
+# MAGIC |--------|-------|
+# MAGIC | Months available | Jan 2025 – **Jun 2026** (no rows Jul – Oct 2026) |
+# MAGIC | DMAs per month | 211 (every month) |
+# MAGIC | Total rows | 1,278,441 |
+# MAGIC | Impressions | 41.7M (2025), 22.3M (Jan – Jun 2026) |
+# MAGIC | Monthly impressions | 1.9M (Feb 2025) – 5.4M (Dec 2025) |
+# MAGIC | Monthly clicks | 11.7K – 32.2K, except **May 2026: 105,643** |
+# MAGIC
+# MAGIC **Issues:**
+# MAGIC * **Data stops after June 2026.** For an anchor at 1 Nov 2026 the last 3 complete months (Jul – Sep 2026) are empty. Confirm with the DTC team whether social stopped or the feed is late (Q-D4 in `21_...`).
+# MAGIC * **May 2026 click outlier:** 2.31% of impressions clicked vs 0.5 – 0.7% in other months (Q-C2). Fix or exclude before training.
+# MAGIC * **Aug 2025 dip in rows** (24,842 vs 55K – 90K in other months) while impressions are normal: check for a reporting change.
+# MAGIC * All 211 DMAs every month: totals mainly reflect region size, so features must be per 1,000 adults.
+# MAGIC
+# MAGIC ### 4b. SA360 paid search (`FUNNEL_DATA_NEW_SA360_REGION`, state x day)
+# MAGIC
+# MAGIC | Metric | DTC (`KER_DTC_`) | HCP (`KER_HCP_`) |
+# MAGIC |--------|------------------|------------------|
+# MAGIC | Months available | Jan 2025 – Oct 2026 (all 22) | Jan 2025 – Oct 2026 (all 22) |
+# MAGIC | Campaigns per month | 6 (stable) | 30 (Jan 2025) → 110 (Oct 2026) |
+# MAGIC | Regions per month | 53 (50 states + DC + 2 Google regions) | 53 |
+# MAGIC | Impressions (22 months) | 2.85M (1.47M in 2025) | 11.93M |
+# MAGIC | Clicks (22 months) | 333K (186K in 2025) | 1.81M |
+# MAGIC | Monthly clicks | 11.6K – 18.5K | 39K – 151K |
+# MAGIC | Share of Kerendia search clicks | **15.6%** | 84.4% |
+# MAGIC
+# MAGIC **Issues:**
+# MAGIC * **State only, no DMA / Metro:** DTC search can only enter NBA at state level (or split to DMAs by population, Q-B7).
+# MAGIC * **Most Kerendia search is HCP search.** Only the 6 `KER_DTC_` campaigns belong to DTC; HCP search is optional HCP-level market context and only if the June 2026 region-coverage gap (Q-B9) is explained.
+# MAGIC * DTC search is small and stable (about 12K – 18K clicks a month) and still running, unlike the NBA 3.0 direct-buy vendors.
+# MAGIC
+# MAGIC These results match the figures in `21_dtc_data_findings_2024_2026_and_open_questions.md` (FB+IG 41.7M impressions in 2025 and 22.3M in Jan – Jun 2026; DTC search 1.47M impressions / 186K clicks in 2025; about 15% of clicks DTC).
 # MAGIC
 # MAGIC ---
 # MAGIC
@@ -414,7 +473,7 @@ print("\n" + "=" * 80)
 # MAGIC | 1. HCP Paid Media (MMX) | **READY** | None — 130M rows, 22 months available |
 # MAGIC | 2. HQ Email | **READY** | Open rate declining but data available |
 # MAGIC | 3. Request-a-Rep (RAR) | **EXISTS** | Use `BRAND_NAME` not `BRND_NM` |
-# MAGIC | 4. DTC Social + Search | **NOT VERIFIED** | Snowflake `rows` keyword error — fix queries |
+# MAGIC | 4. DTC Social + Search | **READY (with gaps)** | Social: 211 DMAs but no data after Jun 2026, May 2026 click outlier. Search: state level only; DTC = 6 campaigns, 15.6% of Kerendia clicks |
 # MAGIC | 5. OE Event-Level | **EXISTS** | Use `DATE_ID` not `EVENT_DATE`; needs CUST_ID→BH_ID/NPI mapping |
 # MAGIC
-# MAGIC **Three of five families are confirmed ready.** Families 3 and 5 require column name corrections. Family 4 requires query fixes before availability can be assessed.
+# MAGIC **Four of five families are confirmed available.** Families 1, 2 and 4 are ready (Family 4 with the gaps above: social feed ends June 2026, search at state level only). Families 3 and 5 require column name corrections (and Family 5 a CUST_ID to BH_ID / NPI mapping).

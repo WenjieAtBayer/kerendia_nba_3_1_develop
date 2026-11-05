@@ -23,8 +23,8 @@
 
 | Field | What it holds | Rep call example | MSL visit example |
 | --- | --- | --- | --- |
-| Record type (`CALL_REC_TYP_NM`) | Kind of visit | `Face2Face Signed`, `BPH_Face2Face_SIG`, `Group Call Signed` | `Face2Face Interaction Med`, `Non Face2Face Interaction Med`, `Remote Interaction Med`, `Group Interaction Med`, `Remote Group Interaction Med`, `BPH_MED_*`, `Event Call Report` |
-| Product text (`DETL_PROD`) | What was discussed | `Kerendia`, `Kerendia;Lynkuet` | `Finerenone [Kerendia/Firialta] ...` plus an indication (CKD, DKD, HF, HFpEF, CVD, T1D); 1,073 different texts. Also other medical products (Asundexian, Elinzanetant) |
+| Record type (`CALL_REC_TYP_NM`) | Kind of visit | `Face2Face Signed`, `BPH_Face2Face_SIG`, `Group Call Signed` | `Face2Face Interaction Med`, `Non Face2Face Interaction Med`, `Remote Interaction Med`, `Group Interaction Med`, `Remote Group Interaction Med`, `BPH_MED_*` (5 variants), `Event Call Report` (11 types in total, section 2.2) |
+| Product text (`DETL_PROD`) | What was discussed | `Kerendia`, `Kerendia;Lynkuet` | `Finerenone [Kerendia/Firialta] ...` plus an indication (CKD, DKD, HF, HFpEF, CVD, T1D); 1,082 different full texts in Year 1 + 2 (section 2.1). Also other medical products (Asundexian, Elinzanetant) |
 
 **Rule (`MEDICAL` class):**
 
@@ -32,6 +32,69 @@
 * and the product text contains `Finerenone` → **Kerendia-related medical record** (MD-1 scope).
 
 MSL records use the scientific name **Finerenone**, not the brand name Kerendia. That is why NBA 3.0 never counted them: it only kept `DETL_PROD = 'KERENDIA'`. That happened by luck, not by design.
+
+> **Issue: Kerendia (Finerenone) has many product names in medical records.** There is no single product value for Kerendia in MSL visits. The same medicine appears under **9 different names plus 3 cut-off fragments**, and a single call often lists several of them in one text. Any rule that tests for one exact value (as NBA 3.0 did with `'KERENDIA'`) will miss most visits. NBA 3.1 must test "product text **contains** `Finerenone`" (case-insensitive), and the list below should be confirmed with the CRM team (C3).
+
+**Source of the numbers below:** `CPH_DB_PROD.MODEL_V2.FACT_CALL`, submitted calls Nov 2024 – Oct 2026, the 11 medical record types, product text containing `finerenone`; counts are calls, with no doctor filter (they include organisation / BHO IDs and calls without a customer match, so they are higher than the Phase 3 doctor counts). Queried 5 Nov 2026.
+
+### 2.1 Kerendia (Finerenone) product names
+
+**How the product text is built.**
+
+* 36,816 medical calls mention Finerenone, with **1,082 different full product texts**.
+* These texts are combinations of only **27 single products**; **19,669 calls (53%)** list more than one product in the same text, separated by several spaces (not by `;`).
+* Every Finerenone value has the form `Finerenone [Kerendia/Firialta]` + optional indication + optional `(US)`.
+
+**All Finerenone values (after splitting multi-product texts).** A call that lists two Finerenone values is counted under both.
+
+| # | Product text value | Indication | Calls | Year 1 | Year 2 | First seen | Last seen |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `Finerenone [Kerendia/Firialta] (US)` | None (general) | 15,762 | 7,452 | 8,310 | 2024-11-01 | 2026-10-30 |
+| 2 | `Finerenone [Kerendia/Firialta] - HFpEF` | Heart failure (preserved EF) | 13,267 | 12,054 | 1,213 | 2024-11-01 | 2026-01-22 |
+| 3 | `Finerenone [Kerendia/Firialta] - DKD (US)` | Diabetic kidney disease | 10,082 | 6,027 | 4,055 | 2024-11-01 | 2026-10-29 |
+| 4 | `Finerenone [Kerendia/Firialta] - HFpEF (US)` | Heart failure (preserved EF) | 8,563 | 0 | 8,563 | 2025-11-07 | 2026-10-30 |
+| 5 | `Finerenone [Kerendia/Firialta] - HF (US)` | Heart failure | 6,658 | 2,153 | 4,505 | 2025-06-20 | 2026-10-30 |
+| 6 | `Finerenone [Kerendia/Firialta] - CKD` | Chronic kidney disease | 4,188 | 3,796 | 392 | 2024-11-01 | 2026-01-08 |
+| 7 | `Finerenone [Kerendia/Firialta] - T1D (US)` | Type 1 diabetes | 3,218 | 409 | 2,809 | 2024-11-02 | 2026-10-30 |
+| 8 | `Finerenone [Kerendia/Firialta] - CVD` | Cardiovascular disease | 2,408 | 2,170 | 238 | 2024-11-01 | 2026-01-28 |
+| 9 | `Finerenone [Kerendia/Firialta] - CKD (US)` | Chronic kidney disease | 2,376 | 0 | 2,376 | 2025-12-01 | 2026-10-30 |
+| 10 | `Finerenone` (cut off) | — | 31 | 6 | 25 | 2025-09-09 | 2025-12-17 |
+| 11 | `Finerenone [Kere` (cut off) | — | 4 | 2 | 2 | 2024-11-19 | 2025-11-09 |
+| 12 | `Finerenone [Keren` (cut off) | — | 2 | 0 | 2 | 2025-12-18 | 2025-12-18 |
+
+**What to notice.**
+
+* **Renaming around Dec 2025.** `- HFpEF` and `- CKD` were replaced by `- HFpEF (US)` and `- CKD (US)` (new values from Nov / Dec 2025, old ones last seen Jan 2026). `- CVD` stops in Jan 2026 and has no `(US)` version. A rule on exact names would break silently at each renaming.
+* **New indications appear over time.** `- HF (US)` starts in June 2025 (HF approval July 2025); `- T1D (US)` is mostly Year 2.
+* **Cut-off fragments** (37 calls) look like text truncated partway; they are still caught by "contains `Finerenone`".
+* **No value says "Kerendia" alone.** The brand name only appears inside the brackets.
+
+**Other products listed in the same text as Finerenone** (top values): `Cardiovascular Portfolio {Med} (US)` 1,653 calls; `Asundexian {Med} (US)` 47 and `Asundexian {Med} - FXIa Inhibitor (US)` 19; `Women's Healthcare Portfolio {Med} (US)` 20; `Others Portfolio {Med} (US)` 18; `Darolutamide [Nubeqa] (US)` 16; `Elinzanetant [Lynkuet] (US)` 10; `Elinzanetant {Med} (US)` 10; `Oncology Portfolio {Med} (US)` 5.
+
+### 2.2 Medical record types (all 11)
+
+`BPH_MED_*` is not one type but 5 separate types. Calls with Finerenone in the product text, Year 1 + 2:
+
+| Record type (`CALL_REC_TYP_NM`) | Calls |
+| --- | --- |
+| `Face2Face Interaction Med` | 15,290 |
+| `BPH_MED_Face2Face_Interaction_Med` | 8,074 |
+| `Non Face2Face Interaction Med` | 3,895 |
+| `BPH_MED_Non_Face2Face_Interaction_Med` | 2,942 |
+| `Group Interaction Med` | 2,280 |
+| `Remote Interaction Med` | 1,774 |
+| `BPH_MED_Remote_Interaction_Med` | 926 |
+| `Remote Group Interaction Med` | 605 |
+| `Event Call Report` | 484 |
+| `BPH_MED_Group_Interaction_Med` | 462 |
+| `BPH_MED_Remote_Group_Interaction_Med` | 84 |
+
+**Implications.**
+
+* The MD-1 rule ("contains `Finerenone`") catches all 12 Finerenone values; no exact-name list is used.
+* The record-type rule is pattern-based for the same reason: the old fixed list missed `Non Face2Face Interaction Med` and `Group Interaction Med` (5,045 Year 2 records leaked into rep visits before the 3 Nov fix).
+* Indications are available in the text, but compliance approved only a yes / no flag; indication-level MSL features would need a separate approval (X3).
+* Ask the CRM team (C3) to confirm the full list of Finerenone product names and medical record types, and to announce future renamings.
 
 ---
 

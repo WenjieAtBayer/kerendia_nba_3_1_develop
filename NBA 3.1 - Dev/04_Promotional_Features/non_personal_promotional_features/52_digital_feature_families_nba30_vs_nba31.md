@@ -157,6 +157,52 @@ A plain "total exposure" therefore mostly measures PulsePoint. Smaller placement
 
 Key columns of `RPT_DIGITAL_RAR_TAB` [P0]: `TRANSACTION_ID`, `BRAND_NAME`, `BH_ID`, `NPI`, `CREATE_DATE` (request date), `REQUEST_TYPE`, `REP_TYPE`, `CALL_DATE` (follow-up call), `WEBFORM_SOURCE`, `UTM_SOURCE` / `UTM_MEDIUM` / `UTM_CAMPAIGN`.
 
+**The Request-a-Rep table explained (`PHCDW.PHCDW_CDM.RPT_DIGITAL_RAR_TAB`).** A small reporting table of **requests doctors send through the form on Bayer's HCP brand websites** ("send me samples", "have a rep contact me", "send patient support information"). One row per request, plus whether a rep **followed up** (call, sample, iRep email, HQ email) and how many days later. RAR most likely stands for **Request a Rep**.
+
+**Size and coverage** (Snowflake, queried 5 Nov 2026):
+
+* **5,818 rows**, one per request (`TRANSACTION_ID` unique).
+* Requests from **1 Jan 2025 to 4 Nov 2026**; every row has `SOURCE_CD = 'HCP_SITE'` (brand website form).
+* 12 brands: Mirena 2,509, **Kerendia 1,385**, Lynkuet 597, Kyleena 395, Nubeqa 288, Adempas 232, and 6 smaller ones.
+* Table created **15 Sep 2026**, last refreshed 5 Nov 2026, so the 2025 history was loaded in one go.
+
+**Schema (66 columns), grouped:**
+
+| Group | Columns | What they hold |
+| --- | --- | --- |
+| Request | `TRANSACTION_ID`, `CREATE_DATE`, `REQUEST_WEEK`, `REQUEST_MONTH`, `BRAND_NAME`, `REQUEST_TYPE`, `REQUEST_DETAILS`, `REP_TYPE` | ID, date, brand, what was asked for, which kind of rep (`REQUEST_WEEK` / `REQUEST_MONTH` are week-end / month-end dates stored as text) |
+| Doctor identity | `BH_ID`, `NPI`, `HCP_ID`, `MASTERED_NON_MASTERED`, `HCP_STATUS`, `HCP_TYPE`, `SPECIALTY`, `TITLE`, `GENDER`, `TARGET_SEGMENT` | Bayer ID, NPI, matched to the customer master or not, status (A = active), type (P = prescriber), segment |
+| Personal data (PII) | `FIRSTNAME`, `LASTNAME`, `EMAIL`, `PHONE`, `ADDRESS_LINE_1/2`, `CITY`, `STATE`, `POSTAL_CODE`, `PRIMARY_COUNTRY` | What the doctor typed into the form. **Not to be read by the feature pipeline** |
+| Territory and rep | `SRC_TERR_CD`, `TERR_NUM`, `TERRITORY`, `REGN_CD`, `REGION`, `AREA_CD`, `AREA`, `REP_EMAIL_ADDRESS`, `REP_MANAGER_EMAIL_ADDRESS`, `EMAIL_ADDRESS` | Who the request was routed to |
+| Web source | `SOURCE_CD`, `REFERRAL`, `UTM`, `UTM_SOURCE`, `UTM_MEDIUM`, `UTM_CAMPAIGN`, `LANDING_PAGE_URL`, `WEBFORM_SOURCE` | How the doctor reached the form (Google ad, CRM email, organic search, ...) |
+| Follow-up: call | `CALL` (0 / 1), `CALL_DATE`, `LAG_TIME_CALL` | Whether and when a rep called after the request (days) |
+| Follow-up: sample | `SAMPLE_DATE`, `LAG_TIME_SAMPLE` | Sample after the request |
+| Follow-up: iRep email | `SENT_IREP` (0 / 1), `IREP_EMAIL_SENT_DATE`, `LAG_TIME_IREP`, `CLICKED_IREP`, `VIEWED_IREP`, `DELIVERED_IREP` | iRep email after the request |
+| Follow-up: HQ email | `SENT_HQ`, `HQ_EMAIL_SENT_DATE`, `LAG_HQ`, `CLICKED_HQ`, `VIEWED_HQ`, `DELIVERED_HQ` | HQ email after the request |
+| Other | `LAG_TIME_REP`, `NA1`, `NA2` | Placeholders |
+
+**Kerendia rows (1,385 requests).**
+
+* **1,214 doctors**; 1,138 asked once, a few asked repeatedly (one doctor 18 times). `BH_ID` filled on 98.6% of rows, `NPI` on only half.
+* 55 – 190 requests a quarter, with a spike to **421 in Q1 2026**.
+* Follow-up: **29.7% followed by a call** (median 9 days; 25% within 3 days, 75% within 36; no call dated before the request); **273 followed by a sample**; only **10 by an iRep email**; HQ email follow-up never filled.
+
+| Request type | Requests | Followed by a call | Median days to call | Followed by a sample |
+| --- | --- | --- | --- | --- |
+| `Samples` | 581 | 52.3% | 8 | 224 |
+| `Contact by Rep` | 521 | **7.1%** | 17 | 15 |
+| Empty | 187 | 31.0% | 7 | 31 |
+| `News & Announcements` | 54 | 13.0% | 93 | 1 |
+| `Other` | 42 | 11.9% | 10 | 2 |
+
+**Data quality points.**
+
+* **Completely empty columns:** `REQUEST_DETAILS`, `WEBFORM_SOURCE`, `NA1`, `NA2`, `LAG_TIME_REP`, `CLICKED_IREP`, and every HQ follow-up column (`SENT_HQ`, `HQ_EMAIL_SENT_DATE`, `LAG_HQ`, `CLICKED_HQ`, `VIEWED_HQ`, `DELIVERED_HQ`).
+* **`REQUEST_TYPE` can hold several values in one text** (e.g. `News & Announcements, Contact by Rep, Clinical Data`) and has a typo (`Full Prescribing Information Information`).
+* **`REP_TYPE` sometimes holds request-type text** (about 115 rows): values look shifted.
+* **"Contact by Rep" is rarely followed by a call (7.1%).** Either the call is logged without a link, or the follow-up matching misses it. To ask the table owner.
+* **Follow-up columns are outcomes after the request.** They may be used only when the follow-up date is on or before the cohort cutoff (leakage rule below).
+
 **What the data shows.**
 
 * Request-a-Rep [Doc, `40_...`]: 1,218 Kerendia requests (Jan 2025 to Oct 2026); only **340 (28%)** were followed by a rep call, after a median of 7 to 9 days, so about **880 requests had no follow-up call**. BH_ID on almost every row, NPI on only about 46%. The table exists and has 66 columns; its brand column is `BRAND_NAME`, not `BRND_NM` [P0].
@@ -164,6 +210,22 @@ Key columns of `RPT_DIGITAL_RAR_TAB` [P0]: `TRANSACTION_ID`, `BRAND_NAME`, `BH_I
 * New Writer: definition still to be agreed with OE. Formulary wins: source not found yet [Doc].
 
 **What changes in NBA 3.1.** About 10 to 15 features such as `RAR_LAST_6M_FLAG`, `RAR_COUNT_12M`, `DAYS_SINCE_LAST_RAR`, `RAR_TYPE_SAMPLES_FLAG`, `NEW_WRITER_LAST_3M_FLAG`, `SMS_ENGAGED_3M_FLAG`, `FORMULARY_WIN_AFFIL_6M_FLAG`. Plus a **business rule**: a doctor with an open request (no follow-up call yet) is always shown in the NBA dropdown list with the reason "requested a rep on <date>".
+
+**RAR features: two levels.** RAR features are built (a) on **all RAR events** and (b) on **each type of RAR follow-up: Call, Samples, iRep email and HQ email**.
+
+| Level | Events counted | Example features | Source columns |
+| --- | --- | --- | --- |
+| All RAR events | Every Kerendia request (`BRAND_NAME = 'KERENDIA'`), whatever was asked and whatever followed | `RAR_COUNT_3M / 6M / 12M`, `RAR_LAST_6M_FLAG`, `DAYS_SINCE_LAST_RAR`, `RAR_OPEN_REQUEST_FLAG` | `CREATE_DATE` |
+| RAR + Call | Requests followed by a rep call | `RAR_CALL_COUNT_12M`, `RAR_CALL_SHARE_12M` (share of requests answered by a call), `RAR_OPEN_NO_CALL_FLAG` | `CALL`, `CALL_DATE`, `LAG_TIME_CALL` |
+| RAR + Samples | Requests followed by a sample | `RAR_SAMPLE_COUNT_12M`, `RAR_SAMPLE_SHARE_12M`, `RAR_OPEN_NO_SAMPLE_FLAG` | `SAMPLE_DATE`, `LAG_TIME_SAMPLE` |
+| RAR + iRep email | Requests followed by an iRep email | `RAR_IREP_COUNT_12M`, `RAR_IREP_SHARE_12M` | `SENT_IREP`, `IREP_EMAIL_SENT_DATE`, `LAG_TIME_IREP` |
+| RAR + HQ email | Requests followed by an HQ email | `RAR_HQ_COUNT_12M`, `RAR_HQ_SHARE_12M` | `SENT_HQ`, `HQ_EMAIL_SENT_DATE`, `LAG_HQ` |
+
+Rules for the type-level features:
+
+* **Leakage:** a follow-up counts only if its date (`CALL_DATE`, `SAMPLE_DATE`, `IREP_EMAIL_SENT_DATE`, `HQ_EMAIL_SENT_DATE`) is **on or before the cohort cutoff**; otherwise the request is still "open" for that type at the cutoff.
+* **Expected sparsity (Kerendia):** Call 411 of 1,385 requests, Samples 273, iRep 10, HQ email 0 (columns empty today). iRep and HQ email features are built so the schema is fixed, but will be almost all zero until the table owner fills the HQ columns; review them after E6.
+* Request type (`Samples`, `Contact by Rep`, ...) stays a separate feature (`RAR_TYPE_SAMPLES_FLAG`), since what the doctor asked for differs from what the rep did.
 
 **Why.** A doctor asking for a rep is the clearest signal of interest that exists, and 880 requests went unanswered. Because these events are rare (about 1,200 versus tens of thousands of doctors), the model alone may not learn them reliably, hence the extra business rule. **Leakage rule:** only use what was known at the anchor date; a call made after the anchor must not mark a request as answered.
 
@@ -430,3 +492,106 @@ How to read it:
 * **Gate G1:** met for build, leakage and fixed schema (second run gave an identical schema). Fix issues 1 and 2 before running the experiments.
 * **Next:** run E2 (76 features, no placements) and E3 (all 152, after issue 3) against the NBA 3.0 digital block (E0) in the NBA 3.1 HCP model.
 * **Open with the digital team:** vendor codes for ConnectiveRx, Nativo, Healthcast and LinkedIn; the Medscape custom entries (Digital Data Trends, Formulary Access Package); the light / deep rule; a campaign ID for unique opens.
+
+---
+
+## 7. Phase 2: high-intent signals (family 3)
+
+**Notebook:** `53_digital_nba_phase2_high_intent_features` (written 5 November 2026, not run yet as a notebook)  
+**Output (when run):** `.../dev_folder/notebook_output/nba_3_1_digital_phase2/hcp_digital_phase2_high_intent_features` (Delta, partitioned by `COHORT_ID`), plus `rar_open_requests_business_rule`, `feature_manifest`, `expected_schema.json`  
+**Status of the numbers below:** New Writer and Impiricus SMS were computed by me on 5 November 2026 with the same logic as the notebook, on the Unity Catalog tables. Request-a-Rep needs the Snowflake connection, so its numbers come from the documents [Doc] until the notebook is run.
+
+### 7.1 What Phase 2 builds, in plain words
+
+One row per doctor (NPI) per cohort, with the **same 21 cohorts and cutoffs as Phase 1** (cohort `2026-09_offset7` = as of 6 October 2026), so it joins directly to the Phase 1 table and the claims features. 18 fixed features:
+
+| Signal | Features | Question it answers | Source |
+| --- | --- | --- | --- |
+| Request-a-Rep (8) | `RAR_COUNT_3M / 6M / 12M`, `RAR_LAST_6M_FLAG`, `DAYS_SINCE_LAST_RAR`, `RAR_TYPE_SAMPLES_FLAG_12M`, `RAR_OPEN_REQUEST_FLAG`, `RAR_FOLLOWED_UP_SHARE_12M` | Did the doctor ask for a rep, how recently, for what, and did we answer (as of the cutoff)? | `RPT_DIGITAL_RAR_TAB` (Snowflake) |
+| New Writer (5) | `KERENDIA_WRITER_EVER_FLAG`, `NEW_WRITER_LAST_3M / 6M / 12M_FLAG`, `DAYS_SINCE_FIRST_KERENDIA_RX` | Has the doctor just started prescribing Kerendia? | LAAD `kerendia_laad_based_lrx_full_data_starting_2021` + `_v6` |
+| Impiricus SMS (5) | `SMS_SENT_3M`, `SMS_EXPOSED_3M_FLAG`, `SMS_ENGAGED_6M / 12M_FLAG`, `DAYS_SINCE_LAST_SMS` | Did the doctor receive or react to a Kerendia text message? | MMX, vendor `IMPIRICUS` |
+| Formulary wins (0) | none yet | | source not found |
+
+Plus **use B, the business rule**: a list of doctors with an open request (made in the last 90 days, no rep call on or before the cutoff), with the reason "Requested a rep on <date>", saved as its own table for the NBA dropdown.
+
+**Definitions chosen (to confirm with OE / the digital team):**
+
+* **New Writer** = the week of the doctor's **first Kerendia prescription ever** (`PRODUCT_GROUP = 'KERENDIA'`, `TRX > 0`), looking back to the start of LAAD (December 2021). "New writer in the last 3 months" = that first week falls in the 3 months before the cutoff.
+* **Open request** = no rep call yet, and not older than 90 days (`RAR_OPEN_DAYS`; an assumption, so that very old requests do not stay "open" forever).
+* **Samples request** = `REQUEST_TYPE` contains "SAMPL" (to adjust once the real request-type values are printed by the notebook).
+
+**Leakage rules built in:** only events on or before the cutoff; a request counts as answered only if the first call after it is **on or before the cutoff**; LAAD uses the week-ending date, so a week that ends after the cutoff is not used. A self-test with known answers checks these rules (it passed in my run), including the case "request on 20 September, call on 10 October, cutoff 6 October" = still open.
+
+**Personal data:** the notebook reads only IDs, dates and request / rep type from the RAR table, no name, email or phone.
+
+### 7.2 What the data shows
+
+**New Writer** [Q, LAAD]: 80,830 doctors (valid NPI) have written Kerendia at least once; the first week in the data is 3 December 2021; LAAD runs to 9 October 2026. New writers per month are steady and rising: about 1,000 to 1,500 a month in 2024, 1,200 to 2,000 in 2025, and 1,650 to 2,300 in January to September 2026 (2,290 in July, 1,996 in August, 2,043 in September 2026).
+
+**Impiricus SMS** [Q, MMX]: very small and stopped.
+
+| Month | SMS sent | Doctors | Engagements |
+| --- | --- | --- | --- |
+| Mar 2025 | 292 | 274 | 7 |
+| Apr 2025 | 618 | 554 | 56 |
+| Jun 2025 | 3,047 | 2,821 | 63 |
+| Nov 2025 | 5,331 | 5,288 | 43 |
+| Dec 2025 | 3,155 | 3,140 | 16 |
+| Jan to Oct 2026 | 0 | 0 | 0 |
+
+In total 12,443 SMS and 185 engagements (1.5%). MMX itself has data up to 1 November 2026, so the zero in 2026 is not a late feed for MMX as a whole.
+
+**Request-a-Rep** [Doc, `40_...`]: 1,218 Kerendia requests from January 2025 to October 2026; 340 (28%) followed by a rep call after a median of 7 to 9 days; about 880 without a call. NPI is on about 46% of rows, so the notebook maps BH_ID to NPI first and uses the RAR `NPI` column only as a fallback; it prints how many requests stay unmapped.
+
+### 7.3 The numbers over time (New Writer and SMS, all 21 cohorts)
+
+Number of doctors with the flag = 1, by cohort [Q, same logic as the notebook]:
+
+| Cohort | Writers ever | New writer 3M | New writer 6M | New writer 12M | SMS exposed 3M | SMS engaged 6M | SMS engaged 12M |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2025-01 | 45,559 | 3,722 | 7,596 | 15,220 | 0 | 0 | 0 |
+| 2025-02 | 46,900 | 3,607 | 7,485 | 15,389 | 0 | 0 | 0 |
+| 2025-03 | 48,534 | 4,215 | 7,914 | 15,707 | 272 | 4 | 4 |
+| 2025-04 | 49,840 | 4,281 | 8,003 | 15,923 | 825 | 42 | 42 |
+| 2025-05 | 51,419 | 4,519 | 8,126 | 16,363 | 825 | 46 | 46 |
+| 2025-06 | 52,593 | 4,059 | 8,274 | 15,838 | 3,274 | 95 | 95 |
+| 2025-07 | 53,920 | 4,080 | 8,361 | 15,957 | 2,820 | 95 | 95 |
+| 2025-08 | 55,673 | 4,254 | 8,773 | 16,258 | 2,813 | 95 | 95 |
+| 2025-09 | 57,204 | 4,611 | 8,670 | 16,584 | 0 | 92 | 95 |
+| 2025-10 | 58,813 | 4,893 | 8,973 | 16,976 | 0 | 57 | 95 |
+| 2025-11 | 60,943 | 5,270 | 9,524 | 17,650 | 8,425 | 99 | 143 |
+| 2025-12 | 62,498 | 5,294 | 9,905 | 18,179 | 8,425 | 51 | 145 |
+| 2026-01 | 64,592 | 5,779 | 10,672 | 19,033 | 8,425 | 51 | 145 |
+| 2026-02 | 66,418 | 5,475 | 10,745 | 19,518 | 2 | 51 | 145 |
+| 2026-03 | 68,123 | 5,625 | 10,919 | 19,589 | 0 | 51 | 142 |
+| 2026-04 | 69,842 | 5,250 | 11,029 | 20,002 | 0 | 51 | 107 |
+| 2026-05 | 72,045 | 5,627 | 11,102 | 20,626 | 0 | 2 | 101 |
+| 2026-06 | 73,837 | 5,714 | 11,339 | 21,244 | 0 | 0 | 51 |
+| 2026-07 | 75,697 | 5,855 | 11,105 | 21,777 | 0 | 0 | 51 |
+| 2026-08 | 78,193 | 6,148 | 11,775 | 22,520 | 0 | 0 | 51 |
+| 2026-09 | 80,275 | 6,438 | 12,152 | 23,071 | 0 | 0 | 51 |
+
+**Independent check** (direct SQL with fixed dates, a different method from the feature engine): cohort 2026-09 new writers 3M = 6,438 and writers ever = 80,275; cohort 2025-01 new writers 3M = 3,722. All three match the table.
+
+How to read it:
+
+* **New Writer is a usable signal**: about 6,400 doctors started Kerendia in the 3 months before the latest cutoff, and the count is never zero. Because LAAD goes back to 2021, "first Rx ever" is reliable from the first cohort, so it has no early-cohort problem like the Phase 1 trend features (issue 1).
+* **SMS is a dead signal at prediction time**: no doctor was exposed in the 3 months before any cutoff since cohort 2026-03, and no doctor engaged in the last 6 months since cohort 2026-06. Only 51 doctors still carry the 12-month engaged flag. Like the stopped DTC vendors (3.4), it would only teach the model "old period".
+
+### 7.4 Issues and decisions
+
+| # | Issue | Evidence | Proposal |
+| --- | --- | --- | --- |
+| 1 | RAR not yet built from the data | Snowflake needed; not run in my session | Run notebook 53; check the printed request types, NPI mapping coverage, and that QC1 / QC2 pass |
+| 2 | Impiricus SMS has no data in 2026 | Table 7.2; 0 exposed since cohort 2026-03 | Keep the 5 SMS features in the table but **exclude them from the experiment** until the digital team confirms whether Impiricus restarts (or where 2026 data lands) |
+| 3 | New Writer overlaps with the Rx claims features | Both come from LAAD; NBRx features already count new-to-brand Rx | Keep only the flags and `DAYS_SINCE_FIRST_KERENDIA_RX` (first Rx **ever** is not in the NBRx counts); test their added value in E6; check that the model target is not "becomes a writer", otherwise drop them |
+| 4 | Open-request window and samples rule are assumptions | 90 days and "SAMPL" chosen by me | Confirm with the digital / field team |
+| 5 | RAR events are rare | about 1,200 requests in 22 months [Doc] | Use the business-rule list (use B) as the main output; the RAR features are a bonus for the model |
+| 6 | Formulary wins missing | source not found | Digital / OE team to provide source and format |
+| 7 | Table holds only doctors with an event | as in Phase 1 issue 6 | Combine step: counts / flags = 0, days-since / share = NULL |
+
+### 7.5 Next steps
+
+* Run `53_digital_nba_phase2_high_intent_features` end to end and copy the RAR numbers (requests per cohort, open requests in the latest cohort, NPI coverage) into this section.
+* Experiment **E6**: Phase 1 block + RAR + New Writer (SMS excluded), against Phase 1 alone.
+* Agree with OE: New Writer definition, open-request window, and how the use B list enters the NBA dropdown.

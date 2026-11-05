@@ -4,7 +4,7 @@
 **From:** NBA modelling team (Wenjie)  
 **Purpose:** Walk through what the model currently knows (and doesn’t know) about the competitive landscape and patient populations, then share what we’re planning to fix for NBA 3.1 — most of which is a direct response to your CI report  
 **Date:** November 2026  
-**Status:** Pre-meeting draft — nothing built yet, all feedback welcome
+**Status:** Updated after meeting with Josh (Nov 2026), see Section 9 for decisions. Nothing built yet.
 
 ---
 
@@ -135,6 +135,8 @@ Your September 2026 CI report gave us five market developments. Here is how each
 
 **NBA 3.1 response:** Add Baxfendy NBRx share and adoption-speed features once the product appears in IQVIA LAAD data (C3). See Q1 below.
 
+*Meeting update (Nov 2026): deferred. Josh views Baxfendy as an overlapping (hyperkalemia-risk) therapy, not a direct Kerendia competitor, and volume after about 6 months is too low to model. Monitor the ASI class instead (see Section 9).*
+
 **Steroidal MRA parallel:** Your report’s ACC ECDP footnote (steroidal MRA as cost/tolerance alternative to nsMRA in HFpEF) confirms what we independently proposed in the adoption features: track how quickly HCPs adopt spironolactone/eplerenone for CKD patients. HCPs already using an MRA are the nearest-neighbour to Kerendia adoption.
 
 ### 5.4 EASi-KIDNEY halted (September 15, 2026)
@@ -144,6 +146,8 @@ Your September 2026 CI report gave us five market developments. Here is how each
 **Model gap:** No geographic signal. If an HCP’s patients are enrolled in an ASI trial (and therefore excluded from MRAs), a different NBA recommendation may be appropriate — but the model can’t see that.
 
 **NBA 3.1 response:** Explore a zip-code-level trial-enrollment flag as an optional signal (C5). Lower priority, depends on whether zip-code data is cleanly available.
+
+*Meeting update (Nov 2026): dropped. Josh's study-mapping analysis found no meaningful relationship between ongoing ASI trial sites and Kerendia providers, and only zip codes (not provider names) are available.*
 
 ### 5.5 GLP-1 in HFpEF guidelines (ESC / ACC 2026)
 
@@ -173,8 +177,9 @@ Three types of signal come out of this:
 | --- | --- | --- | --- |
 | Farxiga LOE | 2026-04-06 | `DAYS_SINCE_FARXIGA_LOE` | Brand vs generic volume ratio pre/post; days to first generic Rx |
 | Entresto LOE (amorphous) | 2025-07-15 | `DAYS_SINCE_ENTRESTO_LOE` | `ENTRESTO_BRAND_ADOPTER_FLAG`; Entresto volume log-ratio |
-| Baxfendy approval | 2026-05-15 | `DAYS_SINCE_BAXFENDY_APPROVAL` | Days from approval to first Baxfendy Rx |
-| EASi-KIDNEY halted | 2026-09-15 | `DAYS_SINCE_EASI_KIDNEY_HALT` | Geographic trial-zone flag (C5) |
+| Baxfendy approval | 2026-05-15 | `DAYS_SINCE_BAXFENDY_APPROVAL` | Days from approval to first Baxfendy Rx (deferred: volume too low, per meeting) |
+| EASi-KIDNEY halted | 2026-09-15 | `DAYS_SINCE_EASI_KIDNEY_HALT` | Dropped: no trial-site impact observed (per meeting) |
+| Entresto fully generic (crystalline form) | 2027 (expected) | `DAYS_SINCE_ENTRESTO_FULL_GENERIC` | Future row: add once the date is confirmed (per meeting) |
 | GLP-1 in HFpEF guidelines | 2026-08 (approx.) | `DAYS_SINCE_GLP1_HF_GUIDELINE` | GLP-1 HF NBRx pre/post guideline |
 
 Adding new events in the future (e.g., BaxDuo-CKD readout ~Feb 2028, Jardiance LOE) requires only a new row in the reference table — no code changes. See Q7 and Q8 below.
@@ -259,5 +264,45 @@ Your answers directly change what we build. We’d like to go through these in t
 | Build market event features (regime state, event response, behaviour change) | NBA team | Dec 2026 |
 | Feature selection + backtest review | NBA + BA | Jan 2027 |
 | NBA 3.1 training | NBA team | Q1 2027 |
+
+---
+
+## 9. Meeting outcomes (Josh Buffington, November 2026)
+
+### 9.1 Decisions
+
+| Topic | What Josh said | Effect on NBA 3.1 |
+| --- | --- | --- |
+| CKD-scoped competitor features | SGLT2s are generally second-line for T2D-only patients. Capturing CKD is important to avoid over-counting | **Confirmed.** Keep CKD-scoped SGLT2 shares (H4/H5, C1) as the primary version |
+| Diagnosis coverage in LAAD | Physicians often leave out diagnosis codes. Transaction coverage is much stronger than diagnosis coverage | **New caveat.** CKD-scoped features will undercount. Build both all-indication and CKD-scoped versions and let feature selection pick. Record the share of Rx with any diagnosis attached as a quality check |
+| Entresto | Effectively generic since 2025. One formulation is patented until full generic in about 2027. It is often prescribed for HF before Kerendia | **Confirmed and expanded.** Track brand and generic Entresto together for HF adoption (C2) and keep the brand-adopter flag. Add the 2027 full-generic date to the event table |
+| Baxfendy / ASI class | Overlaps with Kerendia through hyperkalemia risk, but it is not a direct competitor and is mainly prescribed for hypertension. About 6 months on market, so volume is too low to judge. Three ASI agents have approval timelines | **Deferred (C3).** No Baxfendy feature in NBA 3.1. Start from the weekly Baxfendy dashboard in Databricks. Later, expand monitoring to lorundrostat and the rest of the class |
+| DPP-4 inhibitors | Still used but largely replaced by GLP-1s, and appear mutually exclusive with GLP-1 | **Excluded.** Do not track |
+| GLP-1 (semaglutide, tirzepatide) | The new ACC/AHA guidance lists GLP-1 as a second-line add-on in HF. SGLT2 plus Kerendia together are first-line. GLP-1 matters in both T2D and HF populations. It can be co-prescribed with Kerendia; the risk is cost, since a provider may choose the GLP-1 if the patient cannot afford both | **Confirmed (C4), broadened.** Build GLP-1 NBRx share for both T2D and HF. Treat it as a same-population signal, not a replacement. It may interact with payer/OOP-cost features |
+| Obesity prevalence | Correction: about 40% of US adults have BMI over 30 (not 60%). An internal Kerendia patient-record study found 56.3% of current Kerendia patients have obesity | Supports GLP-1 overlap as a relevant signal |
+| SGLT2 plus Kerendia guideline pairing | First-line combination in HF per ACC/AHA | SGLT2 adoption should be read as **complementary** to Kerendia, not competitive. High CKD-scoped SGLT2 share is expected to be a positive signal |
+| Pipeline: direct nsMRA competitor (readout expected April) | No data yet, not on market | **No feature.** The model is trained on history. Add an event row when it launches |
+| Balcinrenone + dapagliflozin | Not needed now. The combination may affect Jardiance volume in about 2 years | **No feature.** Revisit for NBA 3.2+ |
+| ASI trial-site mapping (C5) | No meaningful link between trial sites and Kerendia providers. Only zip codes are available | **Dropped** |
+| Segment-level signals | Wenjie: the model can use a signal in specific HCP or patient segments to tailor promotion, even if it does not apply broadly | Narrow signals (e.g., GLP-1 in HF, Entresto brand adopters) are still worth building |
+
+### 9.2 Status of pre-meeting questions
+
+| # | Status | Answer / next step |
+| --- | --- | --- |
+| Q1 | Answered | Baxfendy is too early to model. Use the weekly Baxfendy dashboard for monitoring |
+| Q2 | Partly answered | Entresto is actively prescribed in HF, often before Kerendia. The specialty split is still open; check it in LAAD |
+| Q3 | Deferred | Revisit when Baxfendy volume can support a feature |
+| Q4 | Answered | Balcinrenone is not needed now. Revisit in about 2 years for its Jardiance impact |
+| Q5 | Answered | GLP-1 is not a replacement. It can be co-prescribed, and the risk is cost-driven prioritization |
+| Q6 | Not discussed | Carry forward |
+| Q7 | Answered | New events: Entresto full generic (about 2027), the direct-competitor readout (April), and future ASI approvals including lorundrostat |
+| Q8 | Not discussed | Derive the 2023-2024 brand-Entresto specialty mix from LAAD ourselves |
+
+### 9.3 Revised NBA 3.1 scope (competitor / event features)
+
+* **Build:** CKD-scoped SGLT2 shares (Jardiance, Farxiga brand and generic split), all-indication variants as a fallback, Entresto adoption speed and brand-adopter flag, GLP-1 share (T2D and HF), and Farxiga LOE and Entresto LOE event flags (`DAYS_SINCE_*`).
+* **Defer:** Baxfendy / ASI class features (monitor through the dashboard), the Balcinrenone combination, and the direct nsMRA competitor (add as an event when launched).
+* **Drop:** ASI trial zip-code flag (C5) and DPP-4 tracking.
 
 *Reference: full technical detail is in `90_competitor_comorbidity_summary_and_trends.md` (same folder). The CI report this doc references is “Competitive Intelligence Overview, Joshua Buffington PharmD, 9/23/26” (internal).*

@@ -78,7 +78,7 @@ _NOTEBOOK_OUTPUT = HCP_NOTEBOOK_OUTPUT
 # (HCP_RX_TABLE, same claims as NB01 / NB04); before it the 3.0 Rx_01_new (walkthrough and column list only,
 # never counted). HCP_RX_SOURCE = "3.0" gives Rx_01_new only.
 _RX_COLS = [NPI_COL, F.col("PATIENT_ID").cast("string").alias("PATIENT_ID"), F.to_date(SVC_COL).alias(SVC_COL)]
-_rx_new  = spark.read.format("delta").load(_QUERY_OUTPUT + HCP_RX_TABLE).select(*_RX_COLS)   # HCP_RX_TABLE is relative to query_output
+_rx_new  = spark.read.format("delta").load(hcp_input_path(HCP_RX_TABLE)).select(*_RX_COLS)   # 3.1 pull: full path (3.1 volume)
 if HCP_RX_TABLE.rstrip("/").endswith("Rx_01_new"):
     df_rx_raw = _rx_new
 else:
@@ -308,7 +308,7 @@ def feature_values_of(df_feat_in):
     return [TOTAL_COL] + sorted((set(BASE_STAGE_FEATURES) | _data) - {TOTAL_COL})
 
 # Staging prefix for the shared materialize() in 00_cohort_config (in memory in validation mode)
-_STAGE_PREFIX = _NOTEBOOK_OUTPUT + "claim_eligible_patient_cohort_stage_"
+_STAGE_PREFIX = HCP_STAGE_OUTPUT + "claim_eligible_patient_cohort_stage_"   # 3.1 volume, hcp_claims_features/_stage/
 
 # ---------- Cohorts to process: every cohort whose cutoff is within the data of all HCP inputs ----------
 DATA_MAX_DT   = df_rx_raw.agg(F.max(SVC_COL)).first()[0]

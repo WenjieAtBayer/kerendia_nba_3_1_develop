@@ -46,5 +46,6 @@
 | Patient-journey eligibility decisions (SGLT2, diabetes) | Re-run only |
 | Heart failure / diabetes type of eligible patients (new in 3.1) | Not used yet (possible new features later) |
 | HCP universe | Same decision as for the other HCP features |
+| `PROVIDER_ID` of the provider table (full run 2026-11-04, **open**) | `provider_claim_eligible_patient_cohort` has 1,828 rows with an empty `PROVIDER_ID` (101 HCPs not in the mapping table `kerendia_nba_3_0_npi_bhid_mapping`) and 937 second copies (52 HCPs with two `PROVIDER_ID`s in that table). The mapping table is the agreed one and correct for all other HCPs (Rx summary, section 4.4). Proposal: keep it and only for these HCPs take the `PROVIDER_ID` of the 3.1 Rx input, same rule in all six HCP notebooks; not applied yet |
 
 Details: `06 Eligible HCP Claims Files/NBA_3_1_Eligible_HCP_Features_Plan.md`.

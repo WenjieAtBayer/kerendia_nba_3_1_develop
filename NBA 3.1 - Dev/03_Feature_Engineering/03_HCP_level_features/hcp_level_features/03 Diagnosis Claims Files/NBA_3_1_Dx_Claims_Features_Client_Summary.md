@@ -93,6 +93,8 @@
 | Output complete | 20 cohorts, 180 rows, no duplicates, no empty values |
 | Provider table | 180 rows, every HCP mapped to a `PROVIDER_ID`, no duplicates |
 
+**Full run (all HCPs, 2026-11-04), provider table.** `provider_claim_diagnosis_monthly_cohort` has 5,519,206 rows for 283,010 HCPs. 698 rows have an empty `PROVIDER_ID`: they belong to 38 HCPs that are not in the NBA 3.0 NPI mapping (`kerendia_nba_3_0_npi_bhid_mapping`). Another 675 rows are second copies, for 43 HCPs that have two `PROVIDER_ID`s in that mapping. The mapping table is the agreed BHID-NPI mapping and is correct for all other HCPs. Same items as in the Rx features (Rx summary, section 4.4). **Open item:** keep the mapping table and only for these HCPs take the `PROVIDER_ID` of the 3.1 input, same rule in all six HCP notebooks; not applied yet. The NPI-level table is not affected.
+
 ---
 
 ## 7. Next steps

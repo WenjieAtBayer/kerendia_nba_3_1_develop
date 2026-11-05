@@ -100,7 +100,7 @@ LAB_STAGE_TEXT = {
 }
 
 def load_lab_input():
-    _df = spark.read.format("delta").load(_QUERY_OUTPUT + HCP_LAB_TABLE)
+    _df = spark.read.format("delta").load(hcp_input_path(HCP_LAB_TABLE))
     if HCP_LAB_SOURCE == "3.0":
         return _df
     _map = {t: F.create_map(*[x for k, v in m.items() for x in (F.lit(k), F.lit(v))])
@@ -111,7 +111,7 @@ def load_lab_input():
             .select("NPI_NUMBER", "SVC_DT", "PATIENT_ID", "TEST_TYPE", "MEDIAN_TEST_RESULT", "STAGE", "PROVIDER_ID"))
 
 df_lab_raw = load_lab_input()
-print(f"Lab input (HCP_LAB_SOURCE = {HCP_LAB_SOURCE}): {_QUERY_OUTPUT + HCP_LAB_TABLE}")
+print(f"Lab input (HCP_LAB_SOURCE = {HCP_LAB_SOURCE}): {hcp_input_path(HCP_LAB_TABLE)}")
 
 # Month truncation (date_trunc('MM', SVC_DT)) removed: daily SVC_DT is kept and
 # windows are date ranges from each cohort month + OFFSET_DAYS (00_cohort_config).
@@ -394,7 +394,7 @@ import time
 from datetime import date
 
 _SEP = "\u0001"   # separator inside pivot keys (never appears in the data)
-_STAGE_PREFIX = _NOTEBOOK_OUTPUT + "claim_lab_monthly_cohort_stage_"
+_STAGE_PREFIX = HCP_STAGE_OUTPUT + "claim_lab_monthly_cohort_stage_"   # 3.1 volume, hcp_claims_features/_stage/
 
 
 # materialize(df, name) comes from 00_cohort_config (in memory in validation, staging Delta table

@@ -187,6 +187,7 @@ Each experiment adds one block to the previous one and is scored on the same NBA
 | Q6 | Exact Entresto LOE dates (amorphous 2025, crystalline 2027) for the event table | Josh |
 | Q7 | Are payer / OOP-cost features available at HCP-cohort grain for the GLP-1 interaction test (E5)? | NBA team |
 | Q8 | Is the cortisol / MRA-class differentiation message landing with specific specialties? (carried from briefing Q6) | Josh |
+| Q9 | Which Unity Catalog schema should hold registered NBA features, and who grants `CREATE FEATURE`? (Feature Views pilot, FV6) | NBA team / platform admin |
 
 ---
 
@@ -198,6 +199,7 @@ Each experiment adds one block to the previous one and is scored on the same NBA
 | G0 | NBA team, Medical | End Nov 2026 |
 | Phase 1 comorbidity build | NBA team | Nov–Dec 2026 |
 | Phase 2 competitor build | NBA team | Nov–Dec 2026 |
+| Feature Views pilot (Section 15), decision before G1 | NBA team | Dec 2026 |
 | Phase 3 adoption build | NBA team | Dec 2026 |
 | Phase 4 event table + labels | NBA team | Dec 2026 |
 | G1, experiments E0–E6, G2 | NBA team, BA | Jan 2027 |
@@ -216,3 +218,49 @@ Each experiment adds one block to the previous one and is scored on the same NBA
 | `03_HCP_Level_Features/11_adoption_features` (exists) | 3 | 14 columns + Entresto brand-adopter flag |
 | New: event reference table + event features | 4 | `DAYS_SINCE_*`, log-ratio |
 | `99_Combine_Physician_Data` | All | Join on `HCP_COHORT_ID` |
+
+---
+
+## 15. Feature Views pilot (optional, runs alongside Phase 2)
+
+**What it is.** Feature Views (Databricks, Public Preview) define a feature once as source table + calculation + entity + date column + time window. The same definition builds a point-in-time training set and the batch scoring data, and the feature is registered in Unity Catalog with lineage.
+
+**Why pilot it here.** It addresses three problems in this plan directly: static-build leakage (point-in-time joins), hand-written cohort loops over `lookback_end_date`, and keeping training and monthly inference consistent. It is not a reason to rebuild all ~750 NBA features for 3.1.
+
+### 15.1 Fit by family
+
+| Family | Fit | Notes |
+| --- | --- | --- |
+| Competitor NBRx counts (CP1–CP7) | **Strong** | `Sum` of NBRx by NPI over 90 / 365-day windows, with `filter_condition` on `INDICATION_GROUP` and `PRODUCT_GROUP`. Shares (drug / SGLT2 total) are a small post-step, not built in |
+| Comorbidity counts (CM2–CM4, CM6) | Partial | Patient flags (T2D+CKD etc., from claims by any provider) must be prepared first in a patient-level table. Distinct patients are approximate (`ApproxCountDistinct`, no exact distinct count) and will differ slightly from the backtests. "3M vs prior 9M" maps to a window with `delay` |
+| Adoption speed (AD1–AD3) | Weak | Multi-step patient-level logic. Keep in `11_adoption_features` |
+| Market-event labels (EV1–EV6) | Not needed | Depend only on the cohort date. One column on the cohort table |
+
+### 15.2 Pilot scope
+
+* **Features:** Jardiance and Farxiga (brand, generic) NBRx in CKD scope and all-indication scope, 3M and 12M windows (8–12 features). Shares computed after the join.
+* **Labelled input:** LRx cohort table with `NPI_NUMBER` (entity), `lookback_end_date` (date column) and the Kerendia NBRx label.
+* **Source:** `KERENDIA_LAAD_BASED_LRX_V6` written as a Delta table in Unity Catalog (Feature Views do not read volume parquet).
+* **Compute:** serverless or DBR 17.0 ML+, `databricks-feature-engineering >= 0.16.0`.
+* **Stores:** offline only. No online store (NBA scores monthly in batch).
+
+### 15.3 Pilot checks
+
+| # | Check | Pass criterion |
+| --- | --- | --- |
+| FV1 | Values vs the hand-built cohort version of CP1 (doubles as V8) | Counts match exactly for `Sum`; any difference explained |
+| FV2 | Date boundary: is `lookback_end_date` treated as inclusive or exclusive in the training-set join? | Same convention as the cohort notebooks, or the label input is shifted to match |
+| FV3 | Data lag: inference only sees LRx up to the last loaded week | Window `delay` set so training sees only what inference would see |
+| FV4 | Run time and cost for the full 3.1 universe × all cohorts | Comparable to or faster than the notebook build |
+| FV5 | Batch scoring with the same definitions on the latest cohort | Matches FV1 values for that cohort |
+| FV6 | Permissions | `CREATE FEATURE` on the target schema; `READ FEATURE` for consumers |
+
+### 15.4 Decision after the pilot
+
+| Outcome | Next step |
+| --- | --- |
+| FV1–FV5 pass | Build the competitor family in Feature Views for NBA 3.1. Consider comorbidity counts next (needs the patient-flag table) |
+| FV1 or FV2 fail and cannot be fixed | Keep the notebook build for 3.1. Revisit Feature Views for NBA 3.2 |
+| Pass but slower or costlier | Keep notebooks for 3.1. Use Feature Views only for new families |
+
+Adoption speed and event labels stay outside Feature Views in all outcomes.

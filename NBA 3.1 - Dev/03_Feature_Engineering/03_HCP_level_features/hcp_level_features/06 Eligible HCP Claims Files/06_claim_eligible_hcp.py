@@ -22,6 +22,9 @@
 # MAGIC | By UACR stage | ... split by the patient's UACR stage that month | `TOTAL_ELIGIBLE_PATIENTS_UACR_STAGE_{2,3,UNKNOWN}_...` |
 # MAGIC | Shares | Stage count / total in the same window | `PCT_...` |
 # MAGIC | Dialysis | Did any patient of the HCP's Rx claims in the cohort month already have dialysis? | `DIALYSIS_FLAG` (0/1) |
+# MAGIC | Diabetes type (new 2026-11-06) | How many of the HCP's Rx patients (all / eligible) are T2D, T1D, other or no diabetes? | `TOTAL_RX_PATIENTS_DM_TYPE_{T2D,T1D,OTHER,NONE}_...`, `TOTAL_ELIGIBLE_PATIENTS_DM_TYPE_..._...` |
+# MAGIC | HF and HF type (new 2026-11-06) | ... how many have heart failure that month, by HF type (HFpEF / HFrEF proxy from the HF codes, mixed, unknown)? | `TOTAL_RX_PATIENTS_HF_...`, `_HF_TYPE_{HFPEF_PROXY,HFREF_PROXY,MIXED,UNKNOWN}_...` (and `TOTAL_ELIGIBLE_PATIENTS_...`) |
+# MAGIC | Shares (new) | Count / all Rx patient-months (`TOTAL_RX_PATIENTS_...`) or / eligible patient-months | `PCT_RX_PATIENTS_...`, `PCT_ELIGIBLE_PATIENTS_...` |
 # MAGIC
 # MAGIC **Eligible patient-month** (set by the patient journey, not here): GFR / Dx stage 2–4 and not on dialysis, or stage unknown and SGLT2 use. Open patient-journey decisions C1 (SGLT2 rule) and C9 (diabetes requirement) change `ELIGIBLE_PATIENT_FLAG` only; this notebook needs a re-run, no code change.
 # MAGIC
@@ -30,7 +33,7 @@
 # MAGIC **Decisions applied (2026-11-03):**
 # MAGIC * D1 (confirmed 2026-11-03): window = sum of the monthly patient counts of the last N months (3.0 used the mean of N+1 months; not kept).
 # MAGIC * D2: `DIALYSIS_FLAG` = the cohort month only (as 3.0's monthly flag), not windowed.
-# MAGIC * D3: no new columns yet (HF / diabetes-type split of eligible patients). `HF_FLAG` and `DM_TYPE` are only in the latest patient-journey run folder, which the HCP notebooks do not read yet (Phase 2, item 2.1).
+# MAGIC * D3 (done 2026-11-06, team feedback): diabetes-type and HF-type split of all and eligible Rx patients, windows 1 / 3 / 6 / 12 months, 148 columns (section 4b). Source: PJ04 `kerendia_nba_3_1_dm_hf_flags_validation` (`DM_TYPE`, `HF_TYPE`, `HF_FIRST_DATE`) in the patient-journey run folder; HF in a month = month on or after the month of `HF_FIRST_DATE` (same rule as the monthly `HF_FLAG` of PJ06). Kerendia's indications are CKD with T2D and HF with LVEF >= 40% (HFpEF proxy).
 # MAGIC
 # MAGIC **How to read this notebook:** section 1 shows each input table; section 2 the patient-month table the original counts; section 3 the original output. Everything is shown for the 10 test HCPs (validation mode).
 
@@ -503,6 +506,119 @@ print("PASS: fast engine = build_cohort" if _ok else "CHECK: fast engine differs
 
 # COMMAND ----------
 
+# DBTITLE 1,4b. Diabetes type and HF type features (DM_TYPE, HF_TYPE)
+# 4b. Diabetes type and HF type features (2026-11-06). Built from the PJ04 table kerendia_nba_3_1_dm_hf_flags_validation
+# (one row per patient: DM_TYPE, HF_TYPE, HF_FIRST_DATE). Same patient-months as the features above: (NPI, patient,
+# cohort month) of the HCP's Rx claims from DATA_START_DATE; windows ELIG_LOOKBACK_WINDOWS (1, 3, 6, 12 months).
+#   TOTAL_RX_PATIENTS_IN_LAST_<w>_MONTH                    all patient-months (denominator of the PCT_RX_ columns)
+#   TOTAL_RX_PATIENTS_DM_TYPE_<T2D|T1D|OTHER|NONE>_...      by diabetes type (NONE = no diabetes type in PJ04)
+#   TOTAL_RX_PATIENTS_HF_... / _HF_TYPE_<HFPEF_PROXY|HFREF_PROXY|MIXED|UNKNOWN>_...   patient-months with HF that month
+#       (month on or after the month of HF_FIRST_DATE, same rule as the monthly HF_FLAG of PJ06), by HF type
+#   TOTAL_ELIGIBLE_PATIENTS_DM_TYPE_..., _HF, _HF_TYPE_...  same, eligible patient-months only (ELIGIBLE_PATIENT_FLAG = 1)
+#   PCT_RX_PATIENTS_... = / TOTAL_RX_PATIENTS, PCT_ELIGIBLE_PATIENTS_... = / TOTAL_ELIGIBLE_PATIENTS (same window, 0.0 if 0)
+# HFPEF_PROXY / HFREF_PROXY: claims cannot see the ejection fraction, so the PJ04 HF type is a proxy from the HF codes;
+# HFpEF (LVEF >= 40%) is the HF indication of Kerendia. Added to the existing rows only (left join, same rows).
+from dateutil.relativedelta import relativedelta as _rd
+
+DM_TYPE_VALUES = ["T2D", "T1D", "OTHER", "NONE"]
+HF_TYPE_VALUES = ["HFPEF_PROXY", "HFREF_PROXY", "MIXED", "UNKNOWN"]
+# The table is written by PJ04 of the same run (RUN_OUTPUT_DIR). Full run: must exist. Validation run on an older
+# folder without it (e.g. validation_2026_10_30): the DM / HF columns are skipped, the rest of NB06 runs as before.
+import os
+_DMHF_IN_RUN = bool(RUN_OUTPUT_DIR) and os.path.exists(RUN_OUTPUT_DIR + get_patient_table("dm_hf_flags") + "/_delta_log")
+DM_HF_FEATURES_ON = _DMHF_IN_RUN or not VALIDATION_MODE
+if not DM_HF_FEATURES_ON:
+    print(f"SKIPPED DM / HF features: {get_patient_table('dm_hf_flags')} not in {RUN_OUTPUT_DIR} (validation run)")
+_DMHF_PATH = get_patient_table_path("dm_hf_flags") if DM_HF_FEATURES_ON else None
+pat_dmhf = None if not DM_HF_FEATURES_ON else (spark.read.format("delta").load(_DMHF_PATH)
+            .select(F.col("PATIENT_ID").cast("string").alias("PATIENT_ID"), "DM_TYPE", "HF_TYPE",
+                    F.trunc(F.to_date("HF_FIRST_DATE"), "month").alias("_HF_M")))
+_bad_dm = [] if not DM_HF_FEATURES_ON else sorted({r[0] for r in pat_dmhf.select("DM_TYPE").distinct().collect()} - set(DM_TYPE_VALUES) - {None})
+_bad_hf = [] if not DM_HF_FEATURES_ON else sorted({r[0] for r in pat_dmhf.select("HF_TYPE").distinct().collect()} - set(HF_TYPE_VALUES) - {None})
+assert not _bad_dm and not _bad_hf, f"New DM_TYPE {_bad_dm} / HF_TYPE {_bad_hf} values in {_DMHF_PATH}: add them to the lists"
+
+
+def dm_hf_feature_names(windows=ELIG_LOOKBACK_WINDOWS):
+    cols = []
+    for w in windows:
+        sfx = f"_IN_LAST_{w}_MONTH"
+        groups = ([f"DM_TYPE_{v}" for v in DM_TYPE_VALUES] + ["HF"] + [f"HF_TYPE_{v}" for v in HF_TYPE_VALUES])
+        cols += [f"TOTAL_RX_PATIENTS{sfx}"] + [f"TOTAL_RX_PATIENTS_{g}{sfx}" for g in groups]
+        cols += [f"TOTAL_ELIGIBLE_PATIENTS_{g}{sfx}" for g in groups]
+        cols += [f"PCT_RX_PATIENTS_{g}{sfx}" for g in groups] + [f"PCT_ELIGIBLE_PATIENTS_{g}{sfx}" for g in groups]
+    return cols
+
+
+def dm_hf_month_counts(df_rx_in, pat_elig_df, dmhf_df, offset_days):
+    """(NPI, _M, KEY, N): patient-months per key. _ELIG_TOTAL = TOTAL_ELIGIBLE_PATIENTS (internal, used as the
+    PCT_ELIGIBLE_ denominator and to check against the existing column)."""
+    pm = (df_rx_in.withColumn("_M", assign_cohort_month(F.col(SVC_COL), offset_days))
+          .select(NPI_COL, F.col("PATIENT_ID").cast("string").alias("PATIENT_ID"), "_M").distinct())
+    e = (pat_elig_df.filter(F.col("ELIGIBLE_PATIENT_FLAG") == 1)
+         .select(F.col("PATIENT_ID").cast("string").alias("PATIENT_ID"), F.to_date("SVC_DT_M").alias("_M"))
+         .distinct().withColumn("_ELIG", F.lit(1)))
+    pm = (pm.join(e, on=["PATIENT_ID", "_M"], how="left").fillna(0, subset=["_ELIG"])
+            .join(dmhf_df, on="PATIENT_ID", how="left")
+            .withColumn("_DM", F.coalesce(F.col("DM_TYPE"), F.lit("NONE")))
+            .withColumn("_HF", F.col("_HF_M").isNotNull() & (F.col("_HF_M") <= F.col("_M")))
+            .withColumn("_HFT", F.coalesce(F.col("HF_TYPE"), F.lit("UNKNOWN"))))
+    el, hf = F.col("_ELIG") == 1, F.col("_HF")
+    keys = F.array(
+        F.lit("TOTAL_RX_PATIENTS"),
+        F.concat(F.lit("TOTAL_RX_PATIENTS_DM_TYPE_"), F.col("_DM")),
+        F.when(hf, F.lit("TOTAL_RX_PATIENTS_HF")),
+        F.when(hf, F.concat(F.lit("TOTAL_RX_PATIENTS_HF_TYPE_"), F.col("_HFT"))),
+        F.when(el, F.lit("_ELIG_TOTAL")),
+        F.when(el, F.concat(F.lit("TOTAL_ELIGIBLE_PATIENTS_DM_TYPE_"), F.col("_DM"))),
+        F.when(el & hf, F.lit("TOTAL_ELIGIBLE_PATIENTS_HF")),
+        F.when(el & hf, F.concat(F.lit("TOTAL_ELIGIBLE_PATIENTS_HF_TYPE_"), F.col("_HFT"))))
+    return (pm.select(NPI_COL, "_M", F.explode(keys).alias("KEY")).filter(F.col("KEY").isNotNull())
+            .groupBy(NPI_COL, "_M", "KEY").agg(F.count(F.lit(1)).alias("N")))
+
+
+def build_dm_hf_features(cbs, counts_in):
+    """One row per (NPI, COHORT_ID) with every DM / HF column (+ _ELIG_TOTAL_IN_LAST_<w>_MONTH for the check).
+    Window w = the w cohort months ending with the cohort month (= (cutoff - w months, cutoff])."""
+    _rows = []
+    for cb in cbs:
+        _cm = datetime.strptime(cb["cohort_month"] + "-01", "%Y-%m-%d").date()
+        _rows += [(cb["cohort_id"], w, _cm - _rd(months=w - 1), _cm) for w in ELIG_LOOKBACK_WINDOWS]
+    W = spark.createDataFrame(_rows, "COHORT_ID string, W int, M_FROM date, M_TO date")
+    long = (counts_in.join(F.broadcast(W), (F.col("_M") >= F.col("M_FROM")) & (F.col("_M") <= F.col("M_TO")))
+            .groupBy(NPI_COL, "COHORT_ID", F.concat(F.col("KEY"), F.lit("_IN_LAST_"), F.col("W"), F.lit("_MONTH")).alias("_COL"))
+            .agg(F.sum("N").alias("N")))
+    _tot = [c for c in dm_hf_feature_names() if not c.startswith("PCT_")]
+    _etot = [f"_ELIG_TOTAL_IN_LAST_{w}_MONTH" for w in ELIG_LOOKBACK_WINDOWS]
+    wide = long.groupBy(NPI_COL, "COHORT_ID").pivot("_COL", _tot + _etot).agg(F.first("N")).na.fill(0, subset=_tot + _etot)
+    pct = []
+    for w in ELIG_LOOKBACK_WINDOWS:
+        sfx = f"_IN_LAST_{w}_MONTH"
+        for grp, den in [("RX_PATIENTS", f"TOTAL_RX_PATIENTS{sfx}"), ("ELIGIBLE_PATIENTS", f"_ELIG_TOTAL{sfx}")]:
+            for c in [x for x in _tot if x.startswith(f"TOTAL_{grp}_") and x.endswith(sfx)]:
+                pct.append(F.when(F.col(den) != 0, F.col(c) / F.col(den)).otherwise(F.lit(0.0)).alias("PCT_" + c[len("TOTAL_"):]))
+    return wide.select(NPI_COL, "COHORT_ID", *_tot, *_etot, *pct).select(NPI_COL, "COHORT_ID", *dm_hf_feature_names(), *_etot)
+
+
+def add_dm_hf_features(df_out, cbs):
+    """Left join of the DM / HF columns onto the existing output (same rows). Stops if the internal eligible total
+    differs from TOTAL_ELIGIBLE_PATIENTS (both must count the same eligible patient-months)."""
+    if not DM_HF_FEATURES_ON:
+        return df_out
+    feats = build_dm_hf_features(cbs, dm_hf_month_counts(_rx_counted, pat_elig, pat_dmhf, OFFSET_DAYS))
+    _new = dm_hf_feature_names()
+    out = (df_out.join(feats, on=[NPI_COL, "COHORT_ID"], how="left")
+           .na.fill(0, subset=[c for c in _new if not c.startswith("PCT_")] + [f"_ELIG_TOTAL_IN_LAST_{w}_MONTH" for w in ELIG_LOOKBACK_WINDOWS])
+           .na.fill(0.0, subset=[c for c in _new if c.startswith("PCT_")]))
+    _diff = out.filter(F.greatest(*[F.abs(F.col(f"_ELIG_TOTAL_IN_LAST_{w}_MONTH") - F.col(f"{TOTAL_COL}_IN_LAST_{w}_MONTH"))
+                                    for w in ELIG_LOOKBACK_WINDOWS]) > 0).count()
+    assert _diff == 0, f"{_diff:,} NPI x cohort rows: eligible patient-months of the DM / HF features differ from {TOTAL_COL}"
+    return out.drop(*[f"_ELIG_TOTAL_IN_LAST_{w}_MONTH" for w in ELIG_LOOKBACK_WINDOWS])
+
+
+print(f"DM / HF features: {len(dm_hf_feature_names())} columns ({len(ELIG_LOOKBACK_WINDOWS)} windows) | table: {_DMHF_PATH}")
+
+# COMMAND ----------
+
 # DBTITLE 1,Section: Build and Write All Cohorts
 # MAGIC %md
 # MAGIC ## 5. Build and write all cohorts
@@ -518,7 +634,9 @@ assert "kerendia_nba_3_0" not in OUTPUT_PATH, f"Refusing to write to a 3.0 table
 # All cohorts in one query and ONE write. replaceWhere keeps every other cohort / offset already in the table.
 _ids_sql = ", ".join(f"'{c}'" for c in COHORT_IDS)
 _t_all = time.time()
-build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST]).write \
+# 2026-11-06: diabetes type and HF type features (4b) joined onto the same rows (row count unchanged)
+add_dm_hf_features(build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST]),
+                   [COHORT_BOUNDS[m] for m in COHORT_LIST]).write \
     .format("delta") \
     .mode("overwrite") \
     .option("mergeSchema", "true") \

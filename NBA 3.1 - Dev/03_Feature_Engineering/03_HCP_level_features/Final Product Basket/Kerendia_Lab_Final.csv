@@ -25,5 +25,5 @@ LOINC,49023-5,UACR,Y,PART,,,,,,UACR (CKD albuminuria),24h albumin - not a ratio 
 LOINC,34535-5,UACR,Y,PART,,,,,,UACR (CKD albuminuria),text results only - never staged
 NAME,%ALB%,UACR,Y,RESULT,2,MCG/MGCREAT|MG/GCREAT|MG/GCR|MG/G{CREAT},0,10000,30:1|300:2|else:3,UACR (CKD albuminuria),backup for rows without a basket code (3.0 rule)
 NAME,%RATIO%,UACR,Y,RESULT,2,MCG/MGCREAT|MG/GCREAT|MG/GCR|MG/G{CREAT},0,10000,30:1|300:2|else:3,UACR (CKD albuminuria),backup for rows without a basket code (3.0 rule)
-LOINC,2823-3,POTASSIUM,N,RESULT,1,MMOL/L,1,10,,Potassium (Kerendia safety),not used in the lab journey yet (new features)
-LOINC,4548-4,HBA1C,N,RESULT,1,%,3,20,,HbA1c (diabetes control),not used in the lab journey yet (new features)
+LOINC,2823-3,POTASSIUM,Y,RESULT,1,MMOL/L,1,10,,Potassium (Kerendia safety),2026-11-06: switched on - no stage; flag POTASSIUM_GT_5 = result > 5.0 mmol/L (Kerendia initiation barrier - US label)
+LOINC,4548-4,HBA1C,Y,RESULT,1,%,3,20,,HbA1c (diabetes control),2026-11-06: switched on - no stage; flag HBA1C_GE_9 = result >= 9% (uncontrolled diabetes)

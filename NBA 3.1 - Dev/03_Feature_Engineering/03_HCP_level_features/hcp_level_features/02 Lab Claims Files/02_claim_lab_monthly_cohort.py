@@ -119,6 +119,15 @@ df_lab = df_lab_raw.withColumn("PATIENT_ID", F.col("PATIENT_ID").cast('string'))
 
 # Validation mode: restrict to the 10 test HCPs (no-op when VALIDATION_MODE = False)
 df_lab = apply_npi_filter(df_lab, NPI_COL)
+
+# 2026-11-06: the 3.1 pull also holds the lab flag tests (potassium, HbA1c: value, no stage; LAB_FLAG_RULES in
+# 00_cohort_config). They only feed the new lab flag features (section 2.4); every existing feature uses the
+# staged tests (LAB_STAGED_TESTS = GFR, UACR) only, so its values are the same as before.
+if HCP_LAB_SOURCE == "3.1":
+    _FLAG_TESTS = [t for t, _, _ in LAB_FLAG_RULES.values()]
+    df_lab_flag = add_lab_flags(df_lab.filter(F.col("TEST_TYPE").isin(_FLAG_TESTS))
+                                      .filter(F.col(SVC_COL) >= F.lit(DATA_START_DATE)))
+    df_lab = df_lab.filter(F.col("TEST_TYPE").isin(LAB_STAGED_TESTS))
 _no_stage = df_lab.filter(F.col("STAGE").isNull()).count()
 assert HCP_LAB_SOURCE == "3.0" or _no_stage == 0, f"{_no_stage:,} lab rows without a stage after mapping"
 
@@ -563,6 +572,92 @@ print("PASS — fast engine = step-by-step" if _ok else "CHECK MISMATCHES")
 
 # COMMAND ----------
 
+# DBTITLE 1,2.4 Lab flag features (potassium barrier, HbA1c)
+# 2.4 Lab flag features (2026-11-06). Per HCP (NPI = ordering NPI of the lab test) and cohort, windows LOOKBACK_WINDOWS
+# (1, 3, 6, 12 months ending at the cohort cutoff). Counted like NB06: one patient-month = (NPI, patient, cohort month).
+#   TOTAL_PATIENTS_<TEST>_TESTED_IN_LAST_<w>_MONTH            patient-months with that test
+#   TOTAL_PATIENTS_<FLAG>_IN_LAST_<w>_MONTH                   ... with a result meeting the rule that month
+#   PCT_PATIENTS_<FLAG>_IN_LAST_<w>_MONTH                     flagged / tested (0.0 when nothing tested)
+#   TOTAL_ELIGIBLE_PATIENTS_<TEST>_TESTED / _<FLAG>, PCT_ELIGIBLE_PATIENTS_<FLAG>   same, only patient-months where the
+#       patient is eligible for Kerendia that month (pat_sglt2_filter_m, ELIGIBLE_PATIENT_FLAG = 1, as NB06)
+# FLAG / TEST: POTASSIUM_GT_5 / POTASSIUM (> 5.0 mmol/L, barrier to starting Kerendia), HBA1C_GE_9 / HBA1C (>= 9%).
+# Lab claims from DATA_START_DATE (team rule). Added to the existing rows only (left join, 0 when no flag test).
+from dateutil.relativedelta import relativedelta as _rd
+
+_pat_elig_lab = spark.read.format("delta").load(get_patient_table_path("sglt2_filter_m"))
+_FLAG_OF_TEST = {t: f for f, (t, _, _) in LAB_FLAG_RULES.items()}
+
+
+def lab_flag_feature_names(windows=LOOKBACK_WINDOWS):
+    """All lab flag columns, in a fixed order."""
+    cols = []
+    for w in windows:
+        for t, f in _FLAG_OF_TEST.items():
+            for grp in ["PATIENTS", "ELIGIBLE_PATIENTS"]:
+                cols += [f"TOTAL_{grp}_{t}_TESTED_IN_LAST_{w}_MONTH", f"TOTAL_{grp}_{f}_IN_LAST_{w}_MONTH",
+                         f"PCT_{grp}_{f}_IN_LAST_{w}_MONTH"]
+    return cols
+
+
+def lab_flag_month_counts(df_flag_in, pat_elig_df, offset_days):
+    """(NPI, _M = cohort month, KEY, N): patient-months per key. A patient-month is flagged if any result of
+    that month meets the rule, and eligible if the patient is eligible that cohort month."""
+    pm = (df_flag_in.withColumn("_M", assign_cohort_month(F.col(SVC_COL), offset_days))
+          .withColumn("_FLAG", F.coalesce(*[F.col(f) for f in LAB_FLAG_RULES]))
+          .groupBy(NPI_COL, "PATIENT_ID", "_M", "TEST_TYPE").agg(F.max("_FLAG").alias("_FLAG")))
+    e = (pat_elig_df.filter(F.col("ELIGIBLE_PATIENT_FLAG") == 1)
+         .select(F.col("PATIENT_ID").cast("string").alias("PATIENT_ID"), F.to_date("SVC_DT_M").alias("_M"))
+         .distinct().withColumn("_ELIG", F.lit(1)))
+    pm = pm.join(e, on=["PATIENT_ID", "_M"], how="left").fillna(0, subset=["_ELIG"])
+    flag_name = F.create_map(*[x for t, f in _FLAG_OF_TEST.items() for x in (F.lit(t), F.lit(f))])[F.col("TEST_TYPE")]
+    keys = F.array(
+        F.concat(F.lit("TOTAL_PATIENTS_"), F.col("TEST_TYPE"), F.lit("_TESTED")),
+        F.when(F.col("_FLAG") == 1, F.concat(F.lit("TOTAL_PATIENTS_"), flag_name)),
+        F.when(F.col("_ELIG") == 1, F.concat(F.lit("TOTAL_ELIGIBLE_PATIENTS_"), F.col("TEST_TYPE"), F.lit("_TESTED"))),
+        F.when((F.col("_ELIG") == 1) & (F.col("_FLAG") == 1), F.concat(F.lit("TOTAL_ELIGIBLE_PATIENTS_"), flag_name)))
+    return (pm.select(NPI_COL, "_M", F.explode(keys).alias("KEY")).filter(F.col("KEY").isNotNull())
+            .groupBy(NPI_COL, "_M", "KEY").agg(F.count(F.lit(1)).alias("N")))
+
+
+def build_lab_flag_features(cbs, counts_in):
+    """One row per (NPI, COHORT_ID) with every lab flag column. With an offset, window w of a cohort holds exactly
+    the w cohort months ending with the cohort month (cutoff - w months, cutoff], so months are summed."""
+    _rows = []
+    for cb in cbs:
+        _cm = datetime.strptime(cb["cohort_month"] + "-01", "%Y-%m-%d").date()
+        _rows += [(cb["cohort_id"], w, _cm - _rd(months=w - 1), _cm) for w in LOOKBACK_WINDOWS]
+    W = spark.createDataFrame(_rows, "COHORT_ID string, W int, M_FROM date, M_TO date")
+    long = (counts_in.join(F.broadcast(W), (F.col("_M") >= F.col("M_FROM")) & (F.col("_M") <= F.col("M_TO")))
+            .groupBy(NPI_COL, "COHORT_ID", F.concat(F.col("KEY"), F.lit("_IN_LAST_"), F.col("W"), F.lit("_MONTH")).alias("_COL"))
+            .agg(F.sum("N").alias("N")))
+    _tot = [c for c in lab_flag_feature_names() if not c.startswith("PCT_")]
+    wide = long.groupBy(NPI_COL, "COHORT_ID").pivot("_COL", _tot).agg(F.first("N")).na.fill(0, subset=_tot)
+    pct = []
+    for w in LOOKBACK_WINDOWS:
+        for t, f in _FLAG_OF_TEST.items():
+            for grp in ["PATIENTS", "ELIGIBLE_PATIENTS"]:
+                den = F.col(f"TOTAL_{grp}_{t}_TESTED_IN_LAST_{w}_MONTH")
+                pct.append(F.when(den != 0, F.col(f"TOTAL_{grp}_{f}_IN_LAST_{w}_MONTH") / den).otherwise(F.lit(0.0))
+                           .alias(f"PCT_{grp}_{f}_IN_LAST_{w}_MONTH"))
+    return wide.select(NPI_COL, "COHORT_ID", *[F.col(c) for c in _tot], *pct).select(NPI_COL, "COHORT_ID", *lab_flag_feature_names())
+
+
+def add_lab_flag_features(df_out, cbs):
+    """Left join of the lab flag columns onto the existing output (same rows); 0 / 0.0 when the NPI has no flag test."""
+    if HCP_LAB_SOURCE != "3.1":
+        return df_out
+    feats = build_lab_flag_features(cbs, lab_flag_month_counts(df_lab_flag, _pat_elig_lab, OFFSET_DAYS))
+    _new = lab_flag_feature_names()
+    return (df_out.join(feats, on=[NPI_COL, "COHORT_ID"], how="left")
+            .na.fill(0, subset=[c for c in _new if not c.startswith("PCT_")])
+            .na.fill(0.0, subset=[c for c in _new if c.startswith("PCT_")]))
+
+
+print(f"Lab flag features: {len(lab_flag_feature_names())} columns "
+      f"({len(LAB_FLAG_RULES)} flags x 2 groups x 3 x {len(LOOKBACK_WINDOWS)} windows) | eligibility: {get_patient_table_path('sglt2_filter_m')}")
+
+# COMMAND ----------
+
 # DBTITLE 1,Section: Build and Write All Cohorts
 # MAGIC %md
 # MAGIC ##4. Build and Write All Cohorts
@@ -605,6 +700,8 @@ build_cohort = build_cohort_slow
 # are replaced; other partitions in the table are kept.
 _t0 = time.time()
 _df_out = build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST])
+# 2026-11-06: lab flag features (section 2.4) joined onto the same rows (row count unchanged)
+_df_out = add_lab_flag_features(_df_out, [COHORT_BOUNDS[m] for m in COHORT_LIST])
 (_df_out.write
     .format("delta")
     .mode("overwrite")

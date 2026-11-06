@@ -403,7 +403,7 @@ import time
 from datetime import date
 
 _SEP = "\u0001"   # separator inside pivot keys (never appears in the data)
-_STAGE_PREFIX = HCP_STAGE_OUTPUT + "claim_lab_monthly_cohort_stage_"   # 3.1 volume, hcp_claims_features/_stage/
+_STAGE_PREFIX = HCP_STAGE_OUTPUT + "claim_lab_monthly_cohort_stage_"   # this run's hcp_claims/_stage/
 
 
 # materialize(df, name) comes from 00_cohort_config (in memory in validation, staging Delta table
@@ -661,7 +661,7 @@ print(f"Lab flag features: {len(lab_flag_feature_names())} columns "
 # DBTITLE 1,Section: Build and Write All Cohorts
 # MAGIC %md
 # MAGIC ##4. Build and Write All Cohorts
-# MAGIC Runs the same steps as section 2–3 (`build_window_features` → `build_running_features` → `combine_features` → `add_pct_features` → `add_cohort_metadata`) for every cohort in `COHORT_LIST` and writes one `COHORT_ID` partition per cohort. Partitions already written are kept if a later cohort fails.
+# MAGIC Runs the same steps as section 2–3 (`build_window_features` → `build_running_features` → `combine_features` → `add_pct_features` → `add_cohort_metadata`) for every cohort in `COHORT_LIST` and writes all cohorts in one write: Parquet, one folder per `COHORT_SET` (`C1-C5_training` ... `C27-C28_backtesting`, `write_hcp_output` in 00_cohort_config). The whole table is replaced on each write.
 
 # COMMAND ----------
 
@@ -669,7 +669,7 @@ print(f"Lab flag features: {len(lab_flag_feature_names())} columns "
 # ---- ONE-TIME RESET: DONE on 2026-10-26, now disabled ----
 # Removed the old tables so the 9-month columns are gone (the write uses mergeSchema, so dropped
 # columns would otherwise stay in the table as nulls). Tables were rewritten right after:
-# 20 cohorts, 102 columns. Only uncomment if columns are dropped from the code again.
+# 20 cohorts (old offset-7 layout), 102 columns. Only uncomment if columns are dropped from the code again.
 # Safe: only our 3.1 tables are touched; Wenjie's 3.0 claim_lab_monthly_ZS is not affected.
 #
 # import os
@@ -688,7 +688,7 @@ print("Reset disabled (done 2026-10-26)")
 # COMMAND ----------
 
 # DBTITLE 1,Build and write every cohort (one query, one write)
-# New output path, partitioned by COHORT_ID so multiple cohorts/offsets coexist.
+# Output: Parquet, one folder per COHORT_SET (write_hcp_output, 00_cohort_config).
 # Wenjie's claim_lab_monthly_ZS is NOT touched.
 # hcp_output_path (00_cohort_config): this run's folder; a full run stops if the table already exists there
 OUTPUT_PATH = hcp_output_path("claim_lab_monthly_cohort")
@@ -697,19 +697,12 @@ OUTPUT_PATH = hcp_output_path("claim_lab_monthly_cohort")
 # per-cohort writes of build_cohort_slow(cb) if ever needed.
 build_cohort = build_cohort_slow
 
-# All cohorts in ONE query and ONE write (fast engine, section 2.3). Only this run's COHORT_IDs
-# are replaced; other partitions in the table are kept.
+# All cohorts in ONE query and ONE write (fast engine, section 2.3). The whole table is replaced.
 _t0 = time.time()
 _df_out = build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST])
 # 2026-11-06: lab flag features (section 2.4) joined onto the same rows (row count unchanged)
 _df_out = add_lab_flag_features(_df_out, [COHORT_BOUNDS[m] for m in COHORT_LIST])
-(_df_out.write
-    .format("delta")
-    .mode("overwrite")
-    .option("mergeSchema", "true")
-    .option("replaceWhere", "COHORT_ID IN (" + ", ".join(f"'{c}'" for c in COHORT_IDS) + ")")
-    .partitionBy("COHORT_ID")
-    .save(OUTPUT_PATH))
+write_hcp_output(_df_out, OUTPUT_PATH)   # Parquet, one folder per COHORT_SET (00_cohort_config)
 
 print(f"{len(COHORT_IDS)} cohorts ({COHORT_IDS[0]} .. {COHORT_IDS[-1]}) written to {OUTPUT_PATH} "
       f"in {(time.time() - _t0) / 60:,.1f} min")
@@ -718,13 +711,13 @@ print(f"{len(COHORT_IDS)} cohorts ({COHORT_IDS[0]} .. {COHORT_IDS[-1]}) written 
 # COMMAND ----------
 
 # DBTITLE 1,Reload all written cohorts
-claim_lab_monthly = spark.read.format("delta").load(OUTPUT_PATH).filter(F.col("COHORT_ID").isin(COHORT_IDS))
+claim_lab_monthly = read_hcp_output(OUTPUT_PATH).filter(F.col("COHORT_ID").isin(COHORT_IDS))
 
 # COMMAND ----------
 
 # DBTITLE 1,All cohorts per NPI (completeness checks + full table)
 # Read the written table directly (cell 26 later reassigns claim_lab_monthly and drops NPI_NUMBER)
-df_all_cohorts = spark.read.format("delta").load(OUTPUT_PATH)
+df_all_cohorts = read_hcp_output(OUTPUT_PATH)
 
 # ---- Completeness checks ----
 _ids_in_table  = sorted(r[0] for r in df_all_cohorts.select("COHORT_ID").distinct().collect())
@@ -763,12 +756,7 @@ claim_lab_monthly = claim_lab_monthly.drop('NPI_NUMBER')
 # New output path (Wenjie's provider_claim_lab_monthly_ZS is NOT touched)
 PROVIDER_OUTPUT_PATH = hcp_output_path("provider_claim_lab_monthly_cohort")
 
-claim_lab_monthly.write.format("delta") \
-    .mode("overwrite") \
-    .option("mergeSchema", "true") \
-    .option("replaceWhere", "COHORT_ID IN (" + ", ".join(f"'{c}'" for c in COHORT_IDS) + ")") \
-    .partitionBy("COHORT_ID") \
-    .save(PROVIDER_OUTPUT_PATH)
+write_hcp_output(claim_lab_monthly.drop("DATASET", "COHORT_SET"), PROVIDER_OUTPUT_PATH)
 
 print(f"Written to {PROVIDER_OUTPUT_PATH} ({len(COHORT_IDS)} cohorts)")
 
@@ -898,7 +886,7 @@ if _trace_counts.get(TRACE_NPI, 0) == 0:
 
 _raw = df_lab.filter(F.col(NPI_COL) == TRACE_NPI).select(SVC_COL, "TEST_TYPE", "STAGE").toPandas()
 _raw[SVC_COL] = pd.to_datetime(_raw[SVC_COL])
-_out = (spark.read.format("delta").load(OUTPUT_PATH)
+_out = (read_hcp_output(OUTPUT_PATH)
         .filter((F.col(NPI_COL) == TRACE_NPI) & F.col("COHORT_ID").isin(COHORT_IDS))
         .toPandas().set_index("COHORT_ID"))
 

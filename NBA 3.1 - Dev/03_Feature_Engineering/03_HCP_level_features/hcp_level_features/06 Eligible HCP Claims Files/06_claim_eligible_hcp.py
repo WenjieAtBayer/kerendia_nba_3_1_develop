@@ -311,7 +311,7 @@ def feature_values_of(df_feat_in):
     return [TOTAL_COL] + sorted((set(BASE_STAGE_FEATURES) | _data) - {TOTAL_COL})
 
 # Staging prefix for the shared materialize() in 00_cohort_config (in memory in validation mode)
-_STAGE_PREFIX = HCP_STAGE_OUTPUT + "claim_eligible_patient_cohort_stage_"   # 3.1 volume, hcp_claims_features/_stage/
+_STAGE_PREFIX = HCP_STAGE_OUTPUT + "claim_eligible_patient_cohort_stage_"   # this run's hcp_claims/_stage/
 
 # ---------- Cohorts to process: every cohort whose cutoff is within the data of all HCP inputs ----------
 DATA_MAX_DT   = df_rx_raw.agg(F.max(SVC_COL)).first()[0]
@@ -623,7 +623,7 @@ print(f"DM / HF features: {len(dm_hf_feature_names())} columns ({len(ELIG_LOOKBA
 # MAGIC %md
 # MAGIC ## 5. Build and write all cohorts
 # MAGIC
-# MAGIC One write of all cohorts: Delta, `partitionBy("COHORT_ID")`, `replaceWhere` on this run's `COHORT_ID`s, `mergeSchema` (other offsets / cohorts in the table are kept). Then completeness checks and the provider-level table (NPI mapped to `PROVIDER_ID`, NPI dropped, as the original).
+# MAGIC One write of all cohorts: Parquet, one folder per `COHORT_SET` (`write_hcp_output` in 00_cohort_config; the whole table is replaced). Then completeness checks and the provider-level table (NPI mapped to `PROVIDER_ID`, NPI dropped, as the original).
 
 # COMMAND ----------
 
@@ -632,18 +632,12 @@ print(f"DM / HF features: {len(dm_hf_feature_names())} columns ({len(ELIG_LOOKBA
 OUTPUT_PATH = hcp_output_path("claim_eligible_patient_cohort")
 assert "kerendia_nba_3_0" not in OUTPUT_PATH, f"Refusing to write to a 3.0 table: {OUTPUT_PATH}"
 
-# All cohorts in one query and ONE write. replaceWhere keeps every other cohort / offset already in the table.
+# All cohorts in one query and ONE write. The whole table is replaced.
 _ids_sql = ", ".join(f"'{c}'" for c in COHORT_IDS)
 _t_all = time.time()
 # 2026-11-06: diabetes type and HF type features (4b) joined onto the same rows (row count unchanged)
-add_dm_hf_features(build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST]),
-                   [COHORT_BOUNDS[m] for m in COHORT_LIST]).write \
-    .format("delta") \
-    .mode("overwrite") \
-    .option("mergeSchema", "true") \
-    .option("replaceWhere", f"COHORT_ID IN ({_ids_sql})") \
-    .partitionBy("COHORT_ID") \
-    .save(OUTPUT_PATH)
+write_hcp_output(add_dm_hf_features(build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST]),
+                                    [COHORT_BOUNDS[m] for m in COHORT_LIST]), OUTPUT_PATH)   # Parquet per COHORT_SET
 
 print(f"{len(COHORT_LIST)} cohorts ({COHORT_IDS[0]} .. {COHORT_IDS[-1]}) written to {OUTPUT_PATH} "
       f"in one write, {(time.time() - _t_all) / 60:,.1f} min")
@@ -652,7 +646,7 @@ print(f"{len(COHORT_LIST)} cohorts ({COHORT_IDS[0]} .. {COHORT_IDS[-1]}) written
 
 # DBTITLE 1,All cohorts per NPI (completeness checks)
 # Read the written table directly (independent of the preview variables)
-df_all_cohorts = spark.read.format("delta").load(OUTPUT_PATH)
+df_all_cohorts = read_hcp_output(OUTPUT_PATH)
 
 _ids_in_table  = sorted(r[0] for r in df_all_cohorts.select("COHORT_ID").distinct().collect())
 _missing       = sorted(set(COHORT_IDS) - set(_ids_in_table))
@@ -684,18 +678,13 @@ hcp_npi_mapping_df = (spark.read.format("delta").load(_QUERY_OUTPUT + HCP_NPI_MA
 
 PROVIDER_OUTPUT_PATH = hcp_output_path("provider_claim_eligible_patient_cohort")
 assert "kerendia_nba_3_0" not in PROVIDER_OUTPUT_PATH, f"Refusing to write to a 3.0 table: {PROVIDER_OUTPUT_PATH}"
-(spark.read.format("delta").load(OUTPUT_PATH)
+(read_hcp_output(OUTPUT_PATH)
     .filter(F.col("COHORT_ID").isin(COHORT_IDS))
     .join(hcp_npi_mapping_df, on="NPI_NUMBER", how="left")
-    .drop("NPI_NUMBER")
-    .write.format("delta")
-    .mode("overwrite")
-    .option("mergeSchema", "true")
-    .option("replaceWhere", "COHORT_ID IN (" + ", ".join(f"'{c}'" for c in COHORT_IDS) + ")")
-    .partitionBy("COHORT_ID")
-    .save(PROVIDER_OUTPUT_PATH))
+    .drop("NPI_NUMBER", "DATASET", "COHORT_SET")
+    .transform(lambda _d: write_hcp_output(_d, PROVIDER_OUTPUT_PATH)))
 
-_prov = spark.read.format("delta").load(PROVIDER_OUTPUT_PATH).filter(F.col("COHORT_ID").isin(COHORT_IDS))
+_prov = read_hcp_output(PROVIDER_OUTPUT_PATH).filter(F.col("COHORT_ID").isin(COHORT_IDS))
 print(f"Written to {PROVIDER_OUTPUT_PATH} ({len(COHORT_IDS)} cohorts) | rows: {_prov.count():,} | "
       f"null PROVIDER_ID: {_prov.filter(F.col('PROVIDER_ID').isNull()).count():,} | "
       f"duplicate (PROVIDER_ID, COHORT_ID): {_prov.count() - _prov.select('PROVIDER_ID', 'COHORT_ID').distinct().count():,}")
@@ -853,7 +842,7 @@ def _expected_counts(claims, tag):
             out[name(prefix + _clean_py(v))] = out.get(name(prefix + _clean_py(v)), 0) + int(k)
     return out
 
-_out = (spark.read.format("delta").load(OUTPUT_PATH)
+_out = (read_hcp_output(OUTPUT_PATH)
         .filter((F.col(NPI_COL) == TRACE_NPI) & F.col("COHORT_ID").isin(COHORT_IDS))
         .toPandas().set_index("COHORT_ID"))
 

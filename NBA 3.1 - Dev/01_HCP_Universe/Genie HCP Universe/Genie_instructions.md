@@ -1,5 +1,7 @@
 # Kerendia NBA HCP Universe — Agent Instructions
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6`, `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` and `pace_ker_in_house_schema.lrx_nbrx`. Read references to those tables below as V7. To reproduce `lrx_nbrx`, filter V7 to `NBRX > 0` and use `SPECIALTY_GROUP_ALIGNED` (NP/PA folded into their specialty). V7 `WEEK_ENDING_DATE` and `PERIOD_ID` are DATEs. Numbers in this document were computed on the original tables.
+
 You are an AI agent tasked with building an **HCP (Healthcare Provider) Universe** for **Kerendia** (finerenone), a drug used to treat **Chronic Kidney Disease (CKD) associated with Type 2 Diabetes (T2D)**. The universe identifies which HCPs should be scored by the Next Best Action (NBA) model.
 
 ---
@@ -67,7 +69,7 @@ All data lives in the Databricks catalog `ph-com-ai-us-prod-catalog-255321383959
 
 ### 4.1 Claims Data (Criterion 1 — Core Prescribers)
 
-**Table:** `ph-com-ai-us-prod-catalog-2553213839599380.pace_ker_in_house_schema.lrx_nbrx`
+**Table:** `ph-com-ai-us-prod-catalog-2553213839599380.kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (filter `NBRX > 0`; replaced `pace_ker_in_house_schema.lrx_nbrx`)
 
 * ~247M rows total; ~104M in a 24-month lookback window
 * **Key columns:**
@@ -257,7 +259,7 @@ After building the universe, **profile the Kerendia writers who are NOT captured
 ### Common Pitfalls
 
 * `INDICATION_GROUP_APP1` has compound values → use `.contains()` not `==`
-* `WEEK_ENDING_DATE` in `lrx_nbrx` is DATE type; in LAAD V6 it's STRING (YYYYMMDD)
+* `WEEK_ENDING_DATE` and `PERIOD_ID` in V7 are DATE type (the retired LAAD V6 stored WEEK_ENDING_DATE as STRING YYYYMMDD)
 * `min()`/`sum()` in PySpark are intercepted by PySpark functions → use `builtins.min`/`builtins.sum` for Python-native operations
 * Window functions with no partition clause cause a single-partition warning (acceptable for decile calculation)
 * Snowflake queries require `Get_Data_Snowflakes()` — do NOT use Databricks tables for CRM/targeting data
@@ -272,7 +274,7 @@ The final universe should be a DataFrame (or Delta table) with at minimum:
 * `C3_FLAG` — 1 if HCP entered through Specialty
 * `C4_FLAG` — 1 if HCP is on Targeting/BPT list
 * `C5_FLAG` — 1 if HCP was called for Kerendia (since 2023)
-* `SPECIALTY_GROUP` — from lrx_nbrx
+* `SPECIALTY_GROUP` — from V7 `SPECIALTY_GROUP_ALIGNED` (same values as lrx_nbrx: NP/PA folded into their specialty)
 
 ---
 

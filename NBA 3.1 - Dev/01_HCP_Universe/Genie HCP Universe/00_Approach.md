@@ -1,5 +1,7 @@
 # Kerendia NBA 3.1 — HCP Universe Construction
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6`, `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` and `pace_ker_in_house_schema.lrx_nbrx`. Read references to those tables below as V7. To reproduce `lrx_nbrx`, filter V7 to `NBRX > 0` and use `SPECIALTY_GROUP_ALIGNED` (NP/PA folded into their specialty). V7 `WEEK_ENDING_DATE` and `PERIOD_ID` are DATEs. Numbers in this document were computed on the original tables.
+
 **Date:** October 19, 2026  
 **Author:** Genie Code  
 **Objective:** Build an HCP Universe (≤ 300K) that maximizes Kerendia writer coverage for NBA model scoring.
@@ -22,12 +24,12 @@ All data lives in catalog `ph-com-ai-us-prod-catalog-2553213839599380`.
 
 | Source | Table / Path | Key Columns | Rows |
 |:-------|:-------------|:------------|-----:|
-| **Claims (C1)** | `pace_ker_in_house_schema.lrx_nbrx` | PROVIDER_ID, INDICATION_GROUP_APP1, PRODUCT_CLASS, NBRX, WEEK_ENDING_DATE, SPECIALTY_GROUP | ~247M (104M in 24-mo lookback) |
+| **Claims (C1)** | `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (`NBRX > 0`; was `pace_ker_in_house_schema.lrx_nbrx`) | PROVIDER_ID, INDICATION_GROUP_APP1, PRODUCT_CLASS, NBRX, WEEK_ENDING_DATE, SPECIALTY_GROUP | ~247M (104M in 24-mo lookback) |
 | **Kerendia Writers (C2)** | `/Volumes/.../kerendia_nbrx_from_raw_fct_rx` (Delta) | PROVIDER_ID, NBRX_KERENDIA_OVERALL, TRX_KERENDIA_OVERALL | 91,751 HCPs |
 | **ID Mapping** | `kerendia_nba_3.SOURCE_PROVIDER_BHID_NPI_MAPPING` | PROVIDER_ID, NPI_NUMBER, BH_ID | ~1.65M |
 | **NBA 3.0 Baseline** | `/Volumes/.../kerendia_nba_3_hcp_model_base_hcp_universe_for_inference` (Delta) | PROVIDER_ID, KERENDIA_FLAG, SGLT2_GLP1_FLAG, NEPH_FLAG, TARGETING_HCP_FLAG | 232,965 HCPs |
 | **Targeting (C4)** | Snowflake `PHCDW.PHCDW_TARGETING.CP_KER_HCP` | BH_ID (mapped to PROVIDER_ID) | ~78K HCPs |
-| **Validation (M3)** | `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v6` | PROVIDER_ID, PRODUCT_GROUP, NBRX, TRX, WEEK_ENDING_DATE | - |
+| **Validation (M3)** | `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (was `_v6`) | PROVIDER_ID, PRODUCT_GROUP, NBRX, TRX, WEEK_ENDING_DATE | - |
 
 ---
 

@@ -1,5 +1,7 @@
 # Kerendia NBA 3.1 — HCP Universe (Final)
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6`, `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` and `pace_ker_in_house_schema.lrx_nbrx`. Read references to those tables below as V7. To reproduce `lrx_nbrx`, filter V7 to `NBRX > 0` and use `SPECIALTY_GROUP_ALIGNED` (NP/PA folded into their specialty). V7 `WEEK_ENDING_DATE` and `PERIOD_ID` are DATEs. Numbers in this document were computed on the original tables.
+
 **Date:** October 19, 2026
 **Status:** Complete
 **Built by:** Genie Code

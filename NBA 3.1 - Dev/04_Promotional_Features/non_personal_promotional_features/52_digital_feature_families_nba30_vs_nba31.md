@@ -508,7 +508,7 @@ One row per doctor (NPI) per cohort, with the **same 21 cohorts and cutoffs as P
 | Signal | Features | Question it answers | Source |
 | --- | --- | --- | --- |
 | Request-a-Rep (8) | `RAR_COUNT_3M / 6M / 12M`, `RAR_LAST_6M_FLAG`, `DAYS_SINCE_LAST_RAR`, `RAR_TYPE_SAMPLES_FLAG_12M`, `RAR_OPEN_REQUEST_FLAG`, `RAR_FOLLOWED_UP_SHARE_12M` | Did the doctor ask for a rep, how recently, for what, and did we answer (as of the cutoff)? | `RPT_DIGITAL_RAR_TAB` (Snowflake) |
-| New Writer (5) | `KERENDIA_WRITER_EVER_FLAG`, `NEW_WRITER_LAST_3M / 6M / 12M_FLAG`, `DAYS_SINCE_FIRST_KERENDIA_RX` | Has the doctor just started prescribing Kerendia? | LAAD `kerendia_laad_based_lrx_full_data_starting_2021` + `_v6` |
+| New Writer (5) | `KERENDIA_WRITER_EVER_FLAG`, `NEW_WRITER_LAST_3M / 6M / 12M_FLAG`, `DAYS_SINCE_FIRST_KERENDIA_RX` | Has the doctor just started prescribing Kerendia? | LAAD `kerendia_laad_based_lrx_v7` (replaced `_full_data_starting_2021` + `_v6`, Nov 2026) |
 | Impiricus SMS (5) | `SMS_SENT_3M`, `SMS_EXPOSED_3M_FLAG`, `SMS_ENGAGED_6M / 12M_FLAG`, `DAYS_SINCE_LAST_SMS` | Did the doctor receive or react to a Kerendia text message? | MMX, vendor `IMPIRICUS` |
 | Formulary wins (0) | none yet | | source not found |
 

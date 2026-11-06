@@ -690,7 +690,8 @@ print("Reset disabled (done 2026-10-26)")
 # DBTITLE 1,Build and write every cohort (one query, one write)
 # New output path, partitioned by COHORT_ID so multiple cohorts/offsets coexist.
 # Wenjie's claim_lab_monthly_ZS is NOT touched.
-OUTPUT_PATH = _NOTEBOOK_OUTPUT + "claim_lab_monthly_cohort"
+# hcp_output_path (00_cohort_config): this run's folder; a full run stops if the table already exists there
+OUTPUT_PATH = hcp_output_path("claim_lab_monthly_cohort")
 
 # Step-by-step version kept as build_cohort_slow (fast engine cell); switch back with
 # per-cohort writes of build_cohort_slow(cb) if ever needed.
@@ -760,7 +761,7 @@ claim_lab_monthly = claim_lab_monthly.drop('NPI_NUMBER')
 
 # DBTITLE 1,Write provider-level output
 # New output path (Wenjie's provider_claim_lab_monthly_ZS is NOT touched)
-PROVIDER_OUTPUT_PATH = _NOTEBOOK_OUTPUT + "provider_claim_lab_monthly_cohort"
+PROVIDER_OUTPUT_PATH = hcp_output_path("provider_claim_lab_monthly_cohort")
 
 claim_lab_monthly.write.format("delta") \
     .mode("overwrite") \

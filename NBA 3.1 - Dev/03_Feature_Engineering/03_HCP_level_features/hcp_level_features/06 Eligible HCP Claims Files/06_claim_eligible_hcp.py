@@ -628,7 +628,8 @@ print(f"DM / HF features: {len(dm_hf_feature_names())} columns ({len(ELIG_LOOKBA
 # COMMAND ----------
 
 # DBTITLE 1,Build and write all cohorts (one write)
-OUTPUT_PATH = _NOTEBOOK_OUTPUT + "claim_eligible_patient_cohort"
+# hcp_output_path (00_cohort_config): this run's folder; a full run stops if the table already exists there
+OUTPUT_PATH = hcp_output_path("claim_eligible_patient_cohort")
 assert "kerendia_nba_3_0" not in OUTPUT_PATH, f"Refusing to write to a 3.0 table: {OUTPUT_PATH}"
 
 # All cohorts in one query and ONE write. replaceWhere keeps every other cohort / offset already in the table.
@@ -681,7 +682,7 @@ display(df_all_cohorts.select(*_key_cols, *_tot_cols, "DIALYSIS_FLAG").orderBy(N
 hcp_npi_mapping_df = (spark.read.format("delta").load(_QUERY_OUTPUT + HCP_NPI_MAPPING_TABLE)
                       .select("NPI_NUMBER", "PROVIDER_ID").distinct())
 
-PROVIDER_OUTPUT_PATH = _NOTEBOOK_OUTPUT + "provider_claim_eligible_patient_cohort"
+PROVIDER_OUTPUT_PATH = hcp_output_path("provider_claim_eligible_patient_cohort")
 assert "kerendia_nba_3_0" not in PROVIDER_OUTPUT_PATH, f"Refusing to write to a 3.0 table: {PROVIDER_OUTPUT_PATH}"
 (spark.read.format("delta").load(OUTPUT_PATH)
     .filter(F.col("COHORT_ID").isin(COHORT_IDS))

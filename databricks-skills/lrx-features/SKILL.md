@@ -66,7 +66,7 @@ one will produce incorrect features or fail at the wrong grain.
 
 | Aspect | HCP-Patient Level (used by these notebooks) | Patient-Level |
 | --- | --- | --- |
-| **Table** | `kerendia_laad_based_lrx.KERENDIA_LAAD_BASED_LRX_V6` | `pace_ker_in_house_schema.pt_lvl_nbrx` / `pt_lvl_trx` |
+| **Table** | `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (replaced V6, Nov 2026) | `pace_ker_in_house_schema.pt_lvl_nbrx` / `pt_lvl_trx` |
 | **Grain** | Provider × Week × Product × Indication × Demographics | Patient × Claim (one row per claim) |
 | **Has PATIENT_ID?** | No — patients are aggregated away | Yes — tracks individual patients |
 | **NBRX/NRX/TRX columns** | Pre-computed **counts** at the combined dimensional grain | `pt_lvl_nbrx`: one row per NBRx claim; `pt_lvl_trx`: one row per TRx claim |
@@ -113,10 +113,12 @@ The notebooks read from two tables in
 
 | Table | Date Range | Purpose |
 | --- | --- | --- |
-| `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` | `WEEK_ENDING_DATE < '20230101'` | Historical data (pre-2023) |
-| `KERENDIA_LAAD_BASED_LRX_V6` | `WEEK_ENDING_DATE >= '20230101'` | Current data (2023+) |
+| `kerendia_laad_based_lrx_v7` | `WEEK_ENDING_DATE < DATE'2023-01-01'` | Historical data (pre-2023; V7 history starts Dec 2021) |
+| `kerendia_laad_based_lrx_v7` | `WEEK_ENDING_DATE >= DATE'2023-01-01'` | Current data (2023+) |
 
-Both tables share the same schema. The notebooks union them after loading.
+> **Nov 2026 change:** V7 replaced `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` + `KERENDIA_LAAD_BASED_LRX_V6`. The notebooks keep the old/new split but both queries now read V7. V7 stores `WEEK_ENDING_DATE` and `PERIOD_ID` as DATE, so the queries wrap them in `date_format(..., 'yyyyMMdd')` to keep the downstream string format. V7 value sets differ from V6 (e.g. `SPECIALTY_GROUP` = PCP/CARD/ENDO/NEPH/NP/PA/HOSPITALIST/HOS/OTHERS, short lrx_nbrx `PRODUCT_GROUP` names, `PAY_TYPE` = Commercial/Medicare/Medicaid/Cash/Federal Program, no CVD indication groups, `OTHERS` instead of `ALL_OTHERS`), so pivoted column names below that quote V6 values will change. V7 is built by `kerendia_data_needs/LAAD based LRx Pipeline/Ops Pipeline V7`.
+
+The notebooks union the two date ranges after loading. Sections 3.2 and later describe V6 for provenance.
 
 ### 3.2 What V6 Is
 
@@ -154,9 +156,11 @@ SELECT DISTINCT
   INDICATION_GROUP, HYPERTENSION_FLAG, PAYER_PLAN_ID,
   NBRX, TRX, NRX, NPI, PRI_SPCL_DESC
 FROM `ph-com-ai-us-prod-catalog-2553213839599380`.`kerendia_laad_based_lrx`.
-  KERENDIA_LAAD_BASED_LRX_V6
-WHERE WEEK_ENDING_DATE >= '20230101'
+  kerendia_laad_based_lrx_v7
+WHERE WEEK_ENDING_DATE >= DATE'2023-01-01'
 ```
+
+(`WEEK_ENDING_DATE` is selected as `date_format(WEEK_ENDING_DATE, 'yyyyMMdd') AS WEEK_ENDING_DATE`; in the pre-2023 query `PERIOD_ID` is formatted the same way.)
 
 ---
 
@@ -208,8 +212,8 @@ the window had null base values.
 
 | Shared Element | Value |
 | --- | --- |
-| Source tables | `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` (old) + `KERENDIA_LAAD_BASED_LRX_V6` (new) |
-| Split date | `WEEK_ENDING_DATE` < / >= `'20230101'` |
+| Source tables | `kerendia_laad_based_lrx_v7` for both ranges (replaced `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` + `KERENDIA_LAAD_BASED_LRX_V6`) |
+| Split date | `WEEK_ENDING_DATE` < / >= `DATE'2023-01-01'` |
 | Columns selected | Same 21 columns (see Section 3.3) |
 | HCP universe path | `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_volume/hcp_level_model/ops_pipeline/notebook_output/kerendia_nba_3_hcp_model_base_hcp_universe_for_inference` |
 | HCP universe size | See HCP universe Delta path (changes per inference cycle) |
@@ -234,27 +238,27 @@ column being aggregated (see Section 4.1). Three additional cross-notebook incon
 (age group prefix, hypertension null replacement, `.na.fill(0)` behavior) are documented
 in Section 4.2 and called out inline below where they affect specific steps.
 
-### Step 1: Load V6 Data (Split Load)
+### Step 1: Load V7 Data (Split Load)
 
-**What:** Load LAAD-based LRx data from two tables, split by date.
+**What:** Load LAAD-based LRx V7 data in two date ranges.
 
 **Logic:**
 ```python
 # Old data (pre-2023)
 query_old = """
-  SELECT DISTINCT <21 columns>
+  SELECT DISTINCT <21 columns, WEEK_ENDING_DATE and PERIOD_ID via date_format(..., 'yyyyMMdd')>
   FROM `ph-com-ai-us-prod-catalog-2553213839599380`.`kerendia_laad_based_lrx`
-    .KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021
-  WHERE WEEK_ENDING_DATE < '20230101'
+    .kerendia_laad_based_lrx_v7
+  WHERE WEEK_ENDING_DATE < DATE'2023-01-01'
 """
 hcp_lrx_claims_old = spark.sql(query_old)
 
 # New data (2023+)
 query_new = """
-  SELECT DISTINCT <21 columns>
+  SELECT DISTINCT <21 columns, WEEK_ENDING_DATE via date_format(..., 'yyyyMMdd')>
   FROM `ph-com-ai-us-prod-catalog-2553213839599380`.`kerendia_laad_based_lrx`
-    .KERENDIA_LAAD_BASED_LRX_V6
-  WHERE WEEK_ENDING_DATE >= '20230101'
+    .kerendia_laad_based_lrx_v7
+  WHERE WEEK_ENDING_DATE >= DATE'2023-01-01'
 """
 hcp_lrx_claims_new = spark.sql(query_new)
 

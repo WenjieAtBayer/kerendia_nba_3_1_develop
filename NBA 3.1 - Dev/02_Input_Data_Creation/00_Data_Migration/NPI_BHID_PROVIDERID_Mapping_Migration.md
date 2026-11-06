@@ -1,5 +1,7 @@
 # NPI, BH_ID & PROVIDER_ID Mapping — Migration Analysis
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6`, `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` and `pace_ker_in_house_schema.lrx_nbrx`. Read references to those tables below as V7; the base NBRx provider list is V7 `WHERE NBRX > 0`. Numbers in this document were computed on the original tables.
+
 **Date:** October 2026  
 **Source Query:** Cell 27 of `01_HCP_Universe_Identification` notebook  
 **Source Pipeline:** Notebook 3.5 (HCP Attributes) in LAAD-based LRx Ops Pipeline  

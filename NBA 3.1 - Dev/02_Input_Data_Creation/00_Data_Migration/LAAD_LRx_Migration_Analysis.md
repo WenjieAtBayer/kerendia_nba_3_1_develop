@@ -1,5 +1,7 @@
 # LAAD-Based LRx Table Migration Analysis
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, built in `kerendia_data_needs/LAAD based LRx Pipeline/Ops Pipeline V7`, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6`, `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` and `pace_ker_in_house_schema.lrx_nbrx`. This analysis describes the V6 pipeline; V6 is deprecated after the downstream transition.
+
 **Date:** October 2026  
 **Source Pipeline:** `/Workspace/Users/wenjie.chen@bayer.com/kerendia_data_needs/LAAD based LRx Pipeline/Ops Pipeline`  
 **Target:** Migrate from Snowflake sources to Unity Catalog (PACE) in-house tables  

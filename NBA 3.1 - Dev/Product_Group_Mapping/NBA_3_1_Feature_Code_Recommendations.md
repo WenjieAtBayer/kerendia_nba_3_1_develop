@@ -1,5 +1,7 @@
 # Kerendia NBA 3.1 — Product, Dx, Px and Lab Code Recommendations
 
+> **Data source update (Nov 2026):** NBA 3.1 LRx features now read `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` instead of `KERENDIA_LAAD_BASED_LRX_V6`. V7 `PRODUCT_GROUP` uses the shorter lrx_nbrx product names (not the verbose V6 names) and adds `PRODUCT_CLASS`; check V7 distinct values before mapping codes below.
+
 **Date:** 2026-10-22
 **Context:** T1D + HF indication expansion for Kerendia NBA 3.1
 

@@ -1,5 +1,7 @@
 # Kerendia Data Sources
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (Snowflake mirror `PHCDW.PHCDW_DSAA.KERENDIA_LAAD_BASED_LRX_V7`; weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6`, `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` and `pace_ker_in_house_schema.lrx_nbrx` (row 4 below). V7 includes the T1D indication split (`INDICATION_GROUP_APP1`). Dates in row 4 refer to the original tables.
+
 **Dates checked on: 2026-10-21** (Min/Max Service Date and Last Updated values are as of this date)
 
 | S.No | Dataset Name/Use | Table Name | Source | New Table Name (PharmAce) | Data Migration Assessment | Min Service Date | Max Service Date | Last Updated |

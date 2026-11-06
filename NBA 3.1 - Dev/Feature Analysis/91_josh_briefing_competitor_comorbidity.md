@@ -1,5 +1,7 @@
 # Kerendia NBA 3.1 — Competitor & Comorbidity Features: Briefing for Josh Buffington
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6` and `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021`. Read V6 references below as V7. V7 `WEEK_ENDING_DATE` / `PERIOD_ID` are DATEs, and `PRODUCT_GROUP` uses the shorter lrx_nbrx names. Numbers in this document were computed on V6.
+
 **For:** Josh Buffington, PharmD — Competitive Intelligence  
 **From:** NBA modelling team (Wenjie)  
 **Purpose:** Walk through what the model currently knows (and doesn’t know) about the competitive landscape and patient populations, then share what we’re planning to fix for NBA 3.1 — most of which is a direct response to your CI report  

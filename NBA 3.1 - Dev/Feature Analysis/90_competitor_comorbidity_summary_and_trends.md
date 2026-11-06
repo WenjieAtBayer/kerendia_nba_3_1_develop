@@ -1,5 +1,7 @@
 # Competitor & Comorbidity Features: Summary, Trends, and NBA 3.1 Opportunities
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6` and `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021`. Read V6 references below as V7. V7 `WEEK_ENDING_DATE` / `PERIOD_ID` are DATEs, and `PRODUCT_GROUP` uses the shorter lrx_nbrx names. Numbers in this document were computed on V6.
+
 This document summarises the two feature families most directly tied to the Kerendia indication landscape: (1) **comorbidity / patient-panel features** (how many patients with kidney disease, diabetic CKD, or cardio-renal CKD an HCP sees each month) and (2) **competitor drug NBRx share features** (how the HCP’s SGLT2 prescribing is distributed across Farxiga, Invokana, Jardiance, and Steglatro). It covers the NBA 3.0 status of each, what the data shows over the two years to October 2026, structural issues identified, and the highest-value NBA 3.1 improvements.
 
 Detailed per-family analysis and change specs are in files `01–02` (comorbidity) and `09–10` (competitor). The adoption-speed features (Invokana / Farxiga adoption, files `03–04`) are adjacent to the competitor family and are summarised briefly here.

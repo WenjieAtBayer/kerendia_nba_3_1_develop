@@ -1,5 +1,7 @@
 # NBA 3.0 Competitor NBRx Share Features: How They Are Built
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6` and `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021`. Read V6 references below as V7. V7 `WEEK_ENDING_DATE` / `PERIOD_ID` are DATEs, and `PRODUCT_GROUP` uses the shorter lrx_nbrx names. Numbers in this document were computed on V6.
+
 Notebook reviewed: `03_HCP_Level_Features/31_Competitor_drugs_NBRX_share`. NBA 3.1 changes are in `10_competitor_nbrx_share_features_nba31_changes.md`.
 
 ## 1. How NBA 3.0 builds these features

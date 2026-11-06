@@ -1,5 +1,7 @@
 # NBA 3.1 Kerendia Prior Writing Features: Changes
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6` and `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021`. Read V6 references below as V7. V7 `WEEK_ENDING_DATE` / `PERIOD_ID` are DATEs, and `PRODUCT_GROUP` uses the shorter lrx_nbrx names. Numbers in this document were computed on V6.
+
 This file lists the prior-writing changes for NBA 3.1: the new data source and methodology for the Kerendia NBRx and TRx features (section 1). How the NBA 3.0 features are built is in the companion file `NBA_3_1_Kerendia_Prior_Writing_Features_Analysis.md`. References written as "Analysis 1.x" point to sections in that file.
 
 NBA 3.1 scope: the model target is the HCP's **Kerendia NBRx in the 30-day prediction window**. Kerendia now covers **T2D with CKD, T1D with CKD and HF with LVEF >= 40%**. Prior writing is the strongest signal family in the model, so the goal here is a Kerendia writing history that adds information beyond the paid-claims features in `26_Features_NBRx`.

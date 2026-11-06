@@ -1,5 +1,7 @@
 # NBA 3.1 Claim Comorbidity Features: Changes and Additions
 
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6` and `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021`. Read V6 references below as V7. V7 `WEEK_ENDING_DATE` / `PERIOD_ID` are DATEs, and `PRODUCT_GROUP` uses the shorter lrx_nbrx names. Numbers in this document were computed on V6.
+
 This file lists the claim comorbidity changes for NBA 3.1: which NBA 3.0 features to remove or rebuild (section 1), and which new features to add (section 2). How the NBA 3.0 features are built is in the companion file `NBA_3_1_Claim_Comorbidity_Features_Analysis.md`. References written as "Analysis 1.x" point to sections in that file.
 
 NBA 3.1 scope: the model target is still the HCP's **Kerendia NBRx in the 30-day prediction window**, but the indications now cover **heart failure (HF, LVEF >= 40%) and type 1 diabetes (T1D) with CKD**, in addition to type 2 diabetes (T2D) with CKD. The NBA 3.0 comorbidity groups (`KD`, `DB-KD`, `CV-KD`) were built around CKD only, so the family needs to be rebuilt around the indications.

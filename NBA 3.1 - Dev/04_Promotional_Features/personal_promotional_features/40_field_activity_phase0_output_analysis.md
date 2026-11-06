@@ -8,7 +8,7 @@
 4. The **expected figures** (for example about 660K calls) come from the earlier data review (`20_`), which counted the same data by hand. Phase 0 checks that the notebook reproduces them.
 5. **Gate G0** is the checkpoint at the end of Phase 0: Phase 1 features are only trusted once the foundations pass.
 
-**Status of this section:** updated 3 Nov 2026 after two fixes in the Phase 0 notebook: (1) `KEY_MSG_NM` is now brought into the V1a query, so account / office records are found; (2) medical record types are matched by pattern instead of a fixed list. V2, V3 and V10 below reflect the re-run.
+**Status of this section:** updated 3 Nov 2026 after two fixes in the Phase 0 notebook: (1) `KEY_MSG_NM` is now brought into the V1a query, so account / office records are found; (2) medical record types are matched by pattern instead of a fixed list. V2, V3 and V10 below reflect the re-run. **Update 5 Nov 2026:** V10 / C11 now include the MSL scope evidence (product mix, Kerendia overlap, check on the 28 promotional cohorts) and the decision to keep MD-1 Finerenone only, without Asundexian; V2 records the exact medical pattern used in notebooks 41 and 43; V1 adds a warning on the word `Kerendia` in MSL product text.
 
 ### 6.2 Overview
 
@@ -18,12 +18,12 @@
 | V2 | Account / office visits counted as doctor calls; BHO copies given to every colleague | New | Yes on rules (fixed 3 Nov); 3 points to confirm | Yes: no-HCP key-message list, calls with both HCP and account messages, medical records on BHO IDs |
 | V3 | BHO calls repeated to about 80 colleagues per organisation | New (3.0 used BHO calls without this logic) | Data yes; business answer missing | Yes: CRM team questions |
 | V4 | No key-message information in 3.0 | New | Partly | Yes: entry process and HF decline |
-| V5 | Samples only as "call type with sample" | New | Yes (30 Oct) | Yes: who fixes the market access table |
+| V5 | Samples only as "call type with sample" | New | Yes (30 Oct); Phase 4 (X1) design and cohort check added | Yes: who fixes the market access table; delivery date or status snapshots; 40 mg and HF |
 | V6 | Registration treated as attendance; all event types mixed | Attendance existed in 3.0; separate states are new | Partly (fixed 4 Nov: Kerendia filter, attendee status column; type labels sit in `EVNT_CAT`) | Yes: `Signed_vod` meaning, event groups, attendee data |
 | V7 | Delivered filter never matched (feature always 0) | Fix of a 3.0 feature | Fix yes; opens open (drop is platform-wide, clicks stable: likely tracking change) | Yes: April 2026 open-rate drop |
 | V8 | Text rule would break again with a new co-detailed product | New | Not due | Yes: launch date and recording |
 | V9 | Columns not driven by a config | New (engineering standard) | No | No (internal) |
-| V10 | MSL visits not handled explicitly | New (MSL flag, compliance-approved 30 Oct 2026) | Yes (volume and classification, fixed 3 Nov) | Yes: Finerenone-only scope |
+| V10 | MSL visits not handled explicitly | New (MSL flag, compliance-approved 30 Oct 2026) | Yes (volume and classification, fixed 3 Nov); scope checked on cohorts c1 – c28 (5 Nov) | Yes: confirm Finerenone-only scope (recommended; Asundexian not added) |
 
 ### 6.3 Step by step
 
@@ -33,7 +33,7 @@
 * **NBA 3.0 or new.** Call counts existed in 3.0. The rule (any Kerendia detail row) and the grain (one row per visit, products below it) are new in 3.1.
 * **Status.** Met: 676,136 calls / 104,752 doctors; first priority 91.6%.
 * **Raise with client.** Confirm that the target is two numbers: about 606K doctor visits plus about 70K account / office records. Reason: the 660K in the review included account / office records, which NBA 3.1 deliberately separates (V2).
-* **Suggestions.** Use the same detail rule in every block that filters on Kerendia calls (for example samples, CLM). Run E1 (NBA 3.0 features with only this fix) to show the client how much the co-detail gap alone changes the model.
+* **Suggestions.** Use the same detail rule in every block that filters on Kerendia calls (for example samples, CLM). Remove medical records **before** applying any Kerendia rule: Finerenone MSL product text is `Finerenone [Kerendia/Firialta] ...`, so a filter such as `DETL_PROD ILIKE '%kerendia%'` also picks up MSL visits (found 5 Nov 2026 during the V10 scope check). Run E1 (NBA 3.0 features with only this fix) to show the client how much the co-detail gap alone changes the model.
 
 #### V2 – Record classification
 
@@ -42,7 +42,7 @@
 * **Status.** Met on rules after the 3 Nov fixes; three business points to confirm.
   * *What went wrong first:* `ACCOUNT_OFFICE` was 0, because the plan assumed "no HCP present" is stored in the record type; Veeva stores it as a key message (`FACT_CALL_KEY_MESSAGE.KEY_MSG_NM`). The medical list also used spaces where Veeva uses underscores and missed the Non Face2Face / Group types.
   * *Fix 1:* the V1a query now joins the key messages (one row per call: `KEY_MSG_NMS`, `HAS_ACCT_OFFICE_MSG`). Account / office: 76,662 Kerendia doctor calls in Year 1 (14.0%) and 69,897 in Year 2 (10.3%), within the expected 10 – 12% range in Year 2. Kerendia HCP interactions: 472,236 (Y1) and 606,239 (Y2).
-  * *Fix 2:* medical record types matched by pattern (ends with ` Med` / `_Med`, starts with `BPH_MED_`, or `Event Call Report`; product text contains `Finerenone`). An independent check finds 0 medical records left among HCP interactions (was 5,045 in Year 2).
+  * *Fix 2:* medical records matched by pattern. Exact rule in notebooks 41 and 43 (`MEDICAL_REC_TYPE_REGEX`, `MEDICAL_DETL_PROD_REGEX`): record type contains `Interaction Med` / `Interaction_Med` (for example `Face2Face Interaction Med`, `Non Face2Face Interaction Med`, `Group Interaction Med`), starts with `BPH_MED_`, or starts with `Event Call Report`; **or** product text contains `Finerenone`. Earlier versions of this file described the type rule as "ends with ` Med` / `_Med`"; both match the 12 types seen today, but a new type such as `Other Med` would be missed by the code rule (see C3). An independent check finds 0 medical records left among HCP interactions (was 5,045 in Year 2).
 * **Raise with client.**
   * Confirm that the key messages `5- Acct Call`, `2-Account Call Only`, `vOffice call (no HCP)`, `Account Call`, `Office call (no HCP)` always mean no doctor was present, and whether reps use them consistently. Reason: the account / office class depends entirely on reps choosing that message. The last two are not in the readiness plan list.
   * Some calls carry both an HCP message and an account message, for example `1-HCP Call | 2-Account Call Only` (6,090 records) or `1-Position 1 KER CKD (HCP call) | 5- Acct Call` (2,809). Which one wins? Reason: they are currently classed as account / office, so they are not counted as doctor visits.
@@ -151,8 +151,50 @@ What the example shows:
 * **Why we expect this.** NBA 3.0 used samples only as "call with sample", with no quantity, and the market access block uses a second sample table. Two sources for the same activity risk double counting.
 * **NBA 3.0 or new.** New.
 * **Status.** Met (30 Oct, `22_`). Both are the same records, but the market access table misses `AOC Received` and counts in-transit samples, so it holds only 13% of received units in Year 2.
-* **Raise with client.** Who fixes the market access table or notebook 17, and when (Q-S2). Reason: until then the existing sample features are wrong for Year 2.
-* **Suggestions.** Build samples once with the agreed rule (received = `Delivered` + `AOC Received`) and let both blocks read the same output.
+* **What we found (`22_`, Nov 2024 – 23 Oct 2026).**
+  * *Same source.* The market access table (`ANLT_BASE_FACT_KERENDIA_SAMPLES_SHIPPED_DROPPED_KER`, read by notebook 17) is a status-filtered copy of `FACT_CALL_SAMPLE`: 100% line match on sample record, product, doctor, date and quantity. "Call samples" and "samples received / dropped" are the same records, so they must be built once (R1).
+  * *Wrong status filter.* The table keeps `DELIVERED`, `Delivered_vod` and `Shipped_vod`. It misses `aoc_received__c`, the status used for almost all completed lines since the Vault CRM change (late July 2025), and it counts `Shipped_vod` (in transit) as received. It holds 87% of received units in Year 1 but only 13% in Year 2 (59K of 449K), and 23% of doctors who received samples. NBA 3.0 sample features collapse from August 2025 for a data reason, not a field reason (R2, R4).
+  * *Orders settle in two to three weeks.* Orders older than three weeks are 95 – 98% received; the last week of data is only 14% received. There is no delivery date (`SYS_MODIFIED_ON` is touched by the weekly reload, `LAST_ACTY_DATE` is empty): only the order date and the **current** status (R7).
+  * *Strength.* The 10 / 20 mg mix is stable (about 61% / 37%), so a split adds little. 40 mg exists from August 2025, reaches about 1,000 doctors a quarter and is HF-related (58 – 62% of 40 mg sample calls carry an HF key message vs 25 – 32% for 10 / 20 mg) (R5).
+* **Business rule (status map, aligned with MV; R3, Q-S1 answered).** `aoc_received__c` counts as received; `Shipped_vod` does not.
+
+| Mapped status | Raw statuses | Used in features |
+| --- | --- | --- |
+| RECEIVED | `DELIVERED`, `Delivered_vod`, `aoc_received__c` | Yes |
+| PENDING (not yet received) | `Shipped_vod`, `In_Progress_vod`, `on_hold__c` | No |
+| FAILED | `rejected__c`, `Returned`, `Cancelled_vod`, `lost_in_transit__c` | No |
+
+* **Why the settling rule (R7) is needed, even with the `aoc_received__c` status.** The problem is not whether the status exists but *when* an order gets it. Status is overwritten, not stored over time.
+  * *At scoring:* features are built from the data on the scoring date. Orders from the last two to three weeks are still `Shipped_vod` or pending, so the rule leaves them out and the most recent weeks look under-counted (for example, on the 23 Oct 2026 cut the week of 19 Oct is 14% received).
+  * *In training:* history is queried today, so every order before a past anchor has already settled. The same weeks look complete.
+  * *Effect:* the model learns from complete recent counts but is scored on incomplete ones (a training / scoring mismatch of the kind gate G1 checks for). Training must reproduce the state of the data on the day it would have been pulled.
+* **Phase 4 solution (X1, proposed).**
+  1. *One source, one build.* Build an intermediate table `field_sample_line` from `FACT_CALL_SAMPLE` (`SYS_DELETE_FLAG = '0'`, Kerendia 10 / 20 / 40 mg BRC, BHID from `MAP_CUSTOMER_XREF`): one row per sample line with BHID, call ID, order date, strength, quantity, raw status and mapped status. Notebook 17 either reads it or applies the same rule (Q-S2); the market access table is no longer used for sample features.
+  2. *Status map in a config table* (table above). A status that is not in the map fails the run instead of being dropped silently, which is how NBA 3.0 lost `aoc_received__c`.
+  3. *Settling rule.* For every cohort with lookback end L, count only orders placed before L − 21 days, in training, testing, back-testing and scoring alike. Drop the 1-month window (21 of its days would be excluded); use 3 / 6 / 12-month windows ending at L − 21. Optional: a "sample requests in the last 21 days" count over all lines, whatever their status (the order exists on the call date, so no leakage). Later option: weekly status snapshots (Q-S5); test against the 21-day cutoff in E5.
+  4. *Features (about 10 columns).* `SMPL_RCVD_UNITS_3M/6M/12M`; `SMPL_RCVD_CALLS_3M/6M/12M` (distinct calls with at least one received line); `SMPL_DAYS_SINCE_LAST_RCVD` (999 when no history); `SMPL_40MG_RCVD_6M/12M`. No 10 vs 20 mg split. `SMPL_40MG_AVAILABLE` (cohort lookback after August 2025) is kept for checks only, not as a model input: it is the same for every doctor in a cohort, so it would act as a time marker and pick up period effects (Vault change, 2026 volume rise) instead of doctor behaviour.
+  5. *Checks before E5.* Year 2 totals match `22_` (449,246 received units, 20,270 doctors); no PENDING or FAILED units and no order after L − 21 in the features; monthly units by status; October 2026 status shift rechecked in December 2026 (R6); fixed schema, no duplicate keys.
+* **Cohorts and the 40 mg flag.** Phase 1 still reads the 26-cohort file `promotional_features_hcp_model_cohort_anchor_dates.csv` (C01 2023-03-17 to C26 2025-04-16), which ends before 40 mg, co-detail and the Vault change. With it, every 40 mg flag is 0 in training. NBA 3.1 should use the 28-cohort promotional file `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_1_volume/cohorts/promotional/cohorts.parquet` (offset 17, 12-month lookback; c1 – c24 training, c25 – c26 testing, c27 – c28 back-testing):
+
+| Cohorts | Lookback end | 40 mg in lookback (orders before L − 21) |
+| --- | --- | --- |
+| c1 – c15 (training) | 2024-06-17 to 2025-08-17 | None (c15 cutoff 2025-07-27) |
+| c16 (training) | 2025-09-17 | Partly, about 3 – 4 weeks |
+| c17 – c24 (training) | 2025-10-17 to 2026-05-17 | Yes |
+| c25 – c26 (testing) | 2026-06-17, 2026-07-17 | Yes |
+| c27 – c28 (back-testing) | 2026-08-17, 2026-09-17 | Yes |
+
+  * 9 training cohorts contain 40 mg (8 with more than a few weeks); a full 6 months of 40 mg history only from about c21. This meets the proposed minimum of 6 training cohorts before the flag goes into E5.
+  * The `aoc_received__c` fix is now needed in training, not only at scoring: 10 of 24 training cohorts (c15 – c24) end after the Vault change.
+  * The same file also gives co-detail training data (c20 – c24 end after January 2026), which addresses P2 / N2 / Q5 in the Phase 1 analysis.
+  * Do not fill 40 mg for older cohorts (it did not exist), and do not use HF key messages as a substitute (they also start only in July 2025).
+  * c27 – c28 have prediction months September and October 2026 while the data runs to 23 Oct 2026: confirm that their target windows are complete in the target source before back-testing.
+* **Raise with client.**
+  * Who fixes the market access table or notebook 17, and when (Q-S2, C7). Reason: until then the existing sample features are wrong for Year 2, and wrong in training for every cohort after July 2025.
+  * Can CareTria provide a delivery or status-change date, or can weekly status snapshots be kept from now on (Q-S5, C12)? Reason: it would replace the 21-day cutoff with real receipt dates.
+  * Is 40 mg sampled mainly for HF patients (Q-S4, C13)? Reason: it decides whether the 40 mg flag can be explained to reps as an HF signal.
+  * Modelling team: confirm the switch to the 28-cohort promotional file and the c27 – c28 target windows (C6).
+* **Suggestions.** Build samples once with the agreed rule (received = `Delivered` + `AOC Received`) and let both blocks read the same output. Point Phase 1 and X1 to the 28-cohort file. Apply the 21-day cutoff to all cohorts. Keep the status map in config and report units by status every month.
 
 #### V6 – Event states
 
@@ -232,7 +274,7 @@ What the example shows:
 
 * **Why we expect this.** The NBA 3.0 failure (V1) came from a new co-detailed product. Asundexian will be co-promoted by ISS reps, so the same risk returns.
 * **NBA 3.0 or new.** New.
-* **Status.** Not due: Asundexian appears only in MSL records so far.
+* **Status.** Not due: Asundexian appears only in MSL records so far. Its MSL activity is growing fast (6,452 records in Year 2 vs 1,908 in all of Jan 2022 – Apr 2025), but it is **not** part of the MSL flag (decision 5 Nov 2026, see V10).
 * **Raise with client (sales operations).** Launch date, and whether ISS reps record Asundexian as a separate product detail in the same Veeva setup (Q5 / F-2). Reason: the Kerendia rule relies on separate detail rows.
 * **Suggestions.** Schedule a re-run of V1d for the first month of co-promotion; add an alert if Kerendia first-priority share moves by more than 5 points.
 
@@ -252,10 +294,35 @@ What the example shows:
   * *Volume (Finerenone MSL):* 10,496 interactions / 6,409 doctors in Year 1 (bottom of the review range) and 11,401 / 6,947 in Year 2 (about 5% above the top, consistent with more Finerenone MSL activity).
   * *All medical products:* 22,773 (Y1) and 30,673 (Y2), about 2.8 times the target in Year 2, because MSL teams for Asundexian and Elinzanetant are now active.
   * *Classification:* 0 medical records among HCP interactions (independent check: any `MED` record type, `Event Call Report` or Finerenone product text). Before the fix, 5,045 Year 2 MSL records sat in doctor visits (none with Kerendia), and the notebook's own check could not see them because it reused the rule's list.
+* **How MD-1 uses these records (notebook 43, step 3; built in Phase 3).** MD-1 is a yes / no flag per doctor and cohort (`FLD_MSL_INTERACTION_6M`, `FLD_MSL_INTERACTION_12M`); compliance allowed a flag only, no counts or topics.
+  1. *Medical set:* submitted calls on non-BHO doctor IDs that pass the V2 medical pattern (record type **or** `Finerenone` product text). This is the `ALL_MEDICAL` set.
+  2. *Scope (`MSL_SCOPE` in the config cell):* `FINERENONE` (default) keeps only records whose product text contains `Finerenone`; `ALL_MEDICAL` keeps the whole set. Under the default the record-type pattern does not change MD-1 (every Finerenone record already passes step 1); it matters for `ALL_MEDICAL` and for removing medical records from rep calls in notebook 41.
+* **Scope check: Finerenone only vs all medical (5 Nov 2026, Snowflake `FACT_CALL`, same rule as notebook 43).**
+  * *What the extra records are.* Year 2 medical records by product: Finerenone 11,187; Asundexian 6,452; Elinzanetant 4,918; other 7,542 (oncology: Nubeqa, Xofigo, Vitrakvi, Stivarga; haematology: Jivi, Kovaltry; PAH: Adempas; women's health: Mirena, portfolio; radiology: Gadoquatrane); empty 66. Finerenone product text is always `Finerenone [Kerendia/Firialta]`, sometimes with a `DKD`, `CKD` or `HFpEF` suffix.
+  * *Overlap with Kerendia rep coverage* (doctor had a Kerendia rep call in the same period, MSL records excluded):
+
+  | Doctors with an MSL visit | Apr 2024 – Apr 2025 | Year 2 | Kerendia-called (Apr 2024 – Apr 2025 / Y2) |
+  | --- | --- | --- | --- |
+  | Finerenone only | 5,522 | 6,456 | 53.7% / 58.8% |
+  | Finerenone + other medical | 114 | 515 | 49.1% / 41.6% |
+  | No Finerenone, Asundexian | 476 | 3,855 | 1.3% / 3.1% |
+  | No Finerenone, other products only | 4,166 | 7,292 | 2.3% / 7.6% |
+
+  * *Check on the promotional cohorts* (`cohorts/promotional/cohorts.parquet`, offset 17; 12-month lookback after `lookback_start_date` up to and including `lookback_end_date`; c1 – c24 Training, c25 – c26 Testing, c27 – c28 Holdout / Backtesting):
+
+  | Set | Finerenone-flagged doctors | Of these Kerendia-called | Non-Finerenone-only doctors | Of these Kerendia-called | Asundexian-only doctors | `ALL_MEDICAL` ÷ Finerenone doctors |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | Training c1 – c24 | 3,860 – 6,683 | 53.1 – 58.7% | 3,973 – 8,862 | 1.9 – 4.5% | 355 – 1,774 | 1.82 – 2.38 |
+  | Testing c25 / c26 | 6,636 / 6,641 | 56.6 / 58.1% | 9,128 / 9,410 | 4.7 / 4.8% | 1,959 / 2,118 | 2.38 / 2.42 |
+  | Holdout c27 / c28 | 6,798 / 6,915 | 58.3 / 58.2% | 9,839 / 10,390 | 5.2 / 5.9% | 2,453 / 2,935 | 2.45 / 2.50 |
+
+  * *Reading.* The Finerenone flag is stable (about 6,400 – 6,900 doctors per cohort from c16, 53 – 59% Kerendia-called in every set). `ALL_MEDICAL` roughly doubles the flagged doctors but adds few Kerendia doctors: in c24 about 390 of 8,862 extra doctors are Kerendia-called vs about 3,600 from Finerenone; in c28 about 610 vs 4,000 (approximate, from rounded shares). The extra part grows from c11 (ratio 1.82) to c28 (2.50), so `ALL_MEDICAL` would mean something different in training than in testing and holdout.
+  * *Asundexian (not added, decided 5 Nov 2026).* It is the only non-Finerenone MSL product with a link to Kerendia (cardiovascular audience; future ISS co-promotion, V8), but: only 1.3 – 3.1% of its doctors are Kerendia-called; its doctors grow from 355 – 1,774 in training to 2,935 in c28 (drift); it is not approved, so its MSL visits are pre-launch scientific exchange, a higher compliance risk in a promotional model; and the 30 Oct approval covers a Kerendia-related flag only. Revisit at co-promotion launch (V8 re-run), and only as a separate flag with its own compliance approval, never merged into MD-1.
+  * *Caveats.* Doctor counts are not restricted to the HCP universe; "Kerendia-called" is a proxy for Kerendia relevance, not a link to prescribing.
 * **Raise with client (medical affairs / compliance).**
-  * Should the MSL flag count only Finerenone visits, or any MSL visit to the doctor? Reason: the compliance approval covered a Kerendia-related flag, and non-Finerenone visits doubled in Year 2.
+  * Confirm the MSL flag counts only Finerenone visits (recommended), not any MSL visit to the doctor. Reason: non-Finerenone MSL doctors are almost all outside Kerendia rep coverage, grow over the cohorts, and fall outside the Kerendia-related compliance approval (evidence above).
   * Confirm the full list of medical record types (C3). Reason: the pattern covers the 12 types seen today; a new naming scheme would need a config update.
-* **Suggestions.** Default MD-1 to Finerenone only; keep the independent sanity check in every run; drop medical-type records from the BHO classes (see V2).
+* **Suggestions.** Keep `MSL_SCOPE = "FINERENONE"` (no Asundexian); keep the independent sanity check in every run; drop medical-type records from the BHO classes (see V2); remove medical records before any Kerendia product-text filter (see V1). Optional, once C11 is confirmed: require both a medical record type and `Finerenone` text, so a non-medical record with Finerenone text cannot enter MD-1 (none exist today). Test E4 with and without MD-1, and keep MD-1 out of rep-facing driver text unless agreed.
 
 ### 6.4 Questions to send to the client
 
@@ -266,9 +333,11 @@ What the example shows:
 | C3 | Full list of medical record types; should the about 34K medical-type records on BHO IDs be dropped from organisation context? | CRM team, medical affairs | V2, V10 |
 | C4 | BHO questions B1 – B6 (section 6.3, V3): copies vs real organisation calls; meaning of top-level calls; Year 2 drop in top-level records; copies of account / office and MSL calls; empty parent IDs; MDM vs call-based organisation membership | CRM team | V3 |
 | C5 | Is key-message entry mandatory? Any change in HF messaging in 2026? | Maria Kontorinakis | V4 |
-| C6 | Can training cohorts be extended past July 2025? | Modelling team | V4 |
-| C7 | Owner and date for the market access sample fix | Market access block owner | V5 |
+| C6 | Can training cohorts be extended past July 2025? Proposed: use the 28-cohort promotional file (`cohorts/promotional/`, c1 – c24 training up to lookback end 2026-05-17); confirm the switch and that the c27 – c28 target windows are complete | Modelling team | V4, V5 |
+| C7 | Owner and date for the market access sample fix (Q-S2): fix the table or notebook 17, or read the shared `FACT_CALL_SAMPLE` build | Market access block owner | V5 |
 | C8 | Meaning of `Signed_vod` without `ATND`; event-type groups; access to attendee status | Events team | V6 |
 | C9 | Tracking change behind the April 2026 open-rate drop | CRM email team | V7 |
 | C10 | Asundexian co-promotion date and how it is recorded | Sales operations | V8 |
-| C11 | MSL flag: Finerenone only or any medical visit | Medical affairs, compliance | V10 |
+| C11 | MSL flag: confirm Finerenone only (recommended, evidence in V10: c1 – c28 check, 5 Nov 2026). Asundexian and other medical products not included; Asundexian to be revisited only at co-promotion launch, as a separate flag | Medical affairs, compliance | V10 |
+| C12 | Delivery or status-change date from CareTria, or weekly status snapshots from now on (Q-S5) | Samples operations, data team | V5 |
+| C13 | Is 40 mg sampled mainly for HF patients (Q-S4)? | Kerendia brand team | V5 |

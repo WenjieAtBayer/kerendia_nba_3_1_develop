@@ -1,6 +1,6 @@
 # NBA 3.0 Kerendia Prior Writing Features: How They Are Built
 
-> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6` and `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021`. Read V6 references below as V7. V7 `WEEK_ENDING_DATE` / `PERIOD_ID` are DATEs, and `PRODUCT_GROUP` uses the shorter lrx_nbrx names. Numbers in this document were computed on V6.
+> **Data source update (Nov 2026):** NBA 3.1 now reads `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (LAAD-based LRx V7, weekly, history from Dec 2021) instead of `KERENDIA_LAAD_BASED_LRX_V6` and `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021`. Read V6 references below as V7. V7 `WEEK_ENDING_DATE` / `PERIOD_ID` are DATEs, and `PRODUCT_GROUP` uses the lrx_nbrx names, except that the lrx_nbrx `OTHERS` bucket is split into NBA groups (METFORMIN, SULFONYLUREAS, DPP4, BASAL INSULIN, OTHER INSULIN, CGM, CCB, CKD SUPPORTIVE, VERQUVO, INPEFA) and Entresto generic, Baxfendy and Exenatide are included; NBRx is counted on these groups (see `lrx-features` SKILL.md Section 6.2). Numbers in this document were computed on V6.
 
 Notebook reviewed: `/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/10_kerendia_prior_writing`. NBA 3.1 changes are not part of this file.
 

@@ -116,7 +116,7 @@ The notebooks read from two tables in
 | `kerendia_laad_based_lrx_v7` | `WEEK_ENDING_DATE < DATE'2023-01-01'` | Historical data (pre-2023; V7 history starts Dec 2021) |
 | `kerendia_laad_based_lrx_v7` | `WEEK_ENDING_DATE >= DATE'2023-01-01'` | Current data (2023+) |
 
-> **Nov 2026 change:** V7 replaced `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` + `KERENDIA_LAAD_BASED_LRX_V6`. The notebooks keep the old/new split but both queries now read V7. V7 stores `WEEK_ENDING_DATE` and `PERIOD_ID` as DATE, so the queries wrap them in `date_format(..., 'yyyyMMdd')` to keep the downstream string format. V7 value sets differ from V6 (e.g. `SPECIALTY_GROUP` = PCP/CARD/ENDO/NEPH/NP/PA/HOSPITALIST/HOS/OTHERS, short lrx_nbrx `PRODUCT_GROUP` names, `PAY_TYPE` = Commercial/Medicare/Medicaid/Cash/Federal Program, no CVD indication groups, `OTHERS` instead of `ALL_OTHERS`), so pivoted column names below that quote V6 values will change. V7 is built by `kerendia_data_needs/LAAD based LRx Pipeline/Ops Pipeline V7`.
+> **Nov 2026 change:** V7 replaced `KERENDIA_LAAD_BASED_LRX_FULL_DATA_STARTING_2021` + `KERENDIA_LAAD_BASED_LRX_V6`. The notebooks keep the old/new split but both queries now read V7. V7 stores `WEEK_ENDING_DATE` and `PERIOD_ID` as DATE, so the queries wrap them in `date_format(..., 'yyyyMMdd')` to keep the downstream string format. V7 value sets differ from V6 (e.g. `SPECIALTY_GROUP` = PCP/CARD/ENDO/NEPH/NP/PA/HOSPITALIST/HOS/OTHERS, lrx_nbrx `PRODUCT_GROUP` names with the lrx_nbrx `OTHERS` split into NBA groups such as METFORMIN/CCB/DPP4/insulin/CGM (see Section 6.2), `PAY_TYPE` = Commercial/Medicare/Medicaid/Cash/Federal Program, no CVD indication groups, `OTHERS` instead of `ALL_OTHERS`), so pivoted column names below that quote V6 values will change. V7 is built by `kerendia_data_needs/LAAD based LRx Pipeline/Ops Pipeline V7`.
 
 The notebooks union the two date ranges after loading. Sections 3.2 and later describe V6 for provenance.
 
@@ -521,21 +521,22 @@ onward, with lag and running-total feature columns.
 
 Each dimension follows the same pattern: null/`'NULL'` replacement → groupBy → pivot → agg
 → column rename. The table below documents each dimension with its actual cardinality and
-distinct values as queried from V6.
+distinct values as queried from V7 (`kerendia_laad_based_lrx_v7`, Nov 2026 rebuild with the NBA
+product scope, history Dec 2021 – Oct 2026).
 
 ### 6.1 Dimension Reference Table
 
 | # | Dimension | Pivot Column | Null Replacement | Cardinality | Column Prefix (NBRx) |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Product Group | `PRODUCT_GROUP` | `UNKNOWN_PG` | 74 + null | `TOTAL_HCP_NBRX_CLAIMS_PRODUCT_GROUP_` |
-| 2 | Specialty Group | `SPECIALTY_GROUP` | `UNKNOWN` | 6 + null | `TOTAL_HCP_NBRX_CLAIMS_SPEC_` |
-| 3 | Switch From | `SWITCH_FROM` | `UNKNOWN` | ~74 + null | `TOTAL_HCP_NBRX_CLAIMS_SWITCH_FROM_` |
-| 4 | Add On To | `ADD_ON_TO` | `UNKNOWN` | ~74 + null | `TOTAL_HCP_NBRX_CLAIMS_ADD_ON_TO_` |
+| 1 | Product Group | `PRODUCT_GROUP` | `UNKNOWN_PG` | 67 (no nulls) | `TOTAL_HCP_NBRX_CLAIMS_PRODUCT_GROUP_` |
+| 2 | Specialty Group | `SPECIALTY_GROUP` | `UNKNOWN` | 8 (no nulls) | `TOTAL_HCP_NBRX_CLAIMS_SPEC_` |
+| 3 | Switch From | `SWITCH_FROM` | `UNKNOWN` | 74 + null | `TOTAL_HCP_NBRX_CLAIMS_SWITCH_FROM_` |
+| 4 | Add On To | `ADD_ON_TO` | `UNKNOWN` | 72 + null | `TOTAL_HCP_NBRX_CLAIMS_ADD_ON_TO_` |
 | 5 | Age Group | `AGE_GROUP` | *(no replacement)* | 8 | `TOTAL_HCP_NBRX_CLAIMS_AGE_GROUP_` (see note) |
 | 6 | Pay Type | `PAY_TYPE` | *(no replacement)* | 5 | `TOTAL_HCP_NBRX_CLAIMS_PAY_TYPE_` |
 | 7 | Source of Business | `SOURCE_OF_BUSINESS` | *(no replacement)* | 6 | `TOTAL_HCP_NBRX_CLAIMS_SOB_` |
-| 8 | Rx Channel | `RX_CHANNEL` | *(no replacement)* | 4 + null | `TOTAL_HCP_NBRX_CLAIMS_CHANNEL_` |
-| 9 | Indication Group | `INDICATION_GROUP` | *(no replacement)* | 16 | `TOTAL_HCP_NBRX_CLAIMS_INDICATION_GROUP_` |
+| 8 | Rx Channel | `RX_CHANNEL` | *(no replacement)* | 4 | `TOTAL_HCP_NBRX_CLAIMS_CHANNEL_` |
+| 9 | Indication Group | `INDICATION_GROUP` | *(no replacement)* | 8 (16 in `INDICATION_GROUP_APP1`) | `TOTAL_HCP_NBRX_CLAIMS_INDICATION_GROUP_` |
 | 10 | Hypertension Flag | `HYPERTENSION_FLAG` | `UNKNOWN_HF` (NBRx) / `UNKNOWN_HP` (NRx/TRx) | 1 + null | `TOTAL_HCP_NBRX_CLAIMS_HYPERTENSION_` |
 | 11 | Gender | `GENDER` | `UNKNOWN` | 3 | `TOTAL_HCP_NBRX_CLAIMS_GENDER_` |
 
@@ -545,26 +546,29 @@ distinct values as queried from V6.
 
 ### 6.2 Distinct Values Per Dimension
 
-**Specialty Group (6 + null):**
-`ALL OTHERS`, `CARDIOLOGY`, `ENDOCRINOLOGY`, `NEPHROLOGY`, `NP/PA`, `PCP/IM`, *null*
+**Specialty Group (8):** `CARD`, `ENDO`, `HOS`, `HOSPITALIST`, `NEPH`, `NP/PA`, `OTHERS`, `PCP`
+(`SPECIALTY_GROUP_ALIGNED` has 7: same without `NP/PA`, which is folded into the HCP's specialty = lrx_nbrx semantics).
+V6 values were `ALL OTHERS`, `CARDIOLOGY`, `ENDOCRINOLOGY`, `NEPHROLOGY`, `NP/PA`, `PCP/IM`.
 
 **Age Group (8):**
 `<18`, `18-24`, `25-34`, `35-44`, `45-54`, `55-64`, `65+`, `UNKNOWN`
 
 **Pay Type (5):**
-`CASH`, `MEDICAID`, `MEDICARE`, `MEDICARE PART D`, `THIRD PARTY`
+`Cash`, `Commercial`, `Federal Program`, `Medicaid`, `Medicare` (lrx_nbrx definition; V6 had `CASH`, `MEDICAID`,
+`MEDICARE`, `MEDICARE PART D`, `THIRD PARTY`)
 
 **Source of Business (6):**
 `Add On`, `Immediate Continue`, `Immediate Switch`, `New to Market`, `Restart Different`,
 `Restart Same`
 
-**Rx Channel (4 + null):**
-`A` (adjusted), `L` (long-term care), `M` (mail order), `R` (retail), *null*
+**Rx Channel (4):**
+`A` (adjusted), `L` (long-term care), `M` (mail order), `R` (retail)
 
-**Indication Group (16):**
-`ALL_OTHERS`, `CKD`, `CKD + CVD`, `CKD + CVD + HF`, `CKD + HF`, `CVD`, `CVD + HF`, `HF`,
-`T2D`, `T2D + CKD`, `T2D + CKD + CVD`, `T2D + CKD + CVD + HF`, `T2D + CKD + HF`,
-`T2D + CVD`, `T2D + CVD + HF`, `T2D + HF`
+**Indication Group (8):**
+`CKD`, `CKD + HF`, `HF`, `OTHERS`, `T2D`, `T2D + CKD`, `T2D + CKD + HF`, `T2D + HF` (lrx_nbrx rules; CVD dropped,
+`OTHERS` replaces `ALL_OTHERS`, so the `'ALL OTHERS'` cleanup is a no-op on V7).
+`INDICATION_GROUP_APP1` (16) adds T1D: `T1D`, `T1D + CKD`, `T1D + CKD + HF`, `T1D + HF`, `T1D + T2D`, `T1D + T2D + CKD`,
+`T1D + T2D + CKD + HF`, `T1D + T2D + HF` on top of the 8 above.
 
 **Hypertension Flag (1 + null):**
 `HTN`, *null* → after null replacement: `HTN`, `UNKNOWN_HF` (NBRx) or `UNKNOWN_HP` (NRx/TRx)
@@ -572,72 +576,56 @@ distinct values as queried from V6.
 **Gender (3):**
 `F`, `M`, `U`
 
-**Product Group (74 + null):** Based on v4 mapping (`Kerendia_Market_Basket_Product_Group_Mapping_and_Priority_v4.csv`).
-The following 74 groups produce pivot features (plus `UNKNOWN_PG` for null):
+**Product Group (67) and Product Class (22) — V7 NBA product scope (Nov 2026):**
+`PRODUCT_GROUP` = lrx_nbrx NDC mapping (`VIEW_PHA_LRX_TRANSITION_PRODUCT_MAPPING_FINAL_OCT_09`), except that basket drugs
+lrx_nbrx leaves as `OTHERS` are split into NBA therapy groups (`00_V7_Params.NBA_OTHERS_SPLIT`), and the basket also loads
+Entresto generic, Baxfendy, Exenatide and the Liraglutide generic (`V7_EXTRA_BASKET`). NBRx/NRx are computed on these groups
+(new-to-group in 365 days), so a metformin patient starting a CCB is a CCB NBRx. Groups by `PRODUCT_CLASS`:
 
-*P1 (SGLT2i):* `CANAGLIFLOZIN_INVOKANA COMBOS`, `DAPAGLIFLOZIN_FARXIGA COMBOS`,
-`EMPAGLIFLOZIN_JARDIANCE COMBOS`, `ERTUGLIFLOZIN_STEGLATRO COMBOS`, `FARXIGA BRAND`,
-`FARXIGA GENERICS`, `INPEFA`, `INVOKANA`, `JARDIANCE`, `KERENDIA`, `STEGLATRO`
+| `PRODUCT_CLASS` | `PRODUCT_GROUP` values | Same as lrx_nbrx? |
+| --- | --- | --- |
+| `KERENDIA` | `KERENDIA` | Yes |
+| `SGLT2` | `BEXAGLIFLOZIN`, `BRENZAVVY`, `DAPAGLIFLOZIN/METFORMIN H`, `FARXIGA BRAND`, `FARXIGA GENERIC`, `GLYXAMBI`, `INVOKAMET`, `INVOKAMET XR`, `INVOKANA`, `JARDIANCE`, `QTERN`, `SEGLUROMET`, `STEGLATRO`, `STEGLUJAN`, `SYNJARDY`, `SYNJARDY XR`, `TRIJARDY XR`, `XIGDUO XR` | Yes |
+| `GLP1` | `ADLYXIN`, `ADLYXIN STARTER PACK`, `BYDUREON`, `BYDUREON BCISE`, `BYDUREON PEN`, `BYETTA`, `EXENATIDE`, `LIRAGLUTIDE`, `MOUNJARO`, `OZEMPIC`, `RYBELSUS`, `SAXENDA`, `SOLIQUA 100/33`, `SYMLINPEN 60`, `SYMLINPEN 120`, `TRULICITY`, `VICTOZA`, `WEGOVY`, `WEGOVY HD`, `XULTOPHY 100/3.6`, `ZEPBOUND` | Yes |
+| `ACE` / `ARB` / `BB` / `DIURETICS` | `ACE` / `ARB` / `BB` / `DIURETICS` | Yes |
+| `sMRA` | `ALDACTAZIDE`, `ALDACTONE`, `CAROSPIR`, `EPLERENONE`, `INSPRA`, `SPIRONOLACTONE` | Yes |
+| `DRI` | `ALISKIREN`, `TEKTURNA`, `TEKTURNA HCT` | Yes |
+| `ENTRESTO BRAND` / `ENTRESTO GENERICS` | `ENTRESTO BRAND` / `ENTRESTO GENERIC` (one NBRx group, split for reporting) | Yes |
+| `BAXFENDY` | `BAXFENDY` | Yes |
+| `METFORMIN` | `METFORMIN` | No — NBA split of lrx_nbrx `OTHERS` |
+| `SULFONYLUREAS` | `SULFONYLUREAS` (glimepiride, glipizide, glyburide + combos) | No — NBA split |
+| `DPP4` | `DPP4` (Januvia, Tradjenta, Zituvio/Zituvimet, alogliptin, saxagliptin) | No — NBA split |
+| `INSULIN` | `BASAL INSULIN` (incl. Rezvoglar, insulin glargine), `OTHER INSULIN` (rapid-acting, pre-mixed, short-acting human) | No — NBA split |
+| `CGM` | `CGM` | No — NBA split |
+| `CCB` | `CCB` | No — NBA split |
+| `CKD SUPPORTIVE` | `CKD SUPPORTIVE` (vitamin D analogs, phosphate binders, ESAs, iron) | No — NBA split |
+| `VERQUVO` / `INPEFA` | `VERQUVO` / `INPEFA` (own class, kept out of `SGLT2`) | No — NBA split |
+| `OTHERS` | `OTHERS` (remaining basket drugs: acarbose, miglitol, Prandin/Starlix, pioglitazone, Cycloset, V6 `OTHERS`) | No — much smaller than lrx_nbrx `OTHERS` |
 
-*P2 (GLP-1 / specialty):* `BYDUREON`, `BYETTA`, `JANUVIA`, `MOUNJARO`, `OZEMPIC`,
-`REZVOGLAR KWIKPEN`, `RYBELSUS`, `SAXENDA`, `SOLIQUA`, `T1D DISEASE-MODIFYING`,
-`TRULICITY`, `VICTOZA`, `WEGOVY`, `XULTOPHY`
+Pre-Nov-2026 docs list V6 / v4-CSV names (`ANGIOTENSIN II RECEPTOR ANTAGONISTS AND COMBOS`, `CALCIUM CHANNEL BLOCKERS AND COMBOS`,
+`LOOP DIURETICS`, ...). Those names do not exist in V7. The v4 mapping CSV
+(`Product_Group_Mapping/Kerendia_Market_Basket_Product_Group_Mapping_and_Priority_v4.csv`) was never applied to the LAAD pipeline
+and is **not** used by V7; its extra groups (loop/thiazide/K-sparing diuretics, cardiac glycosides, myosin activators, HF
+vasodilators/rate control, calcimimetics, CKD symptom mgmt, glucagon rescue, insulin devices, T1D disease-modifying) are not in V7.
 
-*P3 (RAAS / HF / CKD supportive):* `ACE INHIBITORS AND COMBOS`,
-`ANGIOTENSIN II RECEPTOR ANTAGONISTS AND COMBOS`, `CARDIAC GLYCOSIDES`,
-`CARDIAC MYOSIN ACTIVATORS`, `ENTRESTO`, `HF RATE CONTROL`, `HF VASODILATORS`,
-`IRON DEFICIENCY DRUG`, `VITAMIN D ANALOG DRUG`
-
-*P4 (MRA / diuretics / CKD renal / DPP-4 / meglitinide):* `ACARBOSE`,
-`ALISKIREN HEMIFUM`, `BRENZAVVY`, `CALCIMIMETICS`, `CKD SYMPTOM MGMT`,
-`ERYTHROPOIESIS STIMULATING AGENTS`, `GLUCAGON RESCUE`, `K-SPARING DIURETICS`,
-`LOOP DIURETICS`, `MINERALOCORTICOID RECEPTOR ANTAGONISTS`, `NESINA`, `ONGLYZA`,
-`PHOSPHATE BINDERS`, `PRANDIN`, `SAXAGLIPTIN HYDROCHLORIDE`,
-`SAXAGLIPTIN_ONGLYZA COMBOS`, `STARLIX`, `THIAZIDE DIURETICS`, `TRADJENTA`,
-`ZITUVIMET`, `ZITUVIO`
-
-*P5 (beta blockers / SUs / TZDs / older agents):* `ALOGLIPTIN_NESINA COMBOS`,
-`BETA BLOCKERS AND COMBOS`, `GLIMEPIRIDE`, `GLIPIZIDE`, `GLIPIZIDE COMBOS`,
-`GLYBURIDE`, `GLYBURIDE COMBOS`, `PRANDIN_METFORMIN COMBOS`, `VERQUVO`
-
-*P6 (insulin / CGM / metformin / devices):* `BASAL (LONG-ACTING) INSULIN`,
-`CGM AND SUPPLIES`, `CKD SUPPORTIVE`, `INSULIN DELIVERY DEVICES`, `METFORMIN`,
-`PRE-MIXED INSULIN`, `RAPID-ACTING INSULIN`, `SHORT-ACTING HUMAN INSULIN`,
-`SYMLINPEN`, `ZEPBOUND`
-
-**Groups removed from v3 (11 groups dropped in v4):**
-`ACTOS`, `ADLYXIN`, `BEXAGLIFLOZIN`, `CALCIUM CHANNEL BLOCKERS AND COMBOS`,
-`CYCLOSET`, `DIURETICS AND COMBOS` (split into LOOP/THIAZIDE/K-SPARING),
-`INSULIN GLAR M SOL`, `MIGLITOL`, `OTHERS` (decomposed into dedicated groups),
-`PIOGLITAZONE_ACTOS COMBOS`, `SULFONYLUREAS`, `TEKTURNA`
-
-**Groups added in v4 (13 new groups):** `CALCIMIMETICS`, `CARDIAC GLYCOSIDES`,
-`CARDIAC MYOSIN ACTIVATORS`, `CKD SUPPORTIVE`, `CKD SYMPTOM MGMT`,
-`GLUCAGON RESCUE`, `HF RATE CONTROL`, `HF VASODILATORS`,
-`INSULIN DELIVERY DEVICES`, `K-SPARING DIURETICS`, `LOOP DIURETICS`,
-`T1D DISEASE-MODIFYING`, `THIAZIDE DIURETICS`
-
-**Mapping file:** `/Users/sehar.aejaz.ext@bayer.com/kerendia_nba_3_1_develop/NBA 3.1 - Dev/Product_Group_Mapping/Kerendia_Market_Basket_Product_Group_Mapping_and_Priority_v4.csv`
-
-**Switch From (~74 + null) / Add On To (~74 + null):** Cardinality tracks Product Group
-but may differ slightly because not all products appear in switch-from or add-on-to contexts.
-These represent the drug the patient switched from or added Kerendia on top of, respectively.
+**Switch From (74 + null) / Add On To (72 + null):** Still use the V6 basket group names (e.g. `JARDIANCE`,
+`CALCIUM CHANNEL BLOCKERS AND COMBOS`, `ENTRESTO` for brand and generic), unchanged V6 step 2.2 logic. They represent the drug
+the patient switched from or added the current drug on top of, respectively.
 
 ### 6.3 Cardinality Drift Detection
 
-The cardinalities above reflect the v4 mapping (NBA 3.1, T1D + HF expansion). If the pivot
+The cardinalities above reflect V7 after the Nov 2026 NBA product-scope rebuild. If the pivot
 produces significantly more or fewer columns than expected, check for:
-- Upstream V6 pipeline not yet updated with v4 mapping — the LAAD pipeline at
-  `/Users/wenjie.chen@bayer.com/kerendia_data_needs/LAAD based LRx Pipeline/` must be
-  re-run with the updated mapping file before these cardinalities take effect
-- New products entering the IQVIA market basket (Product Group, Switch From, Add On To)
+- Changes to `V7_EXTRA_BASKET` / `NBA_OTHERS_SPLIT` in `Ops Pipeline V7/00_V7_Params` (the V7 pipeline at
+  `/Users/wenjie.chen@bayer.com/kerendia_data_needs/LAAD based LRx Pipeline/Ops Pipeline V7/`; a change needs
+  `06_V7_History_Backfill` to rebuild history, otherwise old and new groups mix across time)
+- New NDCs / products in the lrx_nbrx product mapping view or the IQVIA market basket (Product Group, Switch From, Add On To)
 - Changes in IQVIA's indication grouping logic (Indication Group)
 - New specialty categories being added by IQVIA (Specialty Group)
 
-**Important:** The v4 mapping eliminates the `OTHERS` catch-all group and the
-`DIURETICS AND COMBOS` aggregate group. If V6 still contains these values (pipeline not
-yet updated), the notebooks will produce pivot columns for the old group names. Ensure
-the upstream pipeline has been re-run with the v4 mapping before generating features.
+**Important:** V7 product groups are consistent over the whole history (Dec 2021 – today), so features built
+across the old/new date split no longer mix V6 and FULL_DATA product names. Do not combine V7-based features with
+features built on V6 (different product names and NBRx levels).
 
 ---
 
@@ -768,7 +756,7 @@ significantly.
 
 ### 9.3 Column Explosion in `step3_lag`
 
-With high-cardinality dimensions (Product Group: 74, Switch From: ~74, Add On To: ~74),
+With high-cardinality dimensions (Product Group: 67, Switch From: 74, Add On To: 72),
 the pivot step produces hundreds of base columns. `step3_lag` then multiplies each by 5
 (4 lag windows + 1 running total). The total output column count can reach 1,000+.
 

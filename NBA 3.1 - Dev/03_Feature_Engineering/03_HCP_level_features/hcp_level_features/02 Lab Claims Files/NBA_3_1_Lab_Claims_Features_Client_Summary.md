@@ -1,5 +1,14 @@
 # Kerendia NBA 3.1 – HCP Lab Claims Features: Summary of Changes
 
+> **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
+> * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file. Replaces 20 cohorts at offset 7.
+> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **HbA1c / Potassium features added (X18):** 48 new features for HbA1c ≥ 9 and Potassium > 5 (total tested, total/eligible above threshold, PCT, each × 4 windows).
+> * **9-month lookback removed (X19):** 21 features with `IN_LAST_9_MONTH` removed. Windows standardized to [1, 3, 6, 12].
+> * **Feature count:** 3.0 = 116 features → 3.1 = 143 features (+48 new, −21 removed, net +27). Total columns = 152 (143 features + 9 metadata).
+> * **Open points in section 5 resolved:** specialty filter and lab pull location are set.
+> * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.
+
 **Scope:** HCP-level lab claims features (`02_claim_lab_monthly_cohort`): how many eGFR and UACR tests each HCP ordered, by CKD stage, per cohort, in the last 1, 3, 6 and 12 months  
 **Baseline:** NBA 3.0 notebook `02_claim_lab_monthly` (calendar months)  
 **Data used for validation:** IQVIA Quest lab data of the 10 validation HCPs, 20 cohorts 2025-01 .. 2026-08 at offset 7; all-US lab tables for the size checks  

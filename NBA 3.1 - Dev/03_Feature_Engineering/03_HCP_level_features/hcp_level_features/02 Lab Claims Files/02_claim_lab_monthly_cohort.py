@@ -13,11 +13,13 @@
 # MAGIC * **Lookback windows**: `LOOKBACK_WINDOWS` from config (1, 3, 6, 12, as 3.0)
 # MAGIC * **Cohorts**: all cohorts from `COHORT_ORIGIN` (or the `COHORT_MONTHS` list) whose cutoff is on or before the last lab service date, so every window has complete data
 # MAGIC * **Output grain**: one row per (NPI_NUMBER, COHORT_ID), one partition per cohort; the original had one row per (NPI_NUMBER, SVC_DT_M)
-# MAGIC * **Outputs**: `notebook_output/claim_lab_monthly_cohort` and `provider_claim_lab_monthly_cohort`, partitioned by `COHORT_ID` (Wenjie's `_ZS` tables are not touched)
+# MAGIC * **Outputs**: `notebook_output/claim_lab_monthly_cohort` and `provider_claim_lab_monthly_cohort`, Parquet partitioned by `COHORT_SET` (7 groups, via `write_hcp_output`). Wenjie's `_ZS` tables are not touched
 # MAGIC
 # MAGIC Source notebook: `/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/02_claim_lab_monthly`
 # MAGIC
-# MAGIC **3.1 patient-journey sync (2026-11-03):** plan and client summary in `02 Lab Claims Files/`. Input = the NPI x patient x day lab pull of the 3.1 lab journey (PJ01 Step 4: lab basket, valid ranges, preferred eGFR equation, `>90` results), `query_output/full_2026_11_02/_stage/lab_step4_pull`, instead of the 3.0 `Lab_03`, which holds about half of the lab tests of the lab journey. Stages are mapped to the `Lab_03` texts, so the 102 column names are unchanged. Switch back with `HCP_LAB_SOURCE = "3.0"` (`00_cohort_config`). Open: where the pull is stored (D2), specialty filter / HCP universe (D3).
+# MAGIC **3.1 patient-journey sync (2026-11-03):** plan and client summary in `02 Lab Claims Files/`. Input = the NPI x patient x day lab pull of the 3.1 lab journey (PJ01 Step 4: lab basket, valid ranges, preferred eGFR equation, `>90` results), instead of the 3.0 `Lab_03`. Stages are mapped to the `Lab_03` texts. Switch back with `HCP_LAB_SOURCE = "3.0"` (`00_cohort_config`).
+# MAGIC
+# MAGIC **Update 2026-11-11:** 28 cohorts c1–c28, offset 0 (claims cohort file). 48 HbA1c/Potassium features added (X18), 9-month lookback removed (X19). Feature count: 143 (was 116 in 3.0). Total columns: 152. See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.
 
 # COMMAND ----------
 

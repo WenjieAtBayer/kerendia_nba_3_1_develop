@@ -1,5 +1,7 @@
 # NBA 3.1 – HCP Rx claims features (NB01): sync with the 3.1 patient journey, analysis and plan
 
+> **Update 2026-11-11.** This plan describes the Phase A sync (2026-11-03). Since then: 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Parquet by COHORT_SET (X14), Kerendia brand added (+234 features, X16), 6 treatment categories removed (−979 features, X17). Feature count: 5,411 → 4,668 (net −743). See `NBA_3_1_HCP_Features_Decisions.md` and `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_07.md`.
+
 **Status (2026-11-03):** C1–C5 applied and validated on the 10 test HCPs (section 0: C1–C3; section 0b: C4–C5, Rx input switched to the 3.1 Rx journey). Client summary: `01 Rx Claims Files/NBA_3_1_Rx_Claims_Features_Client_Summary.md`. Full run waits for the other HCP notebooks.  
 **Notebook:** `hcp_level_features/01 Rx Claims Files/01_claim_rx_monthly_cohort` (moved into this folder 2026-11-03; config `%run` changed to `../../00_cohort_config` and checked) (cohort-based since 2026-10; 3.0 source `kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/01_claim_rx_monthly`, unchanged)  
 **Inputs:** the HCP Rx pull of the 3.1 Rx journey (`<run>/_stage/rx_hcp_pull`, written by PJ03 Step 4d; C4; was `query_output/Rx_01_new`, written by `00_Write_Input_Files`) and the patient table `pat_new_and_total_treatments` (written by `06_patient_journey_combine`, from the Rx journey PJ03)  

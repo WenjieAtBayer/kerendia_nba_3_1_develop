@@ -1,5 +1,12 @@
 # Kerendia NBA 3.1 – HCP New Patient Starts Features: Summary of Changes
 
+> **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
+> * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file. Replaces 20 cohorts at offset 7.
+> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **No feature changes.** The 154 features are identical between 3.0 and 3.1. Total columns = 163 (154 features + 9 metadata including DATASET and COHORT_SET).
+> * **Input stays 3.0 `Rx_05`** (X7): a first start needs all-HCP history since 2021.
+> * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.
+
 **Scope:** HCP-level new patient starts (`05_claim_rx_nps_monthly_cohort`): how many patients started a drug class or brand with each HCP, and how many patients the HCP saw, per cohort  
 **Baseline:** NBA 3.0 notebook `05_claim_rx_nps_monthly` (calendar months)  
 **Data used for validation:** IQVIA LAAD Rx claims of the 10 validation HCPs (9 have Rx claims), 20 cohorts 2025-01 .. 2026-08 at offset 7  

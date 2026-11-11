@@ -1,5 +1,12 @@
 # Kerendia NBA 3.1 – HCP Diagnosis Claims Features: Summary of Changes
 
+> **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
+> * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file. Replaces 20 cohorts at offset 7.
+> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **Feature count:** 3.0 = 104 features → 3.1 = 113 features (+9 CKD Stage 5, net +9). Total columns = 122.
+> * **Open points in section 5:** stage-5 columns confirmed (X4); HCP universe confirmed (X1); T1D codes kept.
+> * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.
+
 **Scope:** HCP-level diagnosis (Dx) claims features (`03_claim_diagnosis_monthly_cohort`): how many CKD-related diagnosis claims each HCP has, by CKD stage of the claim and by the stage the patient has just moved into, per cohort, in the last 1, 3, 6 and 12 months  
 **Baseline:** NBA 3.0 notebook `03_claim_diagnosis_monthly` (calendar months)  
 **Data used for validation:** IQVIA diagnosis claims of the 10 validation HCPs, 20 cohorts 2025-01 .. 2026-08 at offset 7; all-US Dx tables for the size checks  

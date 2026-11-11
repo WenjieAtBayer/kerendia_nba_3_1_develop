@@ -1,5 +1,11 @@
 # Kerendia NBA 3.1 – Prescription Patient Journey: Summary of Changes
 
+> **Update 2026-11-11.** The sections below describe the Phase A journey (same drugs as 3.0). Since then:
+> * **Product mapping updated 2026-11-05:** Kerendia added with its own brand label and treatment category. GLP-1 drugs (Ozempic, Mounjaro, Wegovy, Zepbound, Trulicity, etc.) added. Generic dapagliflozin added as SGLT2. See `NBA_3_1_Product_Mapping_Change_Log_2026_11_05.md`.
+> * **Section 5 ("Gaps in the 3.0 drug list") is now largely resolved** by the 2026-11-05 mapping update. Kerendia, GLP-1, generic dapagliflozin, and generic Entresto are now in the basket.
+> * **Cohorts:** 28 cohorts c1–c28, offset 0 (claims cohort file). Replaces 20 cohorts at offset 7.
+> * **Full run `full_2026_11_07`** in progress.
+
 **Scope:** Prescription (Rx) patient journey: which drugs each patient is on, per cohort month, from pharmacy claims, from the drug list to the patient-month table  
 **Baseline:** NBA 3.0 Rx notebook  
 **Data used for validation:** IQVIA LAAD pharmacy claims; the patients of the 10 validation HCPs (the table the journey writes), and all US fills since 2023-01 for the checks on the drug list  

@@ -2,7 +2,7 @@
 
 > **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
 > * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file. Replaces 20 cohorts at offset 7.
-> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **Output:** Delta partitioned by COHORT_SET (7 groups), few large files per group. Replaces Delta partitioned by COHORT_ID (decision X14).
 > * **No feature changes.** The 154 features are identical between 3.0 and 3.1. Total columns = 163 (154 features + 9 metadata including DATASET and COHORT_SET).
 > * **Input stays 3.0 `Rx_05`** (X7): a first start needs all-HCP history since 2021.
 > * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.

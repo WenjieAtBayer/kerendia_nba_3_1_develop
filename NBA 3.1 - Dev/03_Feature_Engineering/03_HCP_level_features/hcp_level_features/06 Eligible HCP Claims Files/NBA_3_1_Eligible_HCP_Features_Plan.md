@@ -1,6 +1,6 @@
 # NBA 3.1 – HCP eligible patient features (NB06): sync with the 3.1 patient journey, analysis and plan
 
-> **Update 2026-11-11.** This plan describes the Phase A sync (2026-11-03). Since then: 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Parquet by COHORT_SET (X14), DM/HF type features added (+128 DM/HF type + 20 HF eligibility = +148, X20), old stage breakdowns dropped (−15). Feature count: 84 → 217 (net +133). Total columns = 226. D3 ("no new columns yet") is now **done**. See `NBA_3_1_HCP_Features_Decisions.md`.
+> **Update 2026-11-11.** This plan describes the Phase A sync (2026-11-03). Since then: 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Delta by COHORT_SET (X14), DM/HF type features added (+128 DM/HF type + 20 HF eligibility = +148, X20), old stage breakdowns dropped (−15). Feature count: 84 → 217 (net +133). Total columns = 226. D3 ("no new columns yet") is now **done**. See `NBA_3_1_HCP_Features_Decisions.md`.
 
 **Status (2026-11-03):** C1–C4 applied; validation run done (one-time job run 584967146244150 on cluster `1103-195306-9x8evoxv-v2n`, 7.6 min, section 5). All checks pass except the offset-0 parity, which fails on the window columns only: the 3.0 notebook averages the windows, the refactor sums them (F7; D1 decided 2026-11-03: keep the sum). Client summary: `06 Eligible HCP Claims Files/NBA_3_1_Eligible_HCP_Features_Client_Summary.md`.  
 **Notebook:** `hcp_level_features/06 Eligible HCP Claims Files/06_claim_eligible_hcp` (3.0 source `06_claim_eligible_hcp`)  

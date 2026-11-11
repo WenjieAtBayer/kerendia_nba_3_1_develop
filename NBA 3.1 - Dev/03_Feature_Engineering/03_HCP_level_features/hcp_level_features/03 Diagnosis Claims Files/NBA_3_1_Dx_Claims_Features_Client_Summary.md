@@ -2,7 +2,7 @@
 
 > **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
 > * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file. Replaces 20 cohorts at offset 7.
-> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **Output:** Delta partitioned by COHORT_SET (7 groups), few large files per group. Replaces Delta partitioned by COHORT_ID (decision X14).
 > * **Feature count:** 3.0 = 104 features → 3.1 = 113 features (+9 CKD Stage 5, net +9). Total columns = 122.
 > * **Open points in section 5:** stage-5 columns confirmed (X4); HCP universe confirmed (X1); T1D codes kept.
 > * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.

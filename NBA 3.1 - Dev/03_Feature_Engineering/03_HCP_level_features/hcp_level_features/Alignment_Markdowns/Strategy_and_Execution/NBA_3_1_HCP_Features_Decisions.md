@@ -3,7 +3,7 @@
 **Date:** 2026-11-03, updated 2026-11-11  
 **Scope:** HCP feature notebooks NB01–NB07 (`hcp_level_features/`), their inputs from the 3.1 patient journey (PJ01–PJ06), and the run setup.  
 **How these were decided:** the project owner asked the team to make the open calls and document them. Each decision below gives the reason and how to reverse it.  
-**Latest full run:** `full_2026_11_07` (job 1010893614518587, run 477251413108207): 28 cohorts c1–c28, offset 0, claims cohort file, Parquet partitioned by COHORT_SET.
+**Latest full run:** `full_2026_11_11` (job 1010893614518587, run 441950237921, in progress): 28 cohorts c1–c28, offset 0, claims cohort file, Delta partitioned by COHORT_SET (X14). The previous run `full_2026_11_07` (run 477251413108207, Parquet) was cancelled before NB01 and NB04 finished.
 
 ---
 
@@ -24,7 +24,7 @@
 | X11 | All | Orchestration | **One job for NB01–NB06** (all six run in parallel, as they do not read each other), with the same parameters as the patient-journey job (953988155823642) | Same pattern as PJ01–PJ06; NB04 reads the inputs, not the NB01–NB03 outputs | – |
 | X12 | Config | `HCP_CLAIMS_LAB_TABLE` missing in `HCP_SOURCE_TABLES` (common end date) | **Not changed now** (same end date as `Lab_04` today); add when the lab pull end date can differ | No impact today | – |
 | X13 | All | Cohort source | **Claims cohort file** (`cohorts/claims/cohorts.parquet`): 28 cohorts c1–c28, offset 0 (calendar months), `COHORT_ORIGIN=2024-05`, `COHORT_LAST=2026-08`. Replaces the 20 inline cohorts at offset 7 | Standard cohort grid aligned with the model training plan; offset 0 = calendar months | `COHORT_MONTHS` list in `00_cohort_config` |
-| X14 | All | Output format | **Parquet partitioned by COHORT_SET** (7 groups: C1-C5_training, C6-C10_training, C11-C15_training, C16-C20_training, C21-C24_training, C25-C26_validation, C27-C28_backtesting). Replaces Delta partitioned by COHORT_ID | Downstream consumers read one training/validation/backtesting set at a time; 7 folders instead of 28 | `write_hcp_output` / `read_hcp_output` in `00_cohort_config` |
+| X14 | All | Output format | **Delta partitioned by COHORT_SET**, with optimizeWrite (few large files per group). 7 groups: C1-C5_training, C6-C10_training, C11-C15_training, C16-C20_training, C21-C24_training, C25-C26_validation, C27-C28_backtesting. Replaces Delta partitioned by COHORT_ID. **History:** the 2026-11-07 run wrote Parquet by COHORT_SET, which gave about 455,000 files of about 8 rows per table (NB01: 906 GB, 75% of it file metadata) and very slow reads and QC; switched to Delta on 2026-11-11 (test on one group of NB01: 12 files / 5.4 GB instead of 64,998 / 121 GB, read 0.7 s instead of 215 s) | Downstream consumers read one training/validation/backtesting set at a time; 7 groups instead of 28 cohorts. Delta keeps the files large and the reads fast, as in 3.0 | `write_hcp_output` / `read_hcp_output` in `00_cohort_config` (the reader also reads older Parquet runs) |
 | X15 | NB07 | Cohort-set splitting | **NB07 is check-only** (no longer splits tables). The 7 COHORT_SET groups are written directly by `write_hcp_output` in each notebook | Splitting is no longer needed: the write step already partitions by COHORT_SET | Re-add the split logic in NB07 |
 | X16 | NB01 | Kerendia brand features | **Added:** 234 Kerendia brand features (`TOTAL_RX_CLAIMS_KERENDIA_IN_LAST_{1,3,6,12}_MONTH`, age/gender/payer/supply/refill/running cross-cuts, rejection). Kerendia is now in the Rx product basket (2026-11-05 mapping update) | Kerendia Rx visibility is a core 3.1 requirement | Remove Kerendia from the basket |
 | X17 | NB01 | 6 removed treatment categories | **Removed:** 979 features for ACE_OR_ARB, CALCIUM_CHANNEL_OR_BETA_BLOCKER, COMBO_DRUG, DIURETIC_NON_MRA, INSULIN, METFORMIN. These categories are outside the 3.1 HCP brand list | Focus on the drugs relevant to Kerendia prescribers | Re-add the categories to the brand filter |
@@ -42,14 +42,14 @@
 | --- | --- |
 | ~~PJ03 Step 4d for all HCPs~~ | **Done 2026-11-03** |
 | ~~Full HCP run (20 cohorts, offset 7)~~ | **Done 2026-11-04/05** (job 36449327509782) |
-| ~~Full HCP run (28 cohorts, offset 0, claims cohort file)~~ | **In progress 2026-11-07** (job 1010893614518587, run 477251413108207, `full_2026_11_07/`). NB01 and NB04 still finishing (QC step); all other tasks succeeded |
+| Full HCP run (28 cohorts, offset 0, claims cohort file, Delta) | **In progress 2026-11-11** (job 1010893614518587, run 441950237921, `full_2026_11_11/`). The 2026-11-07 Parquet run (477251413108207) was cancelled: NB01 and NB04 were still in the QC step after more than 5 hours |
 | ~~HF / diabetes type features~~ | **Done 2026-11-06** (X20): 128 DM/HF type + 20 HF eligibility features in NB06 |
 | ~~HbA1c / Potassium lab features~~ | **Done 2026-11-06** (X18): 48 lab flag features in NB02 |
 | ~~Kerendia brand features~~ | **Done 2026-11-05** (X16): 234 Kerendia features in NB01, product mapping updated |
 | Patient-journey decisions C1 (SGLT2) and C9 (diabetes) | Patient-journey owners; HCP notebooks only need a re-run |
 | `PROVIDER_ID` gaps (O2) | 105 HCPs without an ID, 52 with two IDs. Proposal: fill from the 3.1 Rx input. Not applied yet |
-| Null-count QC optimization | Batched approach (X23) is safe but slow (~90 min for NB01). Skip for full runs or switch to Delta read-back |
-| Update `HCP_LATEST_FULL_RUN` | Point to `full_2026_11_07` after the run finishes |
+| Null-count QC timing | On the Parquet output one 200-column pass took about 100 s per group; on Delta the same pass took 2 s in the test. Check the QC time in `full_2026_11_11`; skip the full null count in full runs only if it is still slow |
+| Update `HCP_LATEST_FULL_RUN` | Point to `full_2026_11_11` after the run finishes and passes its checks |
 | Job 36449327509782 | Still points at the 3.0 volume; update or retire |
 
 ## 3. Jobs (created 2026-11-03, serverless)

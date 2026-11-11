@@ -1,6 +1,6 @@
 # NBA 3.1 – HCP Lab claims features (NB02): sync with the 3.1 patient journey, analysis and plan
 
-> **Update 2026-11-11.** This plan describes the Phase A sync (2026-11-03). Since then: 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Parquet by COHORT_SET (X14), HbA1c/Potassium features added (+48, X18), 9-month window removed (−21, X19). Lookback windows: [1, 3, 6, 12]. Feature count: 116 → 143 (net +27). D2–D4 resolved. See `NBA_3_1_HCP_Features_Decisions.md`.
+> **Update 2026-11-11.** This plan describes the Phase A sync (2026-11-03). Since then: 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Delta by COHORT_SET (X14), HbA1c/Potassium features added (+48, X18), 9-month window removed (−21, X19). Lookback windows: [1, 3, 6, 12]. Feature count: 116 → 143 (net +27). D2–D4 resolved. See `NBA_3_1_HCP_Features_Decisions.md`.
 
 **Status (2026-11-03):** C1–C3 applied and validated on the 10 test HCPs (section 0). NB02 now reads the 3.1 lab data. Client summary: `02 Lab Claims Files/NBA_3_1_Lab_Claims_Features_Client_Summary.md`. D2–D4 open.  
 **Notebook:** `hcp_level_features/02_claim_lab_monthly_cohort` (to be moved into `02 Lab Claims Files/`, then `%run "../../00_cohort_config"`; cohort-based since 2026-10; 3.0 source `kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/02_claim_lab_monthly`, unchanged)  

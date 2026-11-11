@@ -1,6 +1,6 @@
 # NBA 3.1 – HCP new patient starts features (NB05): sync with the 3.1 patient journey, analysis and plan
 
-> **Update 2026-11-11.** 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Parquet by COHORT_SET (X14). No feature changes: 154 features, total 163 columns. Input stays 3.0 `Rx_05` (X7). See `NBA_3_1_HCP_Features_Decisions.md`.
+> **Update 2026-11-11.** 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Delta by COHORT_SET (X14). No feature changes: 154 features, total 163 columns. Input stays 3.0 `Rx_05` (X7). See `NBA_3_1_HCP_Features_Decisions.md`.
 
 **Status (2026-11-03):** analysed and validated on the 10 test HCPs; only the `%run` path changed (C1). Client summary: `05 Rx NPS Claims Files/NBA_3_1_Rx_NPS_Features_Client_Summary.md`.  
 **Notebook:** `hcp_level_features/05 Rx NPS Claims Files/05_claim_rx_nps_monthly_cohort` (3.0 source `05_claim_rx_nps_monthly`)  

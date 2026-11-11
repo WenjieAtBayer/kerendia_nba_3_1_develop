@@ -13,7 +13,7 @@
 # MAGIC * **Lookback windows**: `LOOKBACK_WINDOWS` from config (1, 3, 6, 12, as 3.0)
 # MAGIC * **Cohorts**: all cohorts from `COHORT_ORIGIN` (or the `COHORT_MONTHS` list) whose cutoff is on or before the last lab service date, so every window has complete data
 # MAGIC * **Output grain**: one row per (NPI_NUMBER, COHORT_ID), one partition per cohort; the original had one row per (NPI_NUMBER, SVC_DT_M)
-# MAGIC * **Outputs**: `notebook_output/claim_lab_monthly_cohort` and `provider_claim_lab_monthly_cohort`, Parquet partitioned by `COHORT_SET` (7 groups, via `write_hcp_output`). Wenjie's `_ZS` tables are not touched
+# MAGIC * **Outputs**: `notebook_output/claim_lab_monthly_cohort` and `provider_claim_lab_monthly_cohort`, Delta partitioned by `COHORT_SET` (7 groups, via `write_hcp_output`). Wenjie's `_ZS` tables are not touched
 # MAGIC
 # MAGIC Source notebook: `/Users/wenjie.chen@bayer.com/kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/02_claim_lab_monthly`
 # MAGIC
@@ -663,7 +663,7 @@ print(f"Lab flag features: {len(lab_flag_feature_names())} columns "
 # DBTITLE 1,Section: Build and Write All Cohorts
 # MAGIC %md
 # MAGIC ##4. Build and Write All Cohorts
-# MAGIC Runs the same steps as section 2–3 (`build_window_features` → `build_running_features` → `combine_features` → `add_pct_features` → `add_cohort_metadata`) for every cohort in `COHORT_LIST` and writes all cohorts in one write: Parquet, one folder per `COHORT_SET` (`C1-C5_training` ... `C27-C28_backtesting`, `write_hcp_output` in 00_cohort_config). The whole table is replaced on each write.
+# MAGIC Runs the same steps as section 2–3 (`build_window_features` → `build_running_features` → `combine_features` → `add_pct_features` → `add_cohort_metadata`) for every cohort in `COHORT_LIST` and writes all cohorts in one write: Delta, partitioned by `COHORT_SET` (`C1-C5_training` ... `C27-C28_backtesting`, `write_hcp_output` in 00_cohort_config). The whole table is replaced on each write.
 
 # COMMAND ----------
 
@@ -690,7 +690,7 @@ print("Reset disabled (done 2026-10-26)")
 # COMMAND ----------
 
 # DBTITLE 1,Build and write every cohort (one query, one write)
-# Output: Parquet, one folder per COHORT_SET (write_hcp_output, 00_cohort_config).
+# Output: Delta, partitioned by COHORT_SET (write_hcp_output, 00_cohort_config).
 # Wenjie's claim_lab_monthly_ZS is NOT touched.
 # hcp_output_path (00_cohort_config): this run's folder; a full run stops if the table already exists there
 OUTPUT_PATH = hcp_output_path("claim_lab_monthly_cohort")
@@ -704,7 +704,7 @@ _t0 = time.time()
 _df_out = build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST])
 # 2026-11-06: lab flag features (section 2.4) joined onto the same rows (row count unchanged)
 _df_out = add_lab_flag_features(_df_out, [COHORT_BOUNDS[m] for m in COHORT_LIST])
-write_hcp_output(_df_out, OUTPUT_PATH)   # Parquet, one folder per COHORT_SET (00_cohort_config)
+write_hcp_output(_df_out, OUTPUT_PATH)   # Delta, partitioned by COHORT_SET (00_cohort_config)
 
 print(f"{len(COHORT_IDS)} cohorts ({COHORT_IDS[0]} .. {COHORT_IDS[-1]}) written to {OUTPUT_PATH} "
       f"in {(time.time() - _t0) / 60:,.1f} min")

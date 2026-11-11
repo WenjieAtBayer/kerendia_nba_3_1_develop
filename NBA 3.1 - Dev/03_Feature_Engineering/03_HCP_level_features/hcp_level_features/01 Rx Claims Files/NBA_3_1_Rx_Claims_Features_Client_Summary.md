@@ -2,11 +2,11 @@
 
 > **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
 > * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file (`cohorts/claims/cohorts.parquet`). Replaces 20 cohorts at offset 7.
-> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **Output:** Delta partitioned by COHORT_SET (7 groups), few large files per group. Replaces Delta partitioned by COHORT_ID (decision X14).
 > * **Kerendia brand added (X16):** 234 new features (`TOTAL_RX_CLAIMS_KERENDIA_IN_LAST_{1,3,6,12}_MONTH`, age/gender/payer/supply/refill/running cross-cuts, rejection). Kerendia is now in the Rx product basket (2026-11-05 mapping update).
 > * **6 treatment categories removed (X17):** 979 features for ACE_OR_ARB, CALCIUM_CHANNEL_OR_BETA_BLOCKER, COMBO_DRUG, DIURETIC_NON_MRA, INSULIN, METFORMIN. Outside the 3.1 HCP brand list.
 > * **Feature count:** 3.0 = 5,411 features → 3.1 = 4,668 features (+236 new, −979 removed, net −743). Total columns = 4,677 (4,668 features + 9 metadata).
-> * **Full run `full_2026_11_07`:** 28 cohorts, job 1010893614518587 run 477251413108207, in progress.
+> * **Full run `full_2026_11_11`:** 28 cohorts, job 1010893614518587 run 441950237921, in progress (the 2026-11-07 Parquet run was cancelled before NB01 finished).
 > * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md` and the feature comparison in `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_07.md`.
 
 **Scope:** HCP-level Rx claims features (`01_claim_rx_monthly_cohort`): what each HCP prescribed, per cohort, in the last 1, 3, 6 and 12 months  

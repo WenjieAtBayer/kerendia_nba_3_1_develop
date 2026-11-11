@@ -1,6 +1,6 @@
 # NBA 3.1 – HCP combined claims features (NB04): sync with the 3.1 patient journey, analysis and plan
 
-> **Update 2026-11-11.** This plan describes the Phase A sync (2026-11-03). Since then: 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Parquet by COHORT_SET (X14). Feature count: 1,571 → 3,065 (+1,494 net) — Kerendia brand, HbA1c/Potassium and Stage 5 features from NB01/NB02/NB03 flow into the combined table. Total columns = 3,074. Previous full run had 2,892. See `NBA_3_1_HCP_Features_Decisions.md`.
+> **Update 2026-11-11.** This plan describes the Phase A sync (2026-11-03). Since then: 28 cohorts c1–c28 at offset 0 (claims cohort file, X13), Delta by COHORT_SET (X14). Feature count: 1,571 → 3,065 (+1,494 net) — Kerendia brand, HbA1c/Potassium and Stage 5 features from NB01/NB02/NB03 flow into the combined table. Total columns = 3,074. Previous full run had 2,892. See `NBA_3_1_HCP_Features_Decisions.md`.
 
 **Status (2026-11-03):** C1–C7 applied and validated on the 10 test HCPs (section 5). Client summary: `04 Monthly Cohort Claims Files/NBA_3_1_Claims_Features_Client_Summary.md`.  
 **Notebook:** `hcp_level_features/04 Monthly Cohort Claims Files/04_claims_monthly_cohort` (3.0 source `04_claims_monthly`)  

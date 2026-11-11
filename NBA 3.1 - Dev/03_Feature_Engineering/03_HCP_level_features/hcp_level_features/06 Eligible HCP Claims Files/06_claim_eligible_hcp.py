@@ -623,7 +623,7 @@ print(f"DM / HF features: {len(dm_hf_feature_names())} columns ({len(ELIG_LOOKBA
 # MAGIC %md
 # MAGIC ## 5. Build and write all cohorts
 # MAGIC
-# MAGIC One write of all cohorts: Parquet, one folder per `COHORT_SET` (`write_hcp_output` in 00_cohort_config; the whole table is replaced). Then completeness checks and the provider-level table (NPI mapped to `PROVIDER_ID`, NPI dropped, as the original).
+# MAGIC One write of all cohorts: Delta, partitioned by `COHORT_SET` (`write_hcp_output` in 00_cohort_config; the whole table is replaced). Then completeness checks and the provider-level table (NPI mapped to `PROVIDER_ID`, NPI dropped, as the original).
 
 # COMMAND ----------
 
@@ -637,7 +637,7 @@ _ids_sql = ", ".join(f"'{c}'" for c in COHORT_IDS)
 _t_all = time.time()
 # 2026-11-06: diabetes type and HF type features (4b) joined onto the same rows (row count unchanged)
 write_hcp_output(add_dm_hf_features(build_all_cohorts_fast([COHORT_BOUNDS[m] for m in COHORT_LIST]),
-                                    [COHORT_BOUNDS[m] for m in COHORT_LIST]), OUTPUT_PATH)   # Parquet per COHORT_SET
+                                    [COHORT_BOUNDS[m] for m in COHORT_LIST]), OUTPUT_PATH)   # Delta, partitioned by COHORT_SET
 
 print(f"{len(COHORT_LIST)} cohorts ({COHORT_IDS[0]} .. {COHORT_IDS[-1]}) written to {OUTPUT_PATH} "
       f"in one write, {(time.time() - _t_all) / 60:,.1f} min")

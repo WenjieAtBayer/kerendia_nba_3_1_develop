@@ -2,7 +2,7 @@
 
 > **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
 > * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file. Replaces 20 cohorts at offset 7.
-> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **Output:** Delta partitioned by COHORT_SET (7 groups), few large files per group. Replaces Delta partitioned by COHORT_ID (decision X14).
 > * **DM/HF type features added (X20):** 128 DM/HF type features (`DM_TYPE_{NONE,OTHER,T1D,T2D}`, `HF_TYPE_{NONE,HFPEF,HFREF,HF_UNSPECIFIED}`, total/eligible × Rx/eligible patients × 4 windows) + 20 HF eligibility features. Source: PJ04 dm_hf_flags table.
 > * **Old stage breakdowns dropped:** 15 old GFR/UACR stage breakdowns (stages UNKNOWN, 2, 3, 4) replaced by the new windowed family structure.
 > * **Feature count:** 3.0 = 84 features → 3.1 = 217 features (+148 new, −15 removed, net +133). Total columns = 226.

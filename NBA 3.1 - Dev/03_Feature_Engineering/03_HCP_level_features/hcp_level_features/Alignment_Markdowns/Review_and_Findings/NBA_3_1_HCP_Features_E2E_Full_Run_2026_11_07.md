@@ -10,6 +10,7 @@
 
 * **First run with the claims cohort file:** 28 cohorts c1–c28 (May 2024 – Aug 2026), offset 0 (calendar months), read from `cohorts/claims/cohorts.parquet`.
 * **Output format changed:** Parquet partitioned by COHORT_SET (7 groups: 5 training, 1 validation, 1 backtesting). No full Delta table any more.
+* **Update 2026-11-11:** this run wrote about 455,000 small files per table (NB01: 906 GB), which made reads and QC very slow; it was cancelled before NB01 and NB04 finished. From 2026-11-11 the outputs are Delta, still partitioned by COHORT_SET (decision X14); the next full run is `full_2026_11_11`.
 * **Across all 6 NPI-level notebooks, 3.1 has 8,360 features vs 7,440 in 3.0 — a net gain of +920 features.** 1,935 new features were added and 1,015 were intentionally removed.
 * **Key additions:** 234 Kerendia brand features (NB01), 48 HbA1c / Potassium lab features (NB02), 9 CKD Stage 5 features (NB03), 128 DM/HF type features (NB06).
 * **Key removals:** 979 features from 6 treatment categories outside the 3.1 brand list (NB01), 21 features with the retired 9-month lookback window (NB02), 15 incomplete GFR/UACR stage breakdowns (NB06).

@@ -2,7 +2,7 @@
 
 > **Update 2026-11-11.** The sections below describe the Phase A sync (2026-11-03). Since then:
 > * **Cohorts:** 28 cohorts c1–c28, offset 0, from the claims cohort file. Replaces 20 cohorts at offset 7.
-> * **Output:** Parquet partitioned by COHORT_SET (7 groups). Replaces Delta partitioned by COHORT_ID.
+> * **Output:** Delta partitioned by COHORT_SET (7 groups), few large files per group. Replaces Delta partitioned by COHORT_ID (decision X14).
 > * **Feature count:** 3.0 = 1,571 features → 3.1 = 3,065 features (+1,494 net). The increase is the Kerendia brand columns from NB01 plus the new lab (HbA1c, Potassium) and Dx (Stage 5) features from NB02/NB03, all flowing into the combined table. Total columns = 3,074.
 > * Previous full run had 2,892 columns (without Kerendia/lab flags/stage 5).
 > * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.

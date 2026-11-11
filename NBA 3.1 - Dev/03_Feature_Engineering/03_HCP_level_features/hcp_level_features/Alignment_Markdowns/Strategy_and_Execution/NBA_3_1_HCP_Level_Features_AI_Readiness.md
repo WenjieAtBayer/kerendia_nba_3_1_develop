@@ -7,12 +7,12 @@
 **Update 2026-11-06:** storyline 3.0 -> 3.1 added (section 1a): per-notebook changes, codes that reach each notebook, and which patient-journey output each notebook reads. New in the code (not run yet, next full run `full_2026_11_06`): NB02 lab flag features (potassium > 5.0, HbA1c >= 9%, 48 columns) and NB06 diabetes / HF type features (148 columns).  
 **Update 2026-11-11:** cohort and output format changed; Kerendia brand features added; all new features now run. Key changes since 2026-11-06:
 * **Cohorts:** 28 cohorts c1–c28, offset 0 (calendar months), from the claims cohort file (`cohorts/claims/cohorts.parquet`). Replaces the 20 inline cohorts at offset 7. (Decision X13)
-* **Output:** Parquet partitioned by COHORT_SET (7 groups: 5 training, 1 validation, 1 backtesting). Replaces Delta partitioned by COHORT_ID. (Decision X14)
+* **Output:** Delta partitioned by COHORT_SET (7 groups: 5 training, 1 validation, 1 backtesting), few large files per group. Replaces Delta partitioned by COHORT_ID. The 2026-11-07 run used Parquet, which produced about 455,000 small files per table; switched to Delta on 2026-11-11. (Decision X14)
 * **NB01 Kerendia brand (+234 features, X16)** and 6 removed treatment categories (−979 features, X17): product mapping updated 2026-11-05.
 * **NB02 HbA1c/Potassium (+48 features, X18)** and 9-month window removal (−21, X19): now run and verified.
 * **NB06 DM/HF type (+148 features, X20)** and old stage breakdowns dropped (−15): now run and verified.
 * **Total across 6 notebooks: 8,360 features (was 7,440 in 3.0), net +920.**
-* **Full run `full_2026_11_07`:** job 1010893614518587, run 477251413108207. NB01 and NB04 still finishing; all other tasks succeeded. See `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_07.md`.
+* **Full run `full_2026_11_11`:** job 1010893614518587, run 441950237921, in progress (first run with the Delta output). The 2026-11-07 Parquet run was cancelled before NB01 and NB04 finished; its feature counts are in `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_07.md`.
 * See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.  
 **Date:** November 11, 2026 (first version November 4, 2026)
 
@@ -22,7 +22,7 @@ This file combines the detail of each individual plan. The original plan files r
 
 ## 1. In short
 
-* **Six notebooks (NB01–NB06) build the HCP-level claims features at the 3.1 cohort grain:** one row per HCP and cohort (`COHORT_ID`, 28 cohorts c1–c28, offset 0, from the claims cohort file), windows of 1, 3, 6 and 12 months ending at the cohort cutoff, `RUNNING_` from `DATA_START_DATE` (2023-01-01) and `PCT_`. Output is Parquet partitioned by COHORT_SET (7 groups). The feature logic is the 3.0 logic with additions: Kerendia brand (NB01), HbA1c/Potassium (NB02), CKD Stage 5 (NB03), DM/HF type (NB06).
+* **Six notebooks (NB01–NB06) build the HCP-level claims features at the 3.1 cohort grain:** one row per HCP and cohort (`COHORT_ID`, 28 cohorts c1–c28, offset 0, from the claims cohort file), windows of 1, 3, 6 and 12 months ending at the cohort cutoff, `RUNNING_` from `DATA_START_DATE` (2023-01-01) and `PCT_`. Output is Delta partitioned by COHORT_SET (7 groups). The feature logic is the 3.0 logic with additions: Kerendia brand (NB01), HbA1c/Potassium (NB02), CKD Stage 5 (NB03), DM/HF type (NB06).
 * **Each notebook is synced with the 3.1 patient journey (Phase A).** The Rx, lab and Dx inputs are now the NPI-level pulls of the 3.1 journeys (PJ03 Step 4d, PJ01 Step 4, PJ02 Step 4), and the patient tables are read from the patient-journey run folder (`RUN_OUTPUT_DIR`). One switch per source in `00_cohort_config` goes back to the 3.0 input. NB05 keeps its 3.0 input on purpose (X7).
 * **Validation on the test HCPs passed in every notebook:** fast engine = step-by-step, completeness (0 duplicates, 0 null cells), HCP trace, independent recount and offset-0 parity with 3.0. The only parity failure (NB06, window columns) is explained by the 3.0 window rule and accepted (X8, X9).
 * **The biggest 3.1 changes that reach the features:** Dx stage 3 and stage 5 are now counted (NB03, NB04, NB06); many more lab tests are counted (NB02, NB04: the 3.0 inputs `Lab_03` / `Lab_04` held far fewer tests than the lab journey). The Rx claims of NB01 are the same as 3.0 apart from newer data.

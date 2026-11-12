@@ -27,7 +27,8 @@ This file combines the detail of each individual plan. The original plan files r
 * **Validation on the test HCPs passed in every notebook:** fast engine = step-by-step, completeness (0 duplicates, 0 null cells), HCP trace, independent recount and offset-0 parity with 3.0. The only parity failure (NB06, window columns) is explained by the 3.0 window rule and accepted (X8, X9).
 * **The biggest 3.1 changes that reach the features:** Dx stage 3 and stage 5 are now counted (NB03, NB04, NB06); many more lab tests are counted (NB02, NB04: the 3.0 inputs `Lab_03` / `Lab_04` held far fewer tests than the lab journey). The Rx claims of NB01 are the same as 3.0 apart from newer data.
 * **One HCP universe (3.1, 294,727 providers) for the patient journey and the HCP features (X1).** Test HCP 1508230566 is not in it, so 9 of the 10 test HCPs remain. Checked 2026-11-04: the full patient-journey run used the 3.1 universe; the validation patient-journey run used the 3.0 universe (parameter left empty, so the config default applied).
-* **Full run (job 36449327509782):** all six notebooks are written for the full universe and checked (section 11.2). NB01 and NB04 first failed because a check cell loaded two full cohorts into the notebook's memory; after the fix (trace HCPs only in full mode) the re-run passed. Recounts from the full inputs: 0 differences. Open: the provider tables still use the NBA 3.0 NPI mapping (O2).
+* **Full run `full_2026_11_11` (job 1010893614518587, run 441950237921):** all six notebooks (NB01–NB06) succeeded; 28 cohorts, 8,360 features, Delta partitioned by COHORT_SET. NB01 8.09M rows / 4,677 cols; NB04 8.09M rows / 3,074 cols; total Delta 231 GB / 449 files. NB07 (cohort-set check) is in progress after a fix for empty `PROVIDER_ID` rows (O2). See `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_11.md`.
+* **Previous full run (2026-11-04, job 36449327509782):** 20 cohorts at offset 7, Parquet. All six written and checked; NB01 4,441 cols, NB04 2,892 cols. The 2026-11-07 Parquet run with 28 cohorts was cancelled (NB01/NB04 too slow).
 * **277 features were selected for the model:** NB01 170, NB01 + NB04 2, NB03 3, NB04 87, NB05 14, NB06 1. 9 NB04 features (DPP-IV / other glucose in family C) are no longer produced under the patient-journey rule and are dropped from the list (X5); the 3.1 model is retrained and its feature selection rerun on the 3.1 output.
 
 ---
@@ -557,26 +558,32 @@ Per HCP: patients with an Rx claim who were eligible that month (`ELIGIBLE_PATIE
 
 ## 11. Full HCP universe run
 
-### 11.1 Inputs (run folder `full_2026_11_02/`)
+### 11.1 Current run: `full_2026_11_11` (Delta, 28 cohorts)
 
-| Input | Run | Content |
+Job **1010893614518587**, run **441950237921**. Parameters: `VALIDATION_MODE=false`, `RUN_OUTPUT_DIR=full_2026_11_11`, `EXPECTED_COHORTS=28`. All inputs from this run's own patient-journey and query folders.
+
+Full detail: `Alignment_Markdowns/Review_and_Findings/NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_11.md`.
+
+* **PJ01–PJ06:** all succeeded (14.6 / 13.5 / 37.1 / 5.9 / 1.3 / 15.5 min).
+* **NB01–NB06:** all succeeded. Durations: NB02 31.6 min, NB03 146.2, NB05 148.6, NB06 146.5, NB01 151.9, NB04 221.2.
+* **NB07 (cohort-set check):** in progress after a fix for empty `PROVIDER_ID` rows (O2). Manual verification: 0 real duplicates, 28 cohorts, 7 groups, DATASET matches.
+* **Outputs:** 11 Delta tables, 449 files total, 231 GB. NPI-level: NB01 8.09M rows / 4,677 cols; NB02 5.17M / 152; NB03 7.59M / 122; NB04 8.09M / 3,074; NB05 6.45M / 163; NB06 8.09M / 226.
+* **Provider tables (O2, open):** empty `PROVIDER_ID` rows: 3,094 (NB01/NB04), 949 (NB03), 3,001 (NB06). NPI-level and NB05 have none. Same root cause as 2026-11-04.
+* **Delta vs Parquet:** NB01 156 files / 73.5 GB (was ~65,000 files / 906 GB in the 2026-11-07 Parquet run). Read 307× faster, null-count QC 45× faster (test on one group).
+
+### 11.2 Previous full run: `full_2026_11_04` (20 cohorts, offset 7)
+
+Job 36449327509782, run 361860399857197 + re-run 1050221322333806 (NB01 198 min, NB04 195 min). 20 cohorts, Parquet, NB01 4,441 cols / NB04 2,892 cols. 268 of 277 selected features present (9 missing = X5). Full detail: `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_04.md`. The 2026-11-07 run (28 cohorts, Parquet) was cancelled: NB01/NB04 took > 5 h.
+
+### 11.3 Inputs (current run `full_2026_11_11/`)
+
+| Input | Source | Content |
 | --- | --- | --- |
-| Patient tables (PJ01–PJ06) | Job 953988155823642, run 1066154679479482 (2026-11-02), `HCP_UNIVERSE_PATH` = 3.1 universe | Checked 2026-11-04: of the 1,482,453 providers dropped as "not in the HCP universe" in `_stage/rx_fills_tagged`, 0 are in the 3.1 universe |
-| HCP Rx pull (PJ03 Step 4d) | One-time run 114072068089102 (2026-11-03, 41 min) | `_stage/rx_hcp_pull`: 3,070,618,084 claims, 294,534 NPIs, 2023-01-01 .. 2026-09-30 |
-| Lab and Dx pulls | Full patient-journey run | `_stage/lab_step4_pull`, `_stage/dx_step4_pull` |
-
-The validation patient-journey run (431087115996928) left `HCP_UNIVERSE_PATH` empty, so it used the 3.0 universe (config default). This explains why the test-HCP values of the validation and full runs differ (for example NB06).
-
-### 11.2 Full run and checks (summary)
-
-Full detail (runs, tables, checks, findings): `Alignment_Markdowns/Review_and_Findings/NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_04.md`.
-
-* **Runs:** HCP job 36449327509782, run 361860399857197 (NB02, NB03, NB05, NB06) and re-run 1050221322333806 (NB01 198 min, NB04 195 min) after the out-of-memory fix (engine check on the trace HCPs only in full mode).
-* **Outputs:** all six written, 20 cohorts, 0 duplicate keys and 0 empty cells in the NPI-level tables (NB01 / NB04: 5,830,945 rows, 294,503 NPIs).
-* **Selected features:** 268 of 277 present; the 9 missing are X5. The 7 GLP-1 features (X6) are populated.
-* **Recounts from the full inputs:** NB01 8,621 checks, NB04 96,300 checks (3 trace HCPs, every cohort), NB06 8 test HCPs: 0 differences.
-* **Columns (O3, explained):** NB01 4,441 / NB04 2,892 instead of 3,693 / 1,785, because the columns come from the values in the data (gender "U", empty days supply, young or negative ages, more stage x drug combinations). No validation column lost, no selected feature among the extra ones.
-* **Provider tables (O2, open):** the mapping table `kerendia_nba_3_0_npi_bhid_mapping` (agreed BHID-NPI mapping, correct for all other HCPs) misses 105 HCPs (NB01 / NB04; 38 NB03, 101 NB06) and gives 52 HCPs two `PROVIDER_ID`s. The 3.1 inputs have one `PROVIDER_ID` per HCP, all in the 3.1 universe. Proposal: keep the mapping table and fill / de-duplicate only these HCPs from the 3.1 input.
+| Patient tables (PJ01–PJ06) | `full_2026_11_11/patient_journey/` | This run's patient journey, 3.1 universe |
+| HCP Rx pull (PJ03 Step 4d) | `full_2026_11_11/_stage/rx_hcp_pull` | NPI-level Rx claims from the 3.1 Rx journey |
+| Lab pull | `full_2026_11_11/_stage/lab_step4_pull` | NPI-level lab data from PJ01 |
+| Dx pull | `full_2026_11_11/_stage/dx_step4_pull` | NPI-level Dx data from PJ02 |
+| Claims cohort file | `cohorts/claims/cohorts.parquet` | 28 cohorts c1–c28, offset 0
 
 ---
 
@@ -616,12 +623,12 @@ Full detail (runs, tables, checks, findings): `Alignment_Markdowns/Review_and_Fi
 
 | Data | Source | Coverage | Status | Gap / action | Owner |
 | --- | --- | --- | --- | --- | --- |
-| HCP Rx pull | `full_2026_11_02/_stage/rx_hcp_pull` (PJ03 Step 4d) | 3.07B claims, 294,534 NPIs, 2023-01 .. 2026-09 | **Ready** | Lives in `_stage/` (do not delete) | NBA team |
-| Lab pull | `full_2026_11_02/_stage/lab_step4_pull` (PJ01 Step 4) | 207.5M rows, 199.9K NPIs since 2023 | **Ready** | Lives in `_stage/` (X3) | NBA team |
-| Dx pull | `full_2026_11_02/_stage/dx_step4_pull` (PJ02 Step 4) | 473.1M rows, 283.3K NPIs since 2023 | **Ready** | Lives in `_stage/` | NBA team |
+| HCP Rx pull | `full_2026_11_11/_stage/rx_hcp_pull` (PJ03 Step 4d) | NPI-level Rx claims, 3.1 universe | **Ready** | Lives in `_stage/` (do not delete) | NBA team |
+| Lab pull | `full_2026_11_11/_stage/lab_step4_pull` (PJ01 Step 4) | NPI-level lab data | **Ready** | Lives in `_stage/` (X3) | NBA team |
+| Dx pull | `full_2026_11_11/_stage/dx_step4_pull` (PJ02 Step 4) | NPI-level Dx data | **Ready** | Lives in `_stage/` | NBA team |
 | New-start input | `kerendia_nba_3_0_Rx_05` (3.0) | 4.03B rows, 2021-01-02 .. 2026-09-30 | **Ready** | Phase B: basket-based all-HCP input for new drugs | NBA team |
 | `Rx_01_new` (column list before 2023) | 3.0 query output | NB01, NB04, NB06 | **Ready** | D6: replace with a fixed column list | NBA team |
-| Patient tables | `full_2026_11_02/` (PJ01–PJ06, 3.1 universe) | Full universe | **Ready (Phase A)** | Re-run HCP notebooks after patient-journey C1 / C9 | Patient-journey owners |
+| Patient tables | `full_2026_11_11/` (PJ01–PJ06, 3.1 universe) | Full universe, 28 cohorts | **Ready** | Re-run HCP notebooks after patient-journey C1 / C9 | Patient-journey owners |
 | HCP universe (3.1) | `HCP_Universe_without_call_hcps` (Parquet) | 294,727 providers | **Ready** | Config default is still the 3.0 universe when the parameter is empty | NBA team |
 | NPI to provider mapping | `kerendia_nba_3_0_npi_bhid_mapping` (agreed BHID-NPI mapping) | 1.57M NPIs; same ID as the 3.1 Rx input for all but 1 mapped HCP; misses 105 HCPs, 2 IDs for 52 HCPs | **Ready, with gaps (open)** | Fill / de-duplicate the 157 HCPs from the 3.1 input (O2, section 11.2) | NBA team |
 | 3.0 reference snapshot | `ops_pipeline_bkp/` | Test HCPs | **Ready** | Parity only | NBA team |
@@ -645,7 +652,7 @@ Full detail (runs, tables, checks, findings): `Alignment_Markdowns/Review_and_Fi
 | Gate | Ready when | Status |
 | --- | --- | --- |
 | G0 | All six notebooks synced and validated on the test HCPs; plans, client summaries and decision log written | **Done** (2026-11-03) |
-| G1 | All six written for the full universe; completeness checks pass (20 cohorts, 0 duplicates, 0 null cells); selected features present; trace HCP recount passes | **Done** (2026-11-04), except the provider-table mapping (O2) |
+| G1 | All six written for the full universe; completeness checks pass (28 cohorts, 0 duplicates, 0 null cells); selected features present; trace HCP recount passes | **Done** (2026-11-11): NB01–NB06 all succeeded with 28 cohorts, Delta output; 0 real duplicates in all 11 tables. NB07 check in progress (O2 empty-key fix). Provider-table mapping (O2) still open |
 | G2 | Patient-journey decisions (C1, C9, C3) settled and HCP notebooks re-run; HCP open points (section 16) closed | Not started |
 | G3 | Downstream combine wired; 3.1 feature list final (X5); model retrained on the 3.1 output | Not started |
 | **G4 (freeze)** | Production paths, named pulls, old copies cleaned up, all changes committed | Not started |
@@ -656,7 +663,7 @@ Full detail (runs, tables, checks, findings): `Alignment_Markdowns/Review_and_Fi
 
 | # | Point | Status | Effect |
 | --- | --- | --- | --- |
-| O1 | NB01 / NB04 full re-run (run 1050221322333806) | **Done** (2026-11-04) | – |
+| O1 | NB01 / NB04 full re-run | **Done** (2026-11-11): run 441950237921, `full_2026_11_11` | – |
 | O2 | Provider tables: empty `PROVIDER_ID` (1,911 NB01 / NB04, 698 NB03, 1,828 NB06) and HCPs written twice (52 / 43 / 52; 27 in NB02) | **Open (explained):** gaps of the agreed mapping table; proposal = keep it, fill / de-duplicate the 157 HCPs from the 3.1 input | Provider tables only; NPI-level tables not affected |
 | O3 | NB01 4,441 / NB04 2,892 columns at full scale vs 3,693 / 1,785 in validation | **Explained:** rare values seen only with all HCPs; no selected feature among them | Column list depends on the run (D6) |
 | O4 | 7 `..._WITH_GLP_1` features (X6) | **Closed:** present and populated | – |

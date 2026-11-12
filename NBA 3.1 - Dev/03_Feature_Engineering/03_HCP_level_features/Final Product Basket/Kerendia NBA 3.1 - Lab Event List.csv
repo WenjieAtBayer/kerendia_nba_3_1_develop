@@ -1,0 +1,24 @@
+﻿EVENT_NAME,EVENT_CODE,EVENT_GROUP,IS_CLUBBED
+eGFR,33914-3,eGFR TEST (ALL LOINC VARIANTS),YES
+eGFR,48642-3,eGFR TEST (ALL LOINC VARIANTS),YES
+eGFR,50210-4,eGFR TEST (ALL LOINC VARIANTS),YES
+eGFR,62238-1,eGFR TEST (ALL LOINC VARIANTS),YES
+eGFR AMONG BLACKS,88293-6,eGFR TEST (ALL LOINC VARIANTS),YES
+eGFR AMONG NON-BLACKS,88294-4,eGFR TEST (ALL LOINC VARIANTS),YES
+eGFR,98979-8,eGFR TEST (ALL LOINC VARIANTS),YES
+eGFR,98980-6,eGFR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,13362-9,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,14683-7,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,14957-5,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,14958-3,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,1754-1,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,19153-6,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,2160-0,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,2161-8,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,34535-5,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,35674-1,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,49023-5,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,61151-7,UACR TEST (ALL LOINC VARIANTS),YES
+Albumin/Creatinine [Mass Ratio] in Urine,9318-7,UACR TEST (ALL LOINC VARIANTS),YES
+Potassium [Moles/volume] in Serum or Plasma,2823-3,Potassium [Moles/volume] in Serum or Plasma,NO
+Hemoglobin A1c/Hemoglobin.total in Blood,4548-4,Hemoglobin A1c/Hemoglobin.total in Blood,NO

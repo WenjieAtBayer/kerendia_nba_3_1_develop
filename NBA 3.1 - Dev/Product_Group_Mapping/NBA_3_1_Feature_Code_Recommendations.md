@@ -1,6 +1,8 @@
 # Kerendia NBA 3.1 — Product, Dx, Px and Lab Code Recommendations
 
-**Date:** 2026-10-22
+> **Data source update (Nov 2026):** NBA 3.1 LRx features now read `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` instead of `KERENDIA_LAAD_BASED_LRX_V6`. The product basket NBA 3.1 uses is the **V7 mapping** (67 product groups in 22 classes), documented in Sections 1.2 and 1.3. The v4 proposal (`Kerendia_Market_Basket_Product_Group_Mapping_and_Priority_v4.csv`) was not adopted; it is kept in Sections 1.4 and 1.5 for reference.
+
+**Date:** 2026-10-22 (Section 1 updated 2026-11-07 to the V7 product mapping)
 **Context:** T1D + HF indication expansion for Kerendia NBA 3.1
 
 **Analysis window:** last 24 months. **Indication context:** point-in-time patient flags from `pace_ker_in_house_schema.indication_table` (T1D / T2D / HF / CKD).
@@ -20,7 +22,7 @@
 
 | Domain | NBA 3.0 | Remove (T1 / T2 / T3) | Keep | Main additions for 3.1 |
 | --- | --- | --- | --- | --- |
-| Product basket | 71 product groups (V6), 458 drugs with NBRx | 74 / 33 / 22 drugs; 11 groups dissolved (v4) | 329 drugs | 13 new groups (T1D, HF, CKD), break up OTHERS, add digoxin |
+| Product basket | 71 product groups (V6), 458 drugs with NBRx | None at group level in V7 (drug tiers 74 / 33 / 22 apply only to drug-level features) | 67 V7 product groups, 22 classes | Entresto generic, Baxfendy, Exenatide, Liraglutide generic added; most of OTHERS split into NBA groups (METFORMIN, SULFONYLUREAS, DPP4, insulin, CGM, CCB, CKD SUPPORTIVE, VERQUVO, INPEFA). v4's 13 new groups not adopted |
 | Dx | 414 ICD codes | 92 / 16 / 13 codes | 293 codes | Roll up retinopathy to parent, ICD-9 to ICD-10 mapping, hyperkalemia |
 | Px | 153 CPT/HCPCS codes | 6 / 10 / 10 codes | 127 codes | Dialysis/transplant, cardiac device, CGM/pump, retinal exam codes |
 | Lab | 2 test types (GFR, UACR), PCP-only | 17 / 2 / 6 LOINCs | 20 LOINCs | Potassium, HbA1c, all specialties, value-based features |
@@ -39,7 +41,67 @@
 **NBA 3.0 product groups (71, V6):**
 ACARBOSE; ACE INHIBITORS AND COMBOS; ACTOS; ADLYXIN; ALISKIREN HEMIFUM; ALOGLIPTIN_NESINA COMBOS; ANGIOTENSIN II RECEPTOR ANTAGONISTS AND COMBOS; BASAL (LONG-ACTING) INSULIN; BETA BLOCKERS AND COMBOS; BEXAGLIFLOZIN; BRENZAVVY; BYDUREON; BYETTA; CALCIUM CHANNEL BLOCKERS AND COMBOS; CANAGLIFLOZIN_INVOKANA COMBOS; CGM AND SUPPLIES; CYCLOSET; DAPAGLIFLOZIN_FARXIGA COMBOS; DIURETICS AND COMBOS; EMPAGLIFLOZIN_JARDIANCE COMBOS; ENTRESTO; ERTUGLIFLOZIN_STEGLATRO COMBOS; ERYTHROPOIESIS STIMULATING AGENTS; FARXIGA BRAND; FARXIGA GENERICS; GLIMEPIRIDE; GLIPIZIDE; GLIPIZIDE COMBOS; GLYBURIDE; GLYBURIDE COMBOS; INPEFA; INSULIN GLAR M SOL; INVOKANA; IRON DEFICIENCY DRUG; JANUVIA; JARDIANCE; KERENDIA; METFORMIN; MIGLITOL; MINERALOCORTICOID RECEPTOR ANTAGONISTS; MOUNJARO; NESINA; ONGLYZA; OTHERS; OZEMPIC; PHOSPHATE BINDERS; PIOGLITAZONE_ACTOS COMBOS; PRANDIN; PRE-MIXED INSULIN; RAPID-ACTING INSULIN; REZVOGLAR KWIKPEN; RYBELSUS; SAXAGLIPTIN HYDROCHLORIDE; SAXAGLIPTIN_ONGLYZA COMBOS; SAXENDA; SHORT-ACTING HUMAN INSULIN; SOLIQUA; STEGLATRO; SULFONYLUREAS; SYMLINPEN; TEKTURNA; TRADJENTA; TRULICITY; VERQUVO; VICTOZA; VITAMIN D ANALOG DRUG; WEGOVY; XULTOPHY; ZEPBOUND; ZITUVIMET; ZITUVIO
 
-### 1.2 What we can remove
+### 1.2 Product groups NBA 3.1 uses (V7 mapping)
+
+**Source:** `kerendia_laad_based_lrx.kerendia_laad_based_lrx_v7` (`PRODUCT_GROUP`, `PRODUCT_CLASS`), built by `kerendia_data_needs/LAAD based LRx Pipeline/Ops Pipeline V7`. Drug-level mapping: `Kerendia_Market_Basket_Product_Group_Mapping_V7.csv` in this folder (543 rows, one per LAAD product name × V6 group; columns: V6 group, V7 class / group, NBRx group, mapping source, added-in-V7 flag, NDC count, TRx Oct 2024 – Sep 2026). It is a Nov 2026 snapshot of the V7 claims staging table and matches V7 TRx totals; regenerate it (same logic as `07_V6_vs_V7_Product_Crosswalk`) if the basket or `NBA_OTHERS_SPLIT` changes.
+
+**How the mapping is built (per NDC):**
+1. **Basket** = V6 market basket (`Kerendia_Market_Basket_Product_Group_Mapping_and_Priority_v3.xlsx`) + `V7_EXTRA_BASKET` in `00_V7_Params`: Entresto generic (SACUBITRIL/VALSART), BAXFENDY, EXENATIDE, LIRAGLUTIDE 5-PAK and a few minor ARB / beta-blocker / diuretic brands. No drugs are removed.
+2. **lrx_nbrx product map first:** if the NDC has a level-4 product in `VIEW_PHA_LRX_TRANSITION_PRODUCT_MAPPING_FINAL_OCT_09`, V7 uses that name and class (same as `pace_ker_in_house_schema.lrx_nbrx`). Farxiga and Entresto are split into brand / generic groups but each counts NBRx as one product.
+3. **NBA split for the rest:** NDCs the lrx_nbrx map leaves unmapped get an NBA group from their V6 group (`NBA_OTHERS_SPLIT` in `00_V7_Params`). Anything not listed stays `OTHERS`.
+4. NBRx / NRx are counted on these groups (new to the group in 365 days).
+
+**V7 product groups and where the NBA 3.0 (V6) groups went** (TRx claims, Oct 2024 – Sep 2026):
+
+| V7 class | V7 `PRODUCT_GROUP` | NBA 3.0 (V6) groups mapped here | TRx (24 mo) |
+| --- | --- | --- | --- |
+| KERENDIA | KERENDIA | KERENDIA | 1.8M |
+| SGLT2 | JARDIANCE, FARXIGA BRAND, FARXIGA GENERIC, SYNJARDY, SYNJARDY XR, TRIJARDY XR, GLYXAMBI, XIGDUO XR, DAPAGLIFLOZIN/METFORMIN H, QTERN, INVOKANA, INVOKAMET, INVOKAMET XR, STEGLATRO, STEGLUJAN, SEGLUROMET, BRENZAVVY, BEXAGLIFLOZIN | JARDIANCE, FARXIGA BRAND, FARXIGA GENERICS, INVOKANA, STEGLATRO, BRENZAVVY, BEXAGLIFLOZIN, the four SGLT2 `_COMBOS` groups; GLYXAMBI and SEGLUROMET came out of V6 OTHERS | 78.4M |
+| GLP1 | MOUNJARO, OZEMPIC, ZEPBOUND, TRULICITY, WEGOVY, WEGOVY HD, RYBELSUS, VICTOZA, LIRAGLUTIDE, BYDUREON BCISE, BYDUREON PEN, BYETTA, EXENATIDE, SAXENDA, SOLIQUA 100/33, XULTOPHY 100/3.6, SYMLINPEN 60, SYMLINPEN 120 (ADLYXIN, BYDUREON only in older history) | MOUNJARO, OZEMPIC, ZEPBOUND, TRULICITY, WEGOVY, RYBELSUS, VICTOZA, BYDUREON, BYETTA, SAXENDA, SOLIQUA, XULTOPHY, SYMLINPEN, ADLYXIN | 183.0M |
+| ACE | ACE | ACE INHIBITORS AND COMBOS | 193.8M |
+| ARB | ARB | ANGIOTENSIN II RECEPTOR ANTAGONISTS AND COMBOS | 250.2M |
+| BB | BB | BETA BLOCKERS AND COMBOS | 271.0M |
+| DIURETICS | DIURETICS | DIURETICS AND COMBOS (loop, thiazide and K-sparing stay together) | 167.1M |
+| sMRA | SPIRONOLACTONE, EPLERENONE, ALDACTONE, INSPRA, ALDACTAZIDE, CAROSPIR | MINERALOCORTICOID RECEPTOR ANTAGONISTS, plus spironolactone NDCs from DIURETICS AND COMBOS and CAROSPIR from OTHERS | 51.5M |
+| DRI | ALISKIREN, TEKTURNA, TEKTURNA HCT | ALISKIREN HEMIFUM, TEKTURNA | 0.1M |
+| ENTRESTO BRAND / ENTRESTO GENERICS | ENTRESTO BRAND, ENTRESTO GENERIC | ENTRESTO (generic sacubitril/valsartan added in V7) | 7.1M / 6.6M |
+| BAXFENDY | BAXFENDY | new in V7 | <0.1M |
+| METFORMIN | METFORMIN | METFORMIN | 145.2M |
+| SULFONYLUREAS | SULFONYLUREAS | GLIMEPIRIDE, GLIPIZIDE, GLIPIZIDE COMBOS, GLYBURIDE, GLYBURIDE COMBOS, SULFONYLUREAS | 41.4M |
+| DPP4 | DPP4 | JANUVIA, TRADJENTA, ZITUVIO, ZITUVIMET, NESINA, ALOGLIPTIN_NESINA COMBOS, ONGLYZA, SAXAGLIPTIN HYDROCHLORIDE, SAXAGLIPTIN_ONGLYZA COMBOS | 14.3M |
+| INSULIN | BASAL INSULIN | BASAL (LONG-ACTING) INSULIN, REZVOGLAR KWIKPEN, INSULIN GLAR M SOL | 47.2M |
+| INSULIN | OTHER INSULIN | RAPID-ACTING INSULIN (incl. AFREZZA, LYUMJEV, FIASP), PRE-MIXED INSULIN, SHORT-ACTING HUMAN INSULIN | 31.5M |
+| CGM | CGM | CGM AND SUPPLIES (incl. Omnipod and iLet pumps) | 52.2M |
+| CCB | CCB | CALCIUM CHANNEL BLOCKERS AND COMBOS | 216.6M |
+| CKD SUPPORTIVE | CKD SUPPORTIVE | VITAMIN D ANALOG DRUG, PHOSPHATE BINDERS, ERYTHROPOIESIS STIMULATING AGENTS, IRON DEFICIENCY DRUG | 6.8M |
+| VERQUVO | VERQUVO | VERQUVO | 0.2M |
+| INPEFA | INPEFA | INPEFA (own class, kept out of SGLT2 so the HCP Universe SGLT2/GLP1 pool still matches lrx_nbrx) | <0.1M |
+| OTHERS | OTHERS | ACARBOSE, ACTOS, CYCLOSET, MIGLITOL, PIOGLITAZONE_ACTOS COMBOS, PRANDIN, and the rest of V6 OTHERS | 21.3M |
+
+**What is still in V7 `OTHERS` (47 drugs, 21.3M TRx):** pioglitazone and its combos (11.5M), JANUMET / JANUMET XR (3.1M), cinacalcet / SENSIPAR / PARSABIV (1.3M), repaglinide / nateglinide (1.3M), ivabradine / CORLANOR (0.65M), acarbose (0.6M), NOVOLOG MIX 70/30 (0.63M), glucagon (BAQSIMI, GVOKE, ZEGALOGUE, 1.4M), JENTADUETO / XR (0.5M), XPHOZAH (0.15M), isosorbide dinitrate/hydralazine / BIDIL (0.09M), V-GO 20/30/40 (0.05M), sodium ferric gluconate, CARNITOR / levocarnitine, TZIELD, KORSUVA, CYCLOSET, MIGLITOL and other small brands.
+
+**Not in the V7 basket at all:** digoxin (DIGOXIN, DIGITEK, LANOXIN) and omecamtiv mecarbil. To use them, add the LAAD product names to `V7_EXTRA_BASKET` and rerun `06_V7_History_Backfill`.
+
+### 1.3 v4 proposal vs. V7 (status)
+
+| v4 proposal | Status in V7 |
+| --- | --- |
+| Dissolve 11 groups | **Not applied** — no drugs are dropped. ACTOS, CYCLOSET, MIGLITOL, PIOGLITAZONE_ACTOS COMBOS → OTHERS; CALCIUM CHANNEL BLOCKERS → CCB; SULFONYLUREAS → SULFONYLUREAS; TEKTURNA → DRI; BEXAGLIFLOZIN → SGLT2; ADLYXIN → GLP1; INSULIN GLAR M SOL → BASAL INSULIN; OTHERS is mostly split up but still exists (21.3M TRx) |
+| Split DIURETICS AND COMBOS into LOOP / THIAZIDE / K-SPARING | **Not applied** — one `DIURETICS` group (lrx_nbrx class); only spironolactone moves to sMRA |
+| 13 new groups (T1D DISEASE-MODIFYING, GLUCAGON RESCUE, INSULIN DELIVERY DEVICES, HF VASODILATORS, HF RATE CONTROL, CARDIAC GLYCOSIDES, CARDIAC MYOSIN ACTIVATORS, CALCIMIMETICS, CKD SYMPTOM MGMT, CKD SUPPORTIVE, LOOP / THIAZIDE / K-SPARING DIURETICS) | **Not applied.** TZIELD, glucagon, V-GO, BIDIL / isosorbide-hydralazine, CORLANOR / ivabradine, cinacalcet / SENSIPAR / PARSABIV, KORSUVA and CARNITOR / levocarnitine are in OTHERS; the diuretics are in DIURETICS; digoxin and omecamtiv are not in the basket. V7 `CKD SUPPORTIVE` exists but means vitamin D analogs + phosphate binders + ESAs + iron, not carnitine |
+| Move HF high-signal drugs out of OTHERS | VERQUVO and INPEFA have their own groups. CORLANOR and isosorbide-hydralazine stay in OTHERS |
+| Move CKD high-signal drugs | Phosphate binders (incl. VELPHORO), ESAs and vitamin D analogs (incl. RAYALDEE) → CKD SUPPORTIVE. XPHOZAH stays in OTHERS |
+| Move T1D high-signal drugs | LYUMJEV, FIASP, NOVOLOG etc. → OTHER INSULIN; Omnipod 5 and iLet → CGM |
+| Move T2D combos | GLYXAMBI, SEGLUROMET → SGLT2. JANUMET / JANUMET XR and JENTADUETO / XR stay in OTHERS (not DPP4) |
+| Entresto brand + generic | Separate `PRODUCT_GROUP`s (ENTRESTO BRAND, ENTRESTO GENERIC) but NBRx is counted on one Entresto group |
+| AFREZZA | In OTHER INSULIN |
+| Final basket: 414 products in 74 groups | V7: all basket drugs in 67 groups / 22 classes (`Kerendia_Market_Basket_Product_Group_Mapping_V7.csv`) |
+
+**Changing a group:** groups come from `V7_EXTRA_BASKET` / `NBA_OTHERS_SPLIT` in `Ops Pipeline V7/00_V7_Params`. `NBA_OTHERS_SPLIT` works on V6 group names, so moving single drugs out of V6 OTHERS (e.g. JANUMET → DPP4, CORLANOR → HF RATE CONTROL) needs a drug-level rule in `build_claims_v7`. Every change needs `06_V7_History_Backfill` so history uses the same groups.
+
+### 1.4 v4 proposal (Oct 2026, not adopted) — what we could remove
+
+> Kept for reference. V7 does not apply these removals (see 1.3). The drug-level tiers are still useful for drug-level features.
 
 **Group-level removals (v4 mapping, user-approved):** 11 groups dissolved
 
@@ -75,9 +137,11 @@ ACARBOSE; ACE INHIBITORS AND COMBOS; ACTOS; ADLYXIN; ALISKIREN HEMIFUM; ALOGLIPT
 
 **TIER_3_REVIEW — 22 drugs (manual decision, low volume):** TIMOLOL MALEATE, FERRLECIT, NICARDIPINE HYDROCHLORIDE, ARBLI, LOPRESSOR, NICARDIPINE HCL, INNOPRAN XL, ESMOLOL HCL, CAPTOPRIL/HYDROCHLOROTHIA, ATACAND, INDERAL LA, INDERAL XL, TENORMIN, CARDIZEM LA, EPANED, CARDIZEM CD, CARNITOR, TIAZAC, DILTIAZEM CD, CHLOROTHIAZIDE SODIUM, ENALAPRILAT, NYMALIZE
 
-> **Caveat — drug drops vs. group mapping:** several Tier 1/3 drugs (SENSIPAR, PARSABIV, ZEMPLAR, BUMEX, DEMADEX, EDECRIN, KAZANO, KOMBIGLYZE XR, SACUBITRIL/VALSART, CARNITOR, V-GO 20/30/40) are being **reclassified into named v4 groups**. NBA features are built at product-group level, so keep them in the mapping (they add volume to the group) and only exclude them from any drug-level features. HYDROCHLOROTHIAZIDE (Tier 2) is the anchor of THIAZIDE DIURETICS — keep it in the mapping.
+> **Caveat — drug drops vs. group mapping:** several Tier 1/3 drugs (SENSIPAR, PARSABIV, ZEMPLAR, BUMEX, DEMADEX, EDECRIN, KAZANO, KOMBIGLYZE XR, SACUBITRIL/VALSART, CARNITOR, V-GO 20/30/40) were proposed to be **reclassified into named v4 groups** (in V7 they sit in OTHERS, DIURETICS or ENTRESTO GENERIC — see 1.3). NBA features are built at product-group level, so keep them in the mapping (they add volume to the group) and only exclude them from any drug-level features. HYDROCHLOROTHIAZIDE (Tier 2) is the anchor of THIAZIDE DIURETICS — keep it in the mapping.
 
-### 1.3 What we can add
+### 1.5 v4 proposal (Oct 2026, not adopted) — what we could add
+
+> Kept for reference. None of the 13 groups below exist in V7; see 1.3 for where their products are.
 
 **New product groups (13, v4):**
 
@@ -107,7 +171,7 @@ ACARBOSE; ACE INHIBITORS AND COMBOS; ACTOS; ADLYXIN; ALISKIREN HEMIFUM; ALOGLIPT
 * ENTRESTO brand (494K patients) and generic sacubitril/valsartan (601K) — both 100% HF. Collapse to one ENTRESTO group, or keep brand/generic separate only if the generic transition itself is a feature.
 * Verify AFREZZA (25% T1D) volume in Snowflake before deciding whether it gets its own feature.
 
-**Final active basket (post-v4):** 414 products in 74 product groups. See `Kerendia_Market_Basket_Product_Group_Mapping_and_Priority_v4.csv`.
+**Final active basket (v4 proposal, not adopted):** 414 products in 74 product groups. See `Kerendia_Market_Basket_Product_Group_Mapping_and_Priority_v4.csv`. NBA 3.1 uses the V7 mapping instead: 67 product groups in 22 classes (Section 1.2).
 
 ---
 

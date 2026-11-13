@@ -1,727 +1,466 @@
 # HCP-level claims features in NBA 3.1: Readiness Plan
 
-**Group:** HCP-level claims features (Rx, lab, diagnosis, combined claims, new patient starts, eligible patients), notebooks NB01–NB06 in `hcp_level_features/` and the shared config `../00_cohort_config`  
-**Purpose:** one plan for how the HCP-level claims features go into NBA 3.1: what we build, from which data, in which order, how we test it, and when it is ready  
-**Builds on:** the six individual plan files and client summaries (one per notebook folder), the decision log (`NBA_3_1_HCP_Features_Decisions.md`), the selected feature list (`Feature Analysis/NBA_3_1_HCP_Claims_Selected_Features_277.csv`) and the patient journey readiness plan (`Patient_Journey_Validation/Alignment_Markdowns/Strategy and Execution/AI_Readiness_Plan.md`)  
-**Status (2026-11-11):** Phase A built and validated on the test HCPs in all six notebooks. The 3.1 feature changes (X16–X20) are in the code, cohorts come from the claims cohort file (28 cohorts, offset 0) and the outputs are Delta partitioned by COHORT_SET. Full run `full_2026_11_11` is in progress; until it finishes, sections 11, 12 (row counts) and 15 (G1) still describe the 2026-11-04 run. Code and docs committed on `dev/hcp-claims-features` (2026-11-11).  
-**Update 2026-11-06:** storyline 3.0 -> 3.1 added (section 1a): per-notebook changes, codes that reach each notebook, and which patient-journey output each notebook reads. New in the code (in the full runs since `full_2026_11_06`, see the 2026-11-11 update below): NB02 lab flag features (potassium > 5.0, HbA1c >= 9%, 48 columns) and NB06 diabetes / HF type features (148 columns).  
-**Update 2026-11-11:** cohort and output format changed; Kerendia brand features added; all new features now run. Key changes since 2026-11-06:
-* **Cohorts:** 28 cohorts c1–c28, offset 0 (calendar months), from the claims cohort file (`cohorts/claims/cohorts.parquet`). Replaces the 20 inline cohorts at offset 7. (Decision X13)
-* **Output:** Delta partitioned by COHORT_SET (7 groups: 5 training, 1 validation, 1 backtesting), few large files per group. Replaces Delta partitioned by COHORT_ID. The 2026-11-07 run used Parquet, which produced about 455,000 small files per table; switched to Delta on 2026-11-11. (Decision X14)
-* **NB01 Kerendia brand (+234 features, X16)** and 6 removed treatment categories (−979 features, X17): product mapping updated 2026-11-05.
-* **NB02 HbA1c/Potassium (+48 features, X18)** and 9-month window removal (−21, X19): now run and verified.
-* **NB06 DM/HF type (+148 features, X20)** and old stage breakdowns dropped (−15): now run and verified.
-* **Total across 6 notebooks: 8,360 features (was 7,440 in 3.0), net +920.**
-* **Full run `full_2026_11_11`:** job 1010893614518587, run 441950237921, in progress (first run with the Delta output). The 2026-11-07 Parquet run was cancelled before NB01 and NB04 finished; its feature counts are in `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_07.md`.
-* See decisions X13–X24 in `NBA_3_1_HCP_Features_Decisions.md`.  
-**Date:** November 11, 2026 (first version November 4, 2026)
+**For:** Wenjie. **Reviewed by:** Raman. **Version:** 2026-11-12.  
+**Run assessed:** `full_2026_11_11` (job 1010893614518587, run 441950237921).
 
-This file combines the detail of each individual plan. The original plan files remain in their folders for reference.
+The plan tells the story in order: where to find things (section 1), a summary (2), what NBA 3.0 built (3), what changed on the way to 3.1 and why (4), what 3.1 delivers notebook by notebook (5), what is no longer built (6), what this means for the model (7), the run (8), and the open points (9).
+
+Every number has a source in brackets, for example [S3]. The sources are listed in section 1. Numbers marked "my check, 2026-11-12" were counted on those tables for this plan.
 
 ---
 
-## 1. In short
+## 1. Where to find things
 
-* **Six notebooks (NB01–NB06) build the HCP-level claims features at the 3.1 cohort grain:** one row per HCP and cohort (`COHORT_ID`, 28 cohorts c1–c28, offset 0, from the claims cohort file), windows of 1, 3, 6 and 12 months ending at the cohort cutoff, `RUNNING_` from `DATA_START_DATE` (2023-01-01) and `PCT_`. Output is Delta partitioned by COHORT_SET (7 groups). The feature logic is the 3.0 logic with additions: Kerendia brand (NB01), HbA1c/Potassium (NB02), CKD Stage 5 (NB03), DM/HF type (NB06).
-* **Each notebook is synced with the 3.1 patient journey (Phase A).** The Rx, lab and Dx inputs are now the NPI-level pulls of the 3.1 journeys (PJ03 Step 4d, PJ01 Step 4, PJ02 Step 4), and the patient tables are read from the patient-journey run folder (`RUN_OUTPUT_DIR`). One switch per source in `00_cohort_config` goes back to the 3.0 input. NB05 keeps its 3.0 input on purpose (X7).
-* **Validation on the test HCPs passed in every notebook:** fast engine = step-by-step, completeness (0 duplicates, 0 null cells), HCP trace, independent recount and offset-0 parity with 3.0. The only parity failure (NB06, window columns) is explained by the 3.0 window rule and accepted (X8, X9).
-* **The biggest 3.1 changes that reach the features:** Dx stage 3 and stage 5 are now counted (NB03, NB04, NB06); many more lab tests are counted (NB02, NB04: the 3.0 inputs `Lab_03` / `Lab_04` held far fewer tests than the lab journey). The Rx claims of NB01 are the same as 3.0 apart from newer data.
-* **One HCP universe (3.1, 294,727 providers) for the patient journey and the HCP features (X1).** Test HCP 1508230566 is not in it, so 9 of the 10 test HCPs remain. Checked 2026-11-04: the full patient-journey run used the 3.1 universe; the validation patient-journey run used the 3.0 universe (parameter left empty, so the config default applied).
-* **Full run `full_2026_11_11` (job 1010893614518587, run 441950237921):** all six notebooks (NB01–NB06) succeeded; 28 cohorts, 8,360 features, Delta partitioned by COHORT_SET. NB01 8.09M rows / 4,677 cols; NB04 8.09M rows / 3,074 cols; total Delta 231 GB / 449 files. NB07 (cohort-set check) is in progress after a fix for empty `PROVIDER_ID` rows (O2). See `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_11.md`.
-* **Previous full run (2026-11-04, job 36449327509782):** 20 cohorts at offset 7, Parquet. All six written and checked; NB01 4,441 cols, NB04 2,892 cols. The 2026-11-07 Parquet run with 28 cohorts was cancelled (NB01/NB04 too slow).
-* **277 features were selected for the model:** NB01 170, NB01 + NB04 2, NB03 3, NB04 87, NB05 14, NB06 1. 9 NB04 features (DPP-IV / other glucose in family C) are no longer produced under the patient-journey rule and are dropped from the list (X5); the 3.1 model is retrained and its feature selection rerun on the 3.1 output.
+Volume root: `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/`. Workspace root: `/Workspace/Users/wenjie.chen@bayer.com/`.
 
----
-
-## 1a. Storyline: from 3.0 to 3.1
-
-For the details of each patient-journey notebook (baskets, rules, numbers) see the patient journey readiness plan: `Patient_Journey_Validation/Alignment_Markdowns/Strategy and Execution/AI_Readiness_Plan.md`. This section shows what reaches the HCP features.
-
-### 1a.1 The story in four steps
-
-| Step | What happened | Effect on the HCP features |
+| Ref | What | Path |
 | --- | --- | --- |
-| 1. NBA 3.0 | Six notebooks on calendar-month rows; inputs from the 3.0 queries (`Rx_01_new`, `Lab_03`, `Lab_04`, `Dx_03`, `kerendia_nba_3_0_Rx_05`) with the rules written in SQL (test names, stage texts, product lists) | Baseline |
-| 2. Cohort grain (Phase A) | One row per HCP and cohort (offset 7, 20 cohorts), windows of 1, 3, 6, 12 months ending at the cutoff, counts from `DATA_START_DATE` (2023-01-01), fixed column lists. Feature logic unchanged | Same features, new time grain; offset-0 parity with 3.0 passed (NB06 window rule explained, X8) |
-| 3. Sync with the 3.1 patient journey | Inputs = the NPI-level pulls of the 3.1 journeys (PJ01 / PJ02 / PJ03 Step 4) and the patient tables of the run folder (`RUN_OUTPUT_DIR`). Codes come from dated product mapping files (`final_product_mapping/`, loader `product_mapping_path()`) instead of SQL | More tests and codes counted (table 1a.2); NB05 kept on its 3.0 input (X7) |
-| 4. New 3.1 features (2026-11-06) | Lab flags in NB02 (potassium, HbA1c) and diabetes / HF type in NB06, from the new 3.1 patient-journey outputs | +48 columns NB02, +148 columns NB06; existing columns unchanged by design |
+| S1 | 3.0 HCP feature tables (NB01–NB06) | `kerendia_nba_3_volume/hcp_level_model/ops_pipeline/notebook_output/`: `claim_rx_monthly`, `claim_lab_monthly_ZS`, `provider_claim_diagnosis_monthly`, `final_claims_monthly`, `kerendia_nba_3_0_claim_rx_nps_monthly`, `kerendia_nba_3_0_claim_eligible_patient` |
+| S2 | 3.1 HCP feature tables (NB01–NB06) | `kerendia_nba_3_1_volume/hcp_level_model/dev_pipeline/notebook_output/full_2026_11_11/hcp_claims/`: `claim_rx_monthly_cohort`, `claim_lab_monthly_cohort`, `provider_claim_diagnosis_monthly_cohort`, `final_claims_monthly_cohort`, `claim_rx_nps_monthly_cohort`, `claim_eligible_patient_cohort` |
+| S3 | 3.0 inputs and patient tables | `kerendia_nba_3_volume/hcp_level_model/ops_pipeline/query_output/`: `Rx_01_new` (Rx), `Lab_03` (NB02 lab), `Lab_04` (NB04 lab), `Dx_03`, `kerendia_nba_3_0_Rx_05`, `pat_new_and_total_treatments`, `pat_new_ckd_stage`, `pat_gfr_dx_stage_and_treatment_category`, `pat_uacr_stage_and_treatment_category_new`, `df_px` (dialysis), `df_t2d_patient` (diabetes); eligibility: `.../notebook_output/kerendia_nba_3_0_pat_sglt2_filter_m` |
+| S4 | 3.1 inputs | `kerendia_nba_3_1_volume/hcp_level_model/dev_pipeline/query_output/full_2026_11_11/`: `rx_hcp_pull`, `lab_step4_pull`, `dx_step4_pull` |
+| S5 | 3.1 patient tables | `kerendia_nba_3_1_volume/hcp_level_model/dev_pipeline/notebook_output/full_2026_11_11/patient_journey/`: `kerendia_nba_3_1_<table>_validation` (for example `..._pat_gfr_dx_stage_validation`, `..._pat_sglt2_filter_m_validation`) |
+| S6 | 3.1 product baskets (used by the run) | `kerendia_nba_3_1_volume/final_product_mapping/Kerendia_{Rx,Dx,Lab,Px}_Final_Product_Mapping_2026_11_06.csv`, `Kerendia_Dx_Flag_Additions_2026_11_06.csv` |
+| S7 | The 752 model features of 3.0 | `kerendia_nba_3_volume/hcp_level_model/ops_pipeline/input_files/Kerendia_NBA_3_feature_list_752_features.csv` |
+| S8 | The 277 claims features among the 752, with notebook, family and window | `kerendia_nba_3_1_develop_pg/NBA 3.1 - Dev/Feature Analysis/NBA_3_1_HCP_Claims_Selected_Features_277.csv` |
+| S9 | 3.0 code | `kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/00_Write_Input_Files.py` (input queries) and `.../00_Helper_Notebooks/00_step23_function.py` (look-back and running totals) |
+| S10 | Patient-journey plan and combine notebook | `.../03_HCP_level_features/Patient_Journey_Validation/Alignment_Markdowns/Strategy and Execution/AI_Readiness_Plan.md`; `.../Patient_Journey_Validation/Combine Files/06_patient_journey_combine_3_1` |
+| S11 | Per-notebook plans | `hcp_level_features/02 Lab Claims Files/NBA_3_1_Lab_Claims_Features_Plan.md`, `03 Diagnosis Claims Files/NBA_3_1_Dx_Claims_Features_Client_Summary.md`, `04 Monthly Cohort Claims Files/NBA_3_1_Claims_Features_Plan.md` |
+| S12 | Decision log (X1–X20) | `hcp_level_features/Alignment_Markdowns/Strategy_and_Execution/NBA_3_1_HCP_Features_Decisions.md` |
+| S13 | HCP universe | `NBA 3.1 - Dev/01_HCP_Universe/NBA_3.1_HCP_Universe_Presentation_V6_ZS_Recommended.md` |
+| S14 | Run | Job 1010893614518587 "NBA 3.1 Patient Journey + HCP Features", run 441950237921 |
+| S15 | Settings (brand list, start date, GLP-1 rule) | `03_HCP_level_features/00_cohort_config` |
 
-### 1a.2 Per notebook: 3.0 vs 3.1
+---
 
-| Notebook | 3.0 input | 3.1 input | What changes in the features | Codes / products that now reach it |
+## 2. Summary
+
+| Topic | 3.0 | 3.1 | Source |
+| --- | --- | --- | --- |
+| Time design | One row per HCP and calendar month | One row per HCP and cohort (28 monthly cohorts, May 2024 to August 2026) | S1, S2 |
+| HCPs with Rx claims since 2023 | 234,170 | 294,612 (220,892 in both) | S3, S4, my check |
+| Products | No Kerendia; no Mounjaro, Zepbound, Wegovy or generic dapagliflozin | All of them counted | S6 |
+| Lab and diagnosis inputs | Separate 3.0 queries that missed many tests and the stage 3 and 5 codes | The 3.1 patient journey | S9, S11 |
+| New signals | – | Potassium, HbA1c, diabetes type, heart-failure type, CKD stage 5, Kerendia | S2 |
+| Features in NB01–NB06 | 9,617 | 8,360 | S1, S2 |
+
+Of the 9,617 3.0 features, 7,694 are kept and 1,923 are not built any more: 1,684 were exact repeats of another column, 220 were dropped by decision X5 (the patient journey no longer tracks DPP-IV and other glucose drugs, section 6), and 19 need a decision. 666 features are new.
+
+The 3.0 model uses 277 of these features [S8]; 268 exist in 3.1. Their values per HCP change: 135 stay within ±20%, 94 are lower and 39 are higher (section 7). The main causes are the 73,720 added HCPs, who write fewer prescriptions each, the later start of the running totals, and the new CKD stage rules. The model is retrained, and feature selection runs again on all 3.1 features [S12, X5].
+
+**Status:** the full run succeeded for all 13 tasks and all 28 cohorts [S14]. Section 9 lists 15 open points. One correction to earlier versions of this plan: the SGLT2 rule of the Kerendia eligibility is **not** applied in 3.1 either (open point 6). The eligible share drops for other reasons (section 4.5).
+
+---
+
+## 3. Where we started: NBA 3.0
+
+### 3.1 How 3.0 built the features
+
+| Aspect | 3.0 | Source |
+| --- | --- | --- |
+| Row | One row per HCP and calendar month; the output starts in 2022-01 | S1, S9 (`SVC_DT_M >= '2022-01-01'` at the end of NB01–NB06) |
+| Look-back windows | Last 1, 3, 6 and 12 months | S9 (`00_step23_function`) |
+| Running totals | All claims since the first row of the input: 2021-01 for Rx and diagnosis, 2021-07 for lab | S9; input start dates: S3, my check |
+| HCPs with Rx claims (2023-01 to 2026-09) | 234,170 | S3 `Rx_01_new`, my check |
+| Treatment categories | From the Snowflake view `PHCDW.PHCDW_DSAA.CKD_PRODUCT_MAPPING_VW` | S9 |
+| Brands with own features | Invokana 100 mg, Invokana 300 mg, Farxiga, Jardiance, Spironolactone-MRA, Diuretic + MRA, DPP-IV, GLP-1 | S9, S15 |
+| Lab and diagnosis claims | Own 3.0 queries (`Lab_03`, `Lab_04`, `Dx_03`), separate from the 3.0 patient journey | S9 |
+
+### 3.2 The six notebooks and their features
+
+| Notebook | What it measured per HCP | 3.0 features | Example features | Source |
+| --- | --- | ---: | --- | --- |
+| NB01 Rx claims | Prescriptions by treatment category and brand, rejected claims, days supply, refill, payer, patient age and gender, patient treatments | 5,411 | `TOTAL_RX_CLAIMS_SGLT2_IN_LAST_3_MONTH`, `PCT_TOTAL_RX_CLAIMS_ACE_OR_ARB_AGE_GROUP_20_30_IN_LAST_6_MONTH`, `RATIO_RX_CLAIMS_ACE_OR_ARB_IN_PRIOR_3_LAST_3_MONTH` | S1 |
+| NB02 Lab claims | eGFR and UACR tests by stage | 116 | `TOTAL_LAB_CLAIMS_GFR_IN_LAST_3_MONTH`, `TOTAL_LAB_CLAIMS_A2_IN_LAST_3_MONTH`, `TOTAL_LAB_CLAIMS_CHRONIC_KIDNEY_DISEASE_STAGE_1_IN_LAST_3_MONTH` | S1 |
+| NB03 Diagnosis claims | CKD diagnosis claims by stage, and claims of patients who moved to a new stage | 127 | `TOTAL_DX_CLAIMS_STAGE_UNSPECIFIED_IN_LAST_3_MONTH`, `TOTAL_DX_CLAIMS_WITH_PATIENT_NO_NEW_STAGE_IN_LAST_6_MONTH` | S1 |
+| NB04 Combined claims | Prescriptions split by the patient's kidney stage that month, a same-day lab test, and stage × treatment | 3,691 | `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_GFR_STAGE_4_AND_UACR_STAGE_UNKNOWN`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_1_WITH_GLP_1_IN_LAST_6_MONTH` | S1 |
+| NB05 New patient starts | Patients who started a drug class or brand with the HCP | 188 | `TOTAL_PATIENTS_START_SGLT2_IN_LAST_6_MONTH`, `RUNNING_TOTAL_PATIENTS_START_SGLT2` | S1 |
+| NB06 Eligible patients | Kerendia-eligible patients by stage; dialysis | 84 | `TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_3_IN_LAST_3_MONTH`, `RUNNING_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_4`, `DIALYSIS_FLAG` | S1 |
+| **Total** | | **9,617** | | |
+
+Counts are feature columns without ID and date columns.
+
+### 3.3 What the 3.0 model uses
+
+The model uses 752 features [S7]. 277 come from these six notebooks [S8]; the other 475 come from other sources (promotion, HCP profile, Kerendia sales and others).
+
+| Notebook | Model features | Example model features [S8] |
+| --- | ---: | --- |
+| NB01 Rx claims | 172 | `PCT_TOTAL_RX_CLAIMS_ACE_OR_ARB_AGE_GROUP_10_20_IN_LAST_12_MONTH`, `RUNNING_TOTAL_RX_CLAIMS_ACE_OR_ARB_MGD_MEDICAID`, `PCT_TOTAL_RX_CLAIMS_MEDICARE_IN_LAST_12_MONTH` |
+| NB02 Lab claims | 0 | – |
+| NB03 Diagnosis claims | 3 | `TOTAL_DX_CLAIMS_STAGE_UNSPECIFIED_IN_LAST_3_MONTH`, `TOTAL_DX_CLAIMS_WITH_PATIENT_NO_NEW_STAGE_IN_LAST_12_MONTH` |
+| NB04 Combined claims | 89 | `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_1_WITH_GLP_1_IN_LAST_12_MONTH`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT` |
+| NB05 New patient starts | 14 | `RUNNING_TOTAL_PATIENTS_START_SGLT2`, `TOTAL_PATIENTS_START_DIURETIC_NON_MRA_IN_LAST_3_MONTH` |
+| NB06 Eligible patients | 1 | `RUNNING_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_4` |
+
+2 features are in both NB01 and NB04 (total Rx claims), so the rows add up to 279 for 277 features. By window: running totals 71, 12 months 68, 6 months 54, 3 months 48, 1 month 35, ratio 1 [S8].
+
+### 3.4 What 3.0 was missing
+
+| Gap | Size | Why it happened | Source |
+| --- | --- | --- | --- |
+| Kerendia not counted | 0 claims in the 3.0 Rx input; 3.9M in 3.1 (2023-01 to 2026-09) | Kerendia was not in the 3.0 product rules | S3, S4, my check |
+| Newer GLP-1 drugs and generic dapagliflozin not counted | Mounjaro 124.1M, Zepbound 29.0M, Wegovy 25.8M, generic dapagliflozin 16.2M claims in 3.1 | Not in the Snowflake view (basket notes) | S4, S6 |
+| Few UACR tests in NB04 | `Lab_04`: 12,247 UACR tests from 9.8K patients since 2023; the 3.1 pull: 32.9M tests from 16.1M patients | The `Lab_04` query removes the spaces from the unit and then compares it with a list that writes the UACR unit with a space (`'MG/G {CREAT}'`), so those tests never match. `Lab_03` reads the raw unit column and finds 16.6M UACR tests | S9 ("File Lab_04"), S3, S4, my check |
+| About half of the lab tests missing in NB02 | `Lab_03`: 108.8M tests from 122.9K HCPs since 2023; 3.1: 207.5M from 199.9K | `Lab_03` is an older, separate query: older provider table for the specialty filter, raw test names and units. 3.1 finds tests by LOINC code from the lab basket (201.1M of the 207.5M) | S11 (NB02 plan, F1), S4, my check |
+| Stage 3 sub-codes and stage 5 missed in NB03 | Stage 3: 12.6K claims in 3.0 vs 65.4M in 3.1; stage 5: 0 vs 115.9M (2023-01 to 2026-09) | 3.0 read the stage from the diagnosis text, which does not match codes such as N18.30–N18.32 or N18.5 / N18.6 | S3 `Dx_03`, S4 `dx_step4_pull`, my check; S11 (NB03 summary) |
+| Only a type 2 diabetes flag; no heart failure | – | Not built in 3.0. Kerendia's indications are CKD with type 2 diabetes, and heart failure with LVEF of 40% or more | S10 |
+| No potassium or HbA1c signal | – | Not built in 3.0. The Kerendia label advises against starting above 5.0 mmol/L potassium | S10 |
+
+---
+
+## 4. What changed from 3.0 to 3.1, and why
+
+### 4.1 Time design
+
+| Aspect | 3.0 | 3.1 | Why | Source |
 | --- | --- | --- | --- | --- |
-| **NB01 Rx** | `Rx_01_new` | HCP Rx pull (PJ03 Step 4d) + patient treatments (PJ06) | Cohort grain; new `..._KERENDIA_...` category columns; GLP-1 counted under `Other- glucose mgmt` as in 3.0 (option C) | Mapping 2026_11_05: 13 GLP-1 products (Ozempic, Mounjaro, Trulicity, Rybelsus, Victoza, liraglutide, Bydureon BCise, Byetta, exenatide, Wegovy, Wegovy HD, Zepbound, Saxenda), Kerendia (own category), generic dapagliflozin (+ metformin) as SGLT2 |
-| **NB02 Lab** | `Lab_03` (test-name match) | Lab pull (PJ01 Step 4) | eGFR / UACR features: same columns, many more tests counted. New: 48 lab flag columns | eGFR LOINC 98979-8, 98980-6 (race-free 2021), 62238-1, 33914-3, 48642-3, 88294-4, 50210-4, 88293-6; UACR LOINC 9318-7, 14958-3; 3.0 name rules kept as backup. 2026_11_06: potassium 2823-3 and HbA1c 4548-4 (value only, no stage) |
-| **NB03 Dx** | `Dx_03` (stage from description text) | Dx pull (PJ02 Step 4) + new CKD stage table (PJ06) | Stage from the code: stage 3 and stage 5 counted (were missing) | Stage 3: N18.30, N18.31 (3a), N18.32 (3b); stage 5: N18.5, N18.6 (ESRD), I12.0, I13.11, I13.2 |
-| **NB04 Combined** | `Rx_01_new`, `Lab_04`, 3.0 patient tables | Rx pull, lab pull (eGFR / UACR only), GFR / Dx and UACR stage tables (PJ06) | Patients' stage now includes Dx stage 3 / 5 and the 3.1 lab stages; GLP-1 option C; 9 selected family C features no longer produced (X5) | Same codes as NB01 (Rx), NB02 (eGFR / UACR) and NB03 (Dx stage), through the patient tables |
-| **NB05 New starts** | `kerendia_nba_3_0_Rx_05` | Same (kept, X7) | Cohort grain only | None |
-| **NB06 Eligible** | `Rx_01_new`, 3.0 eligibility table, 3.0 `df_px` | Rx pull, eligibility table (PJ06), dialysis table (PJ05), diabetes / HF flags (PJ04) | Eligibility from the 3.1 journey (stage 3 / 5, dialysis dates). New: 148 diabetes / HF type columns | Dialysis basket (30 codes, J0606 added 2026_11_05; ESRD monthly codes); diabetes and HF codes of PJ04 (`Kerendia_Dx_Final` + `Kerendia_Dx_Flag_Additions`, 116 codes) |
+| Row | HCP × calendar month | HCP × cohort: 28 cohorts c1–c28 (May 2024 to August 2026), each ending on the last day of its month | The 3.1 model is trained, validated and back-tested on these cohorts | S2, cohort file `cohorts/claims/cohorts.parquet` |
+| Look-back windows | 1, 3, 6, 12 months | Same | – | S2 |
+| Running totals | From 2021-01 (Rx, diagnosis) or 2021-07 (lab) | From 2023-01-01 | 3.1 data start in the settings; open point 10 | S15 |
+| Plain monthly columns | Built next to "last 1 month" with the same value | Not built | Exact repeats (section 6) | S1, S2 |
 
-### 1a.3 Which patient-journey output each HCP notebook reads
+### 4.2 HCP universe
 
-| Patient-journey output (run folder) | Written by | Read by | Used for |
+| | 3.0 | 3.1 | Source |
+| --- | ---: | ---: | --- |
+| HCPs with Rx claims, 2023-01 to 2026-09 | 234,170 | 294,612 | S3 `Rx_01_new`, S4 `rx_hcp_pull`, my check |
+| HCPs in both | 220,892 | 220,892 | same |
+| HCPs only in this version | 13,278 | 73,720 | same |
+| Rx claims per HCP, 2023-01 to 2026-09 | HCPs in both: 13,434 (3.1) / HCPs only in 3.0: 4,523 | HCPs only in 3.1: 4,135 | same |
+
+Why the universe changed: 3.1 uses a new HCP universe that is 26% larger and keeps 94.4% of the 3.0 universe (220,017 of 232,965) [S13]. The added HCPs write about a third of the prescriptions of an HCP in both versions, so per-HCP averages go down (section 7).
+
+### 4.3 Products
+
+**Where the product rules come from**
+
+| Area | 3.0 | 3.1 | Source |
 | --- | --- | --- | --- |
-| `_stage/rx_hcp_pull` | PJ03 Step 4d | NB01, NB04, NB06 | Rx claims per HCP (base of every Rx feature) |
-| `_stage/lab_step4_pull` | PJ01 Step 4 | NB02, NB04 | NB02: eGFR / UACR features + potassium / HbA1c flags. NB04: eGFR / UACR only |
-| `_stage/dx_step4_pull` | PJ02 Step 4 | NB03 | Dx claims by CKD stage |
-| `kerendia_nba_3_1_pat_new_and_total_treatments_validation` | PJ06 | NB01 | Group 2.8 (active / new treatments of the patient) |
-| `kerendia_nba_3_1_pat_new_ckd_stage_validation` | PJ06 | NB03 | Claims of patients new to a stage |
-| `kerendia_nba_3_1_pat_gfr_dx_stage_validation` | PJ06 | NB04 | Families A and C (GFR / Dx stage) |
-| `kerendia_nba_3_1_pat_uacr_stage_validation` | PJ06 | NB04 | Family C (UACR stage x treatment) |
-| `kerendia_nba_3_1_pat_sglt2_filter_m_validation` | PJ06 | NB06, NB02 | `ELIGIBLE_PATIENT_FLAG`: NB06 eligible features; NB02 eligible lab flag counts (new) |
-| `kerendia_nba_3_1_px_validation` | PJ05 | NB06 | `DIALYSIS_FLAG` |
-| `kerendia_nba_3_1_dm_hf_flags_validation` | PJ04 | NB06 (new, 2026-11-06) | `DM_TYPE`, `HF_TYPE`, `HF_FIRST_DATE`: diabetes / HF type features |
-| `kerendia_nba_3_1_lab_flags_validation` | PJ01 (new, 2026-11-06) | None (check table) | Per patient-day potassium / HbA1c values and flags; NB02 builds its flags from the lab pull with the same rules (`LAB_FLAG_RULES`) |
-| `kerendia_nba_3_1_{lab,dx,rx}_journey_validation` | PJ01 / PJ02 / PJ03 | Not read by NB01–NB06 | Inputs of PJ06 |
+| Rx | Snowflake view for the category, brand rules in the 3.0 query | Rx basket: 367 products, 245 active | S9, S6 |
+| Diagnosis, lab, procedures | Code lists in the 3.0 queries | Dx, lab and Px baskets, plus a list of 38 type 2 diabetes, 68 type 1 diabetes and 10 heart-failure codes | S9, S6 |
 
-### 1a.4 New 3.1 features (added 2026-11-06, in the full runs since then)
+**What is different in the 3.1 baskets [S6]**
 
-**NB02 lab flags** (user decision 2026-11-06: potassium and HbA1c lab tests only; no Dx E87.5, no potassium binders, no Px HbA1c codes):
-
-| Flag | Rule | Why |
+| Change | Products | Why |
 | --- | --- | --- |
-| `POTASSIUM_GT_5` | Potassium (LOINC 2823-3) > 5.0 mmol/L | Kerendia must not be started above 5.0 mmol/L (US label) |
-| `HBA1C_GE_9` | HbA1c (LOINC 4548-4) >= 9% | Uncontrolled diabetes |
-
-Per flag and window (1, 3, 6, 12 months): `TOTAL_PATIENTS_<TEST>_TESTED`, `TOTAL_PATIENTS_<FLAG>`, `PCT_PATIENTS_<FLAG>` (base = patients tested for that test) and the same for eligible patients (`TOTAL_ELIGIBLE_PATIENTS_...`, `PCT_ELIGIBLE_PATIENTS_...`). Counted per patient-month, as NB06. Data check (Quest, 2023+, primary-care NPIs): potassium 328.9M rows / 29.1M patients / 455.7K NPIs, 23.4M results > 5.0; HbA1c 286.6M rows / 20.0M patients / 357.5K NPIs, 15.6M results >= 9%.
-
-**NB06 diabetes / HF type** (`DM_TYPE` and `HF_TYPE` from PJ04): per window (1, 3, 6, 12 months), all Rx patients (`TOTAL_RX_PATIENTS_...`) and eligible patients (`TOTAL_ELIGIBLE_PATIENTS_...`) by `DM_TYPE` (T2D, T1D, OTHER, NONE), with HF that month (`_HF`) and by `HF_TYPE` (HFPEF_PROXY, HFREF_PROXY, MIXED, UNKNOWN), plus `PCT_` shares. HF in a month = month on or after the month of `HF_FIRST_DATE` (same rule as the monthly `HF_FLAG` of PJ06). Why: Kerendia's indications are CKD with T2D and HF with LVEF >= 40% (HFpEF proxy); the patient journey reports these flags but does not use them for eligibility yet (PJ readiness plan C3, C9).
-
-**Existing features unchanged:** NB02 and NB04 keep only eGFR / UACR (`LAB_STAGED_TESTS`) for every existing feature; PJ01 keeps the stage table to eGFR / UACR, so PJ06 eligibility does not change. Tested on toy data (known values, all pass); the real check is the before-vs-after comparison of the `full_2026_11_06` run with `full_2026_11_05`.
-
----
-
-## 2. What we learned (the evidence behind this plan)
-
-| Topic | Finding | Consequence for NBA 3.1 | Source |
-| --- | --- | --- | --- |
-| Cohort design (all) | 3.0 built calendar-month rows, hardcoded the start date and filled missing months with a cross join | Cohort windows ending at each cutoff, parameters in `00_cohort_config`, fixed pivot values, one fast all-cohorts engine per notebook | Section 4 |
-| NB01 Rx input | The 3.1 HCP Rx pull has the same claims as `Rx_01_new` for the test HCPs (50,739 of 50,739, all 8 feature columns equal) plus 2 newer claims | Switch to the pull (C4); journey rules and HCP features use one basket | NB01 plan 0b |
-| NB01 patient table | NB01 read an older root copy of the patient table (F1); production would have joined a calendar-month table on offset-7 months (F4) | Patient tables through `get_patient_table_path()` from the run folder (C1, C2) | NB01 plan 3 |
-| NB02 lab input | `Lab_03`: 108.8M rows, 122.9K NPIs since 2023; 3.1 lab pull: 207.5M rows, 199.9K NPIs; tests in both have the same stage | Switch to the pull (C1); test HCPs 240 → 498 test-days | NB02 plan 3 |
-| NB03 Dx input | `Dx_03` staged from the description text and misses the stage 3 sub-codes and every stage 5 code: stage 3 12.6K rows vs 65.3M, stage 5 0 vs 115.8M (all US since 2023) | Switch to the 3.1 Dx pull; `STAGE_5` columns added (111 → 120 columns) | NB03 plan 2 |
-| NB04 lab input | `Lab_04` has UACR tests for 12.9K patients, the 3.1 lab pull for 16.1M | Switch to the pull (C2) | NB04 plan F3 |
-| NB04 patient tables | The old copy had 13,665 stage-0 ("unknown") patient-months for the test HCPs' patients; the run-folder table has none | Run folder (C3); family A always has the full stage grid (C6) | NB04 plan F1, F5 |
-| NB04 family C | The 3.1 patient treatment table drops `Other- glucose mgmt` (patient-journey rule), so 9 selected features have no column | Keep the patient-journey rule; drop the 9 features from the model list (X5) | NB04 plan F6, D2 |
-| NB05 new starts | A first start needs the claims of every HCP since 2021; the 3.1 pull starts in 2023 and covers the universe only | Keep `kerendia_nba_3_0_Rx_05` (X7); output identical to before | NB05 plan F1–F3 |
-| NB06 windows | The 3.0 windows are the mean of N+1 monthly counts; the refactor sums N months (as NB01–NB05) | Keep the sum (X8); parity difference accepted (X9) | NB06 plan F7 |
-| HCP universe | 1508230566 is in the 3.0 universe but not in the 3.1 universe | 9 test HCPs in the 3.1 outputs | Decision log X1 |
-| Full run memory | The NB01 check cell (fast engine vs step-by-step) loaded 2 full cohorts x about 4,400 columns into the notebook's memory | In full mode the check runs on the trace HCPs only (same fix in NB04) | Section 11 |
-
----
-
-## 3. The six notebooks and what they do
-
-| Notebook | Folder | What it builds | 3.1 inputs | Outputs (`notebook_output/`) | Columns | Selected features | Plan file |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| **NB01 Rx** | `01 Rx Claims Files/` | Rx claims by treatment category, brand, rejection, duration, refill, payer, patient age / gender, patient treatment; AVG family | HCP Rx pull (`_stage/rx_hcp_pull`), `pat_new_and_total_treatments` | `claim_rx_monthly_cohort`, `provider_claim_rx_monthly_cohort` | 4,677 (4,668 features + 9 metadata; was 4,441 in the 2026-11-04 run) | 170 + 2 shared with NB04 | `NBA_3_1_Rx_Claims_Features_Plan.md` |
-| **NB02 Lab** | `02 Lab Claims Files/` | Lab tests by test type (GFR, UACR) and stage | Lab pull (`_stage/lab_step4_pull`), eligibility table (lab flags, new) | `claim_lab_monthly_cohort`, `provider_claim_lab_monthly_cohort` | 152 (143 features + 9 metadata; checked in `full_2026_11_11`) | 0 | `NBA_3_1_Lab_Claims_Features_Plan.md` |
-| **NB03 Dx** | `03 Diagnosis Claims Files/` | Dx claims by CKD stage; claims of patients new to a stage | Dx pull (`_stage/dx_step4_pull`), `pat_new_ckd_stage` | `claim_diagnosis_monthly_cohort`, `provider_claim_diagnosis_monthly_cohort` | 122 (113 features + 9 metadata) | 3 | `NBA_3_1_Dx_Claims_Features_Plan.md` |
-| **NB04 Combined** | `04 Monthly Cohort Claims Files/` | Rx claims by the patient's GFR / UACR stage (A), same-day lab test (B), stage x treatment (C) | HCP Rx pull, lab pull, `pat_gfr_dx_stage`, `pat_uacr_stage` | `claims_monthly_cohort`, `final_claims_monthly_cohort` | 3,074 (3,065 features + 9 metadata; was 2,892 in the 2026-11-04 run) | 87 + 2 shared with NB01 | `NBA_3_1_Claims_Features_Plan.md` |
-| **NB05 New starts** | `05 Rx NPS Claims Files/` | Patients visiting and patients starting a drug class or brand | `kerendia_nba_3_0_Rx_05` (3.0, kept) | `claim_rx_nps_monthly_cohort` (`PROVIDER_ID` level) | 163 (154 features + 9 metadata) | 14 | `NBA_3_1_Rx_NPS_Features_Plan.md` |
-| **NB06 Eligible** | `06 Eligible HCP Claims Files/` | Eligible patients (patient journey `ELIGIBLE_PATIENT_FLAG`) by GFR / Dx and UACR stage; dialysis flag | HCP Rx pull (`Rx_01_new` before 2023 for the column list), `sglt2_filter_m`, `px` | `claim_eligible_patient_cohort`, `provider_claim_eligible_patient_cohort` | 226 (217 features + 9 metadata, incl. 148 diabetes / HF columns) | 1 | `NBA_3_1_Eligible_HCP_Features_Plan.md` |
-
-**Run order:** the six notebooks do not read each other, so they run in parallel, after a patient-journey run (PJ01–PJ06, with PJ03 Step 4d) has written its run folder.
-
-| Job | ID | Tasks |
-| --- | --- | --- |
-| NBA 3.1 Patient Journey + HCP Features (PJ01-PJ06 -> NB01-NB06) | 1010893614518587 | PJ01–PJ06, then NB01–NB06 after `pj06_combine`, then NB07 (cohort-set check). Used for the 3.1 full runs since 2026-11-07 |
-| NBA 3.1 HCP Level Features (NB01-NB06) | 36449327509782 | NB01–NB06 in parallel. Still points at the 3.0 volume; not used since 2026-11-05 (update or retire, O15) |
-
-Both use the notebooks in `kerendia_nba_3_1_develop_pg` and the parameters `VALIDATION_MODE`, `RUN_OUTPUT_DIR`, `HCP_UNIVERSE_PATH`, `NPI_BHID_MAPPING_PATH`, `RUN_CHECKS`. Defaults = validation run.
-
----
-
-## 4. Common design (all six notebooks)
-
-### 4.1 What changed from 3.0 to 3.1
-
-| Aspect | NBA 3.0 (original) | NBA 3.1 (cohort-based) |
-| --- | --- | --- |
-| Time grain | Calendar month (`date_trunc('MM', SVC_DT)` to `SVC_DT_M`) | Daily `SVC_DT` kept; date-range windows ending at each cohort cutoff |
-| Output grain | 1 row per (NPI, SVC_DT_M) | 1 row per (NPI, COHORT_ID), partitioned by `COHORT_ID` |
-| Lookback windows | `Window.rowsBetween(-i+1, 0)` over monthly rows | `SVC_DT > start AND SVC_DT <= cutoff`, windows 1, 3, 6, 12 months |
-| Fill missing months | `step2_fill_missing` (cross join NPI x months) | Not needed. NPI universe = NPIs in the widest window plus NPIs with older history (keeps `RUNNING_` values) |
-| AVG features | `step3_lag_avg` (window one month wider) | Two-stage: monthly aggregate, zero-fill, fixed denominator. `AVG_EXTRA_MONTH = True` reproduces 3.0 |
-| `RUNNING_` features | Unbounded preceding sum | Kept. All claims from `DATA_START_DATE` up to the cohort cutoff |
-| Start-date filter | Hardcoded `SVC_DT_M >= '2022-01-01'` | Cohort config plus team rule `DATA_START_DATE = 2023-01-01` |
-| Pivot columns | Values found in the run's data | Fixed pivot values, so every cohort has the same columns (0 when no claims) |
-| Inputs | 3.0 queries in `00_Write_Input_Files` (`Rx_01_new`, `Lab_03`, `Lab_04`, `Dx_03`) | NPI-level pulls of the 3.1 patient journey (switch per source) |
-| Parameters | Hardcoded | `00_cohort_config` and job parameters |
-
-**How the offset works:** `assign_cohort_month(SVC_DT, offset)`: offset 0 = calendar month; offset 7 = cohort boundaries on the 7th, the 7th starts the new cohort. Cutoff of a cohort = month end (offset 0) or month end + (offset - 1) days (for example the Feb cohort at offset 7 runs up to Mar 6). `COHORT_ID` = `YYYY-MM_offset{N}` (for example `2025-02_offset7`). Since 2026-11-07 the offset comes from the cohort file: the claims cohort file uses offset 0 (calendar months, X13).
-
-### 4.2 Shared configuration (`00_cohort_config`)
-
-| Parameter / helper | Value / role |
-| --- | --- |
-| `OFFSET_DAY` | From the cohort file (`offset_days`): 0 for the claims cohort file (was 7) |
-| `DATA_START_DATE` | 2023-01-01 (no data before this date, `RUNNING_` included) |
-| `COHORT_ORIGIN` / `COHORT_LAST` | From the claims cohort file (`cohorts/claims/cohorts.parquet`): c1 = 2024-05 .. c28 = 2026-08, 28 cohorts (was 20 cohorts 2025-01 .. 2026-08 at offset 7) |
-| `EXPECTED_COHORTS` | Job parameter, default = number of cohorts in the cohort file (28) |
-| `LOOKBACK_WINDOWS` | [1, 3, 6, 12] |
-| `AVG_EXTRA_MONTH` | True (replicates 3.0 `step3_lag_avg`) |
-| `VALIDATION_MODE`, `RUN_OUTPUT_DIR`, `HCP_UNIVERSE_PATH`, `NPI_BHID_MAPPING_PATH`, `RUN_CHECKS` | Job parameters. `HCP_UNIVERSE_PATH` falls back to the 3.0 universe when empty |
-| `HCP_RX_SOURCE`, `HCP_RX31_PULL_TABLE`, `HCP_RX_TABLE` | `"3.1"` default = HCP Rx pull of the run folder; `"3.0"` = `Rx_01_new` |
-| `HCP_LAB_SOURCE`, `HCP_LAB31_PULL_TABLE`, `HCP_LAB_TABLE`, `HCP_CLAIMS_LAB_TABLE` | `"3.1"` default = `lab_step4_pull` of this run's folder (full run) or of `HCP_LATEST_FULL_RUN` (validation run); `"3.0"` = `Lab_03` (NB02) / `Lab_04` (NB04) |
-| `HCP_DX_SOURCE`, `HCP_DX31_PULL_TABLE`, `HCP_DX_TABLE` | `"3.1"` default = `dx_step4_pull` of this run's folder (full run) or of `HCP_LATEST_FULL_RUN` (validation run); `"3.0"` = `Dx_03` |
-| `HCP_LATEST_FULL_RUN` | Full run whose inputs a validation run reads. Default still `full_2026_11_05`; change to `full_2026_11_11` once that run passes |
-| `get_patient_table_path()` | Patient tables from the patient-journey run folder (`RUN_OUTPUT_DIR`) when present |
-| `HCP_SOURCE_TABLES`, `get_hcp_cohort_months()` | Common end date of the inputs, so every HCP table has the same `COHORT_ID`s |
-| `HCP_TRACE_NPIS` | Fixed trace HCP per notebook (rx 1386651560, lab 1528629052, dx 1841364841, claims 1386651560) |
-| `HCP_BRANDS`, `HCP_NPI_MAPPING_TABLE` | 8 brands; `kerendia_nba_3_0_npi_bhid_mapping` |
-| 3.0 reference snapshot | `ops_pipeline_bkp/` (`HCP_REF_*`), used only for the offset-0 parity |
-| `write_hcp_output` / `read_hcp_output` | Write: Delta partitioned by `COHORT_SET` (7 groups) with optimizeWrite, whole table replaced; refuses to write over an older Parquet folder. Read: Delta, or Parquet for older runs (`full_2026_11_07`) (X14) |
-
-### 4.3 Common notebook structure
-
-1. `%run 00_connection`, then `%run "../../00_cohort_config"`, then a config confirmation
-2. Load inputs; apply the NPI filter (validation) and `DATA_START_DATE`
-3. Cohort list from `get_hcp_cohort_months()` and `COHORT_BOUNDS`
-4. Step-by-step feature functions for one cohort with a preview
-5. Fast all-cohorts engine and a check that it equals the step-by-step version (full mode: trace HCPs only)
-6. One write of all cohorts with `write_hcp_output`: Delta partitioned by `COHORT_SET`, optimizeWrite, the whole table is replaced (was partitioned by `COHORT_ID` with `replaceWhere` until 2026-11-06)
-7. Completeness checks: expected vs written cohorts, duplicate (NPI, COHORT_ID), null cells
-8. NPI to `PROVIDER_ID` mapping and provider-level table
-9. Validation: offset-0 parity (validation mode only) and HCP trace
-
-Output metadata columns: `COHORT_ID`, `COHORT_MONTH`, `OFFSET_DAYS`, `CUTOFF_DATE`, `SVC_DT_M` (first day of the cohort month), `PULL_DT`.
-
-### 4.4 Validation approach
-
-| Check | What it does |
-| --- | --- |
-| Fast engine = step-by-step | Every cell of the first and last cohort, plus column order and types |
-| Offset-0 parity | Rebuild every month at offset 0 for the test NPIs from the 3.0 reference inputs and compare with the 3.0 output (tests the feature logic only) |
-| HCP trace | Recount raw claims of the trace HCP per cohort and window and compare with the written features |
-| Independent recount | Recount from the input outside the engine (pandas or Spark) |
-| Completeness | Cohorts expected vs written, duplicates, null cells, provider-level nulls and duplicates |
-| Before vs after | Previous output vs new output; every difference explained by the input |
-
-Test NPIs (validation mode): 1396374062, 1508230566, 1801062104, 1386651560, 1528629052, 1659887388, 1215675616, 1467950774, 1235697863, 1841364841 (1508230566 is not in the 3.1 universe).
-
----
-
-## 5. NB01 Rx claims features
-
-**Notebook:** `01 Rx Claims Files/01_claim_rx_monthly_cohort` (3.0 source `01_claim_rx_monthly`)  
-**Inputs:** HCP Rx pull of the 3.1 Rx journey (`<run folder>/_stage/rx_hcp_pull`, PJ03 Step 4d; was `Rx_01_new`), patient table `pat_new_and_total_treatments` (run folder)  
-**Outputs:** `claim_rx_monthly_cohort` (NPI x `COHORT_ID`), `provider_claim_rx_monthly_cohort` (`PROVIDER_ID` x `COHORT_ID`)  
-**Full plan:** `01 Rx Claims Files/NBA_3_1_Rx_Claims_Features_Plan.md`
-
-### 5.1 What the notebook builds
-
-| Group | Pivot | Prefix |
-| --- | --- | --- |
-| Total | none (denominator for `PCT_`) | `TOTAL_RX_CLAIMS` |
-| 2.1 Treatment category | `TREATMENT_CATEGORY` | `TOTAL_RX_CLAIMS_` |
-| 2.2 Brand | `Category` in the 8 `HCP_BRANDS` | `TOTAL_RX_CLAIMS_` |
-| 2.3 Rejection | category and brand, `REJECTION_FLAG = 1` | `TOTAL_REJECTED_RX_CLAIMS_` |
-| 2.4 Duration | category / brand x days supply bin | `TOTAL_RX_CLAIMS_` |
-| 2.5 Refill | brand x `REFILL_FLAG`, `REFILL_FLAG` alone | `TOTAL_RX_CLAIMS_` |
-| 2.6 Payer | category / brand / alone x `METHOD_OF_PAYMENT` | `TOTAL_RX_CLAIMS_` |
-| 2.7 Patient attributes | category / brand / alone x age bin and gender | `TOTAL_RX_CLAIMS_` |
-| 2.8 Patient treatment | number of active / new treatments of the patient that month (the only group that uses the patient journey, 72 columns) | `TOTAL_RX_CLAIMS_PATIENT_WITH_` |
-| Derived | `SGLT2_WO_INVOKANA_300MG`, `PCT_`, `_IN_LAST_3_6_MONTH`, `RATIO_..._IN_PRIOR_3_LAST_3_MONTH`, `RUNNING_` | |
-| AVG family | `AVG_PATIENT_AGE`, `TOTAL_PATIENT_COUNT`, `AVG_TREATMENT_PER_PATIENT`, `TOTAL_TREATMENT_COUNT` | |
-
-### 5.2 What changed upstream and reaches NB01
-
-| Patient journey change (3.1, Phase A) | Reaches NB01? |
-| --- | --- |
-| Rx journey drug list and categories from the basket (identical to 3.0) | No change in categories |
-| Rx journey 97-day look-back | Yes, through 2.8: more active and fewer new treatments in early 2023 (mainly `RUNNING_`) |
-| Combine (PJ06): cohort months at offset 7 | Already handled (join at the cohort's offset) |
-| Lab / Dx / Px / flags / eligibility | No |
-| Run folders (`RUN_OUTPUT_DIR`) | Yes: NB01 read an older root copy (F1), fixed by C1 |
-
-### 5.3 Findings
-
-| # | Finding |
-| --- | --- |
-| F1 | NB01 read an outdated root copy of the patient table (2026-10-26, 4,238 patients) instead of the run folder (2026-11-02, 4,431 patients) |
-| F2 | The month join is correct at offset 7 (98.7% of the test HCPs' claims find their patient row) |
-| F3 | Cohorts stay within the patient table (last cohort 2026-08, cutoff 2026-09-06) |
-| F4 | Production would have joined the 3.0 calendar-month patient table on offset-7 months |
-| F5 | NB01 keeps `Other- glucose mgmt` (GLP-1, DPP-IV, sulfonylureas), which the Rx journey drops; Kerendia, Mounjaro, Wegovy, Zepbound and generic dapagliflozin are missing in both (Phase B). **Resolved 2026-11-05:** added to the product mapping; Kerendia brand features in NB01 (X16) |
-| F6 | The Part 4 status cell was out of date |
-
-### 5.4 Changes
-
-| ID | Change |
-| --- | --- |
-| C1 | Patient table from the run folder through `get_patient_table_path()` |
-| C2 | Same rule in production: the job's `RUN_OUTPUT_DIR` decides |
-| C3 | Documentation (header, Part 4 status) |
-| C4 | Rx input = HCP Rx pull of the 3.1 Rx journey (new PJ03 Step 4d) |
-| C5 | Fixed pivot values also from the 3.0 `Rx_01_new` history, so the 3.0 column set is kept (144 combinations seen only before 2023) |
-| C6 (2026-11-04) | Memory fix for the full run: the fast-engine check and the final table preview use the trace HCPs only in full mode |
-
-**PJ03 Step 4d (HCP Rx pull)** uses the same tables, basket, dates, HCP universe and drop rules as the Rx journey, plus: rejection, refill, payer, birth year and gender columns (H1); the view's `Other- glucose mgmt` products with GLP-1 / DPP-IV labels (H2, user decision 2026-11-03); brand label `SPIRONOLACTONE-MRA` (H3); one row per 3.0 claim key (H4); empty days supply kept and no look-back (H5).
-
-### 5.5 Validation results (test HCPs, 2026-11-03)
-
-| Check | Result |
-| --- | --- |
-| Pull vs `Rx_01_new` (9 test HCPs) | 50,739 of 50,739 claims with all 8 feature columns equal; 2 newer claims in the pull |
-| Fast engine = step-by-step | PASS: 2 x 33,219 cells, 0 mismatches |
-| Write | 20 cohorts, 180 rows, 3,693 columns, 0 duplicates, 0 null cells |
-| HCP trace (1386651560) | 2,100 checks, 0 mismatches |
-| Own recount from the pull (GLP-1, DPP-IV, spironolactone, other glucose) | 2,880 checks, 0 mismatches |
-| Offset-0 parity vs 3.0 `claim_rx_monthly` | PASS: 700,150 cells, 0 mismatches (19 known-quirk cells of 3.0) |
-| Before (3.0 input) vs after (3.1 input) | 1,731 of 663,480 cells differ, all for NPI 1659887388 (the newer Ozempic claim) |
-
-### 5.6 Decisions
-
-| ID | Question | Decision |
-| --- | --- | --- |
-| D1 / D2 | Patient table in validation / full run | Run folder of the patient-journey run (`RUN_OUTPUT_DIR`) |
-| D3 | Align categories with the patient journey? | Keep GLP-1 / DPP-IV for NB01 (user, 2026-11-03); revisit with Rx journey Phase B |
-| D4 | Kerendia / new GLP-1 drugs | **Done 2026-11-05:** product mapping updated; Kerendia brand features in NB01 (+234, X16). 6 treatment categories outside the 3.1 brand list removed (−979, X17) |
-| D5 | Full run of the HCP Rx pull | Done 2026-11-03 (section 11) |
-| D6 | Remove the C5 dependency on `Rx_01_new` | Later: fixed column list once the feature list is final |
-
----
-
-## 6. NB02 Lab claims features
-
-**Notebook:** `02 Lab Claims Files/02_claim_lab_monthly_cohort` (3.0 source `02_claim_lab_monthly`)  
-**Input:** lab pull of the 3.1 lab journey (`full_2026_11_02/_stage/lab_step4_pull`, PJ01 Step 4; was `Lab_03`)  
-**Outputs:** `claim_lab_monthly_cohort`, `provider_claim_lab_monthly_cohort`  
-**Full plan:** `02 Lab Claims Files/NBA_3_1_Lab_Claims_Features_Plan.md`
-
-### 6.1 What the notebook builds
-
-Per window: lab tests by `TEST_TYPE` (GFR, UACR), by stage (5 eGFR stages + A1/A2/A3) and total; `RUNNING_`; `PCT_`. 102 columns.
-
-### 6.2 What reaches NB02 from the 3.1 lab journey
-
-Before, NB02 read no patient-journey data (`Lab_03` is a 3.0 query). The lab pull has the same grain as `Lab_03` (NPI x patient x day x test), so reading it brings every 3.1 lab rule at once: tests from the lab basket (LOINC + name backup), eGFR valid range 1–200, UACR 0–10,000, UACR components never staged, preferred eGFR equation on the same day, results such as `>90` / `75^` kept. Same 10 primary-care specialty codes (lab journey decision L1 open).
-
-### 6.3 Findings
-
-| # | Finding |
-| --- | --- |
-| F1 | `Lab_03` holds far fewer tests than the lab journey, already in 3.0: 108.8M rows / 122.9K NPIs vs 207.5M / 199.9K in the pull (since 2023) |
-| F2 | Tests counted in both have the same stage (UACR 367,633 of 367,633; eGFR 1,983,797 of 1,984,267, 2025-06 all US) |
-| F3 | The pull replaces `Lab_03` without other code changes (stages mapped to the `Lab_03` texts, same column names) |
-| F4 | Header cells described 3.0 |
-| F5 | Test HCPs: 240 → 498 test-days, 7 → 9 NPIs with lab features, same 102 columns |
-
-### 6.4 Changes
-
-| ID | Change |
-| --- | --- |
-| C1 | Read the 3.1 lab pull (`load_lab_input()`), stage numbers mapped to the `Lab_03` texts; stop if a row has no stage |
-| C2 | Config switch `HCP_LAB_SOURCE`, `HCP_LAB31_PULL_TABLE`, `HCP_LAB_TABLE`; common end date uses `HCP_LAB_TABLE` |
-| C3 | Documentation |
-
-### 6.5 Validation results (test HCPs, 2026-11-03)
-
-| Check | Result |
-| --- | --- |
-| Fast engine = step-by-step | PASS: 2 x 900 cells, 0 mismatches |
-| Write | 20 cohorts, 180 rows, 102 columns, 0 duplicates, 0 null cells |
-| HCP trace (1528629052) | 900 checks, 0 mismatches |
-| Independent recount from the pull | 3,060 checks, 0 mismatches |
-| Offset-0 parity vs 3.0 `claim_lab_monthly_ZS` | PASS: 0 mismatches |
-
-### 6.6 Decisions
-
-| ID | Question | Decision |
-| --- | --- | --- |
-| D1 | Lab input | 3.1 lab pull (user, 2026-11-03) |
-| D2 | Where the pull lives | Keep it in the run folder (X3); do not delete `full_2026_11_02/_stage/lab_step4_pull` |
-| D3 | Specialty filter and universe | 3.1 universe (X1); specialty filter follows lab journey L1 |
-| D4 | `Lab_04` (NB04) | Also switched to the pull (NB04 C2) |
-
----
-
-## 7. NB03 Diagnosis claims features
-
-**Notebook:** `03 Diagnosis Claims Files/03_claim_diagnosis_monthly_cohort` (3.0 source `03_claim_diagnosis_monthly`)  
-**Inputs:** Dx pull of the 3.1 Dx journey (`full_2026_11_02/_stage/dx_step4_pull`, PJ02 Step 4; was `Dx_03`), patient table `pat_new_ckd_stage` (run folder)  
-**Outputs:** `claim_diagnosis_monthly_cohort`, `provider_claim_diagnosis_monthly_cohort`  
-**Full plan:** `03 Diagnosis Claims Files/NBA_3_1_Dx_Claims_Features_Plan.md`
-
-### 7.1 What the notebook builds
-
-Dx claims by CKD stage (`TOTAL_DX_CLAIMS_STAGE_*`), claims of patients new to a stage that month (`TOTAL_DX_CLAIMS_WITH_PATIENT_*`), total, `RUNNING_`, `PCT_`.
-
-### 7.2 Findings
-
-| # | Finding |
-| --- | --- |
-| F1 | `Dx_03` stages from the description text and misses N18.30–N18.32, N18.5, N18.6, I12.0, I13.11, I13.2 and E10.21/22/29: stage 3 12.6K rows vs 65.3M in the pull, stage 5 0 vs 115.8M (all US since 2023); no `STAGE_5` columns |
-| F2 | The 3.1 Dx journey has an NPI-level pull with the 3.1 rules (31 CKD basket codes, stage by code) |
-| F3 | Test HCPs: 6,815 → 8,991 rows; stage 3 / 5 rows 0 / 0 → 1,604 / 2,429; no day goes down in stage |
-| F4 | Patient-stage table read from an old root copy (with it, the test HCPs had no claims of patients new to stage 3 or 5) |
-| F5 | Trace HCP 1508230566 has no rows in the pull (not in the 3.1 universe) |
-
-### 7.3 Changes
-
-| ID | Change |
-| --- | --- |
-| C1 | Dx input = 3.1 Dx pull (`load_dx_input()`), null-stage assert |
-| C2 | Config switch `HCP_DX_SOURCE`, `HCP_DX31_PULL_TABLE`, `HCP_DX_TABLE` |
-| C3 | Fixed stage pivot values `STAGE_1..STAGE_5, STAGE_UNSPECIFIED`: adds the `STAGE_5` columns |
-| C4 | Patient-stage table through `get_patient_table_path()` |
-| C5 | Trace HCP = 1841364841 |
-| C6 | Documentation |
-
-### 7.4 Validation results (test HCPs, 2026-11-03)
-
-| Check | Result |
-| --- | --- |
-| Fast engine = step-by-step | PASS: 2 x 1,062 cells, 0 mismatches |
-| Write | 20 cohorts, 180 rows, 120 columns (+9 `STAGE_5`), 0 duplicates, 0 null cells |
-| HCP trace (1841364841) | 1,300 checks, 0 mismatches |
-| Independent recount (pull + patient table) | 16,020 checks, 0 mismatches |
-| Offset-0 parity vs 3.0 `provider_claim_diagnosis_monthly` | PASS: 0 mismatching cells |
-| Before vs after, last cohort, 12 months | Dx claims 1,753 → 3,210; stage 3 / 5: 0 / – → 501 / 1,034 |
-
-The 3 selected NB03 features change: `STAGE_UNSPECIFIED_IN_LAST_3_MONTH` in 62 of 160 HCP-cohorts; `WITH_PATIENT_NO_NEW_STAGE_IN_LAST_6 / 12_MONTH` in 135 / 148 of 160.
-
-### 7.5 Decisions
-
-| ID | Question | Decision |
-| --- | --- | --- |
-| D1 | Dx input | 3.1 Dx pull (switch back with `HCP_DX_SOURCE = "3.0"`) |
-| D2 | Pull location | Keep in the run folder (as X3) |
-| D3 | HCP universe | 3.1 (X1) |
-| D4 | `STAGE_5` columns | Keep (X4); none of the selected features is a `STAGE_5` column |
-| D5 | T1D kidney codes E10.21/22/29 counted as Dx claims (stage unspecified) | **Open** |
-
----
-
-## 8. NB04 Combined claims features
-
-**Notebook:** `04 Monthly Cohort Claims Files/04_claims_monthly_cohort` (3.0 source `04_claims_monthly`)  
-**Inputs:** HCP Rx pull, lab pull, patient tables `pat_gfr_dx_stage` and `pat_uacr_stage` (run folder)  
-**Outputs:** `claims_monthly_cohort`, `final_claims_monthly_cohort`  
-**Full plan:** `04 Monthly Cohort Claims Files/NBA_3_1_Claims_Features_Plan.md`
-
-### 8.1 What the notebook builds
-
-Every Rx claim of an HCP, split by what was known about the patient's kidneys at that time:
-
-| Family | Question | Joined table | Prefix |
-| --- | --- | --- | --- |
-| A | GFR / UACR stage of the patient that month | `pat_gfr_dx_stage` | `TOTAL_RX_CLAIMS_PATIENT_WITH_GFR_...` |
-| B | Same-day GFR / UACR lab test and its stage | lab pull (was `Lab_04`) | `TOTAL_RX_CLAIMS_PATIENT_WITH_TEST_...` |
-| C | Treatments of the patient that month, by stage | `pat_uacr_stage` | `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_...` |
-
-### 8.2 Inputs before and after
-
-| Input | 3.0 / before | 3.1 / now |
-| --- | --- | --- |
-| Rx claims | `Rx_01_new` | HCP Rx pull (as NB01) |
-| Same-day lab tests (B) | `Lab_04` | 3.1 lab pull (`HCP_CLAIMS_LAB_TABLE`) |
-| Patient stage (A) and stage x treatment (C) | Root copies of 2026-10-26 | Run folder |
-| `Dx_03` | Read, never used | Not read |
-
-### 8.3 Findings
-
-| # | Finding |
-| --- | --- |
-| F1 | Patient tables read from an old copy with 13,665 stage-0 patient-months for the test HCPs' patients (run folder: none, 8,991 at stage 3) |
-| F2 | Rx input was 3.0 `Rx_01_new` (same claims as the pull) |
-| F3 | `Lab_04` has UACR tests for 12.9K patients, the pull for 16.1M; tests in both have the same stage |
-| F4 | The pull starts at `DATA_START_DATE`; the column list needs the older history |
-| F5 | 27 family-A columns (`GFR_STAGE_UNKNOWN_AND_UACR_STAGE_*`) only came from the stage-0 months |
-| F6 | Family C has no DPP-IV / other-glucose columns (patient-journey rule): 9 of the 89 selected NB04 features; 7 `..._WITH_GLP_1` features absent for the test HCPs only |
-
-### 8.4 Changes
-
-| ID | Change |
-| --- | --- |
-| C1 | Rx input = `HCP_RX_TABLE` |
-| C2 | Lab input = 3.1 lab pull, stages mapped to the `Lab_04` texts |
-| C3 | Patient tables through `get_patient_table_path()` |
-| C4 | 3.0 rows before `DATA_START_DATE` used for the column list only |
-| C5 | `Dx_03` not read |
-| C6 | Family A always has the full stage grid (F5 columns back, as 0) |
-| C7 | `%run` path and documentation |
-| C8 (2026-11-04) | Memory fix for the full run: the fast-engine check uses the trace HCPs only in full mode |
-
-### 8.5 Validation results (test HCPs, 2026-11-03)
-
-| Check | Result |
-| --- | --- |
-| Fast engine = step-by-step | PASS: 2 x 16,047 cells, 0 mismatches |
-| Write | 20 cohorts, 180 rows, 1,785 columns, 0 duplicates, 0 null cells |
-| HCP trace (1386651560) | 19,800 checks, 0 mismatches |
-| Own recount (last cohort, 12 months) | Total, family A and family B: 0 mismatches |
-| Offset-0 parity vs 3.0 `final_claims_monthly` | PASS: 0 mismatches |
-| Before vs now | Family A claims with a known GFR stage 770 → 2,502 (stage 3 / 5: 37 / 7 → 1,765 / 216); columns 1,560 → 1,785 |
-
-### 8.6 Decisions
-
-| ID | Question | Decision |
-| --- | --- | --- |
-| D1 | 3.1 Rx and lab pulls | Applied (switch back with `HCP_RX_SOURCE` / `HCP_LAB_SOURCE = "3.0"`) |
-| D2 | Family C without DPP-IV / other glucose | Keep the patient-journey rule; drop the 9 features from the model list (X5) |
-| D3 | HCP universe | 3.1 (X1) |
-| D4 | Lab pull location | Run folder (X3) |
-| X6 | 7 `..._WITH_GLP_1` features | No change; **check in the full output** |
-
----
-
-## 9. NB05 New patient starts features
-
-**Notebook:** `05 Rx NPS Claims Files/05_claim_rx_nps_monthly_cohort` (3.0 source `05_claim_rx_nps_monthly`)  
-**Input:** `kerendia_nba_3_0_Rx_05` (3.0, kept)  
-**Output:** `claim_rx_nps_monthly_cohort` (`PROVIDER_ID` x `COHORT_ID`)  
-**Full plan:** `05 Rx NPS Claims Files/NBA_3_1_Rx_NPS_Features_Plan.md`
-
-### 9.1 What the notebook builds
-
-Per HCP: patients visiting (`TOTAL_PATIENTS_VISIT`) and patients who started a drug class or brand with that HCP (`TOTAL_PATIENTS_START_*`, `TOTAL_NEW_PATIENT_START`). A start = the patient's first claim of the class / brand in the whole table, by any HCP. Windows, `RUNNING_`, `PCT_` (starts / visits).
-
-### 9.2 Findings
-
-| # | Finding |
-| --- | --- |
-| F1 | `Rx_05` = Rx claims of every HCP since 2021-01-02 (4.03B rows); a start needs that history |
-| F2 | The 3.1 HCP Rx pull cannot replace it (starts 2023, universe HCPs only) |
-| F3 | Same claims for the counted HCPs (49,140 keys in both; 2 newer in the pull) |
-| F4 | `%run` path after the move |
-| F5 | All 14 selected NB05 features are in the output |
-
-**Changes:** C1 `%run` path; C2 comment on why `Rx_05` stays. Input, logic and columns unchanged.
-
-### 9.3 Validation results (test HCPs, 2026-11-03)
-
-| Check | Result |
-| --- | --- |
-| Fast engine = step-by-step | PASS: 2 x 1,431 cells, 0 mismatches |
-| Write | 20 cohorts, 180 rows, 161 columns, 0 duplicates, 0 null cells |
-| HCP trace | 3,080 checks, 0 mismatches |
-| Offset-0 parity vs 3.0 | PASS: 35,720 cells, 0 mismatches |
-| Own recount of starts | 0 mismatches |
-| Before vs now | Identical (0 of 27,720 cells) |
-
-### 9.4 Decisions
-
-| ID | Question | Decision |
-| --- | --- | --- |
-| D1 / X7 | Keep `Rx_05` | Yes; revisit when new drugs join the basket (Phase B needs an all-HCP basket input from 2021) |
-| D2 | HCP universe | NB05 counts the HCPs of `Rx_05`; the model joins on the HCP list of the run |
-
----
-
-## 10. NB06 Eligible patient features
-
-**Notebook:** `06 Eligible HCP Claims Files/06_claim_eligible_hcp` (3.0 source `06_claim_eligible_hcp`)  
-**Inputs:** HCP Rx pull (`Rx_01_new` before `DATA_START_DATE` for the column list), patient tables `sglt2_filter_m` (eligibility) and `px` (first dialysis date), run folder  
-**Outputs:** `claim_eligible_patient_cohort`, `provider_claim_eligible_patient_cohort`  
-**Full plan:** `06 Eligible HCP Claims Files/NBA_3_1_Eligible_HCP_Features_Plan.md`
-
-### 10.1 What the notebook builds
-
-Per HCP: patients with an Rx claim who were eligible that month (`ELIGIBLE_PATIENT_FLAG = 1`), total and by GFR / Dx stage and UACR stage; windows, `RUNNING_`, `PCT_`; `DIALYSIS_FLAG` for the cohort month. 76 columns.
-
-### 10.2 Findings
-
-| # | Finding |
-| --- | --- |
-| F1 | Patient tables already read from the run folder (3.1 eligibility reaches NB06 directly) |
-| F2 | Rx input was 3.0 `Rx_01_new` (29,973 of 29,973 keys also in the pull) |
-| F3 | Only the 7 fixed stage columns of 3.0 occur; no new column |
-| F4 | New 3.1 columns (`HF_FLAG`, `DM_TYPE`) not used yet (no new columns, D3) |
-| F5 | `%run` path after the move |
-| F6 | 1 selected feature (`RUNNING_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_4`), present |
-| F7 | 3.0 windows are the mean of N+1 monthly counts; the refactor sums N months |
-
-**Changes:** C1 `%run` path; C2 Rx input = `HCP_RX_TABLE` from `DATA_START_DATE` + `Rx_01_new` before; C3 docs; C4 absolute path for the pull.
-
-### 10.3 Validation results (test HCPs, 2026-11-03)
-
-| Check | Result |
-| --- | --- |
-| Fast engine = step-by-step | PASS |
-| Write | 20 cohorts, 180 rows, 76 columns, 0 duplicates, 0 null cells |
-| HCP trace (1386651560) | 820 checks, 0 mismatches |
-| Own recount (last cohort, 12 months) | Total 7,479, per stage equal to the output |
-| Offset-0 parity vs 3.0 | FAIL on window columns only (6,264 cells), explained by F7; base-month counts 0 of 171 mismatches; accepted (X9) |
-
-### 10.4 Decisions
-
-| ID | Question | Decision |
-| --- | --- | --- |
-| D1 / X8 | Window = sum of N months or mean of N+1 months | Sum (same rule as NB01–NB05) |
-| D2–D3 | Dialysis month, no new columns | Applied |
-| D4 | Patient-journey decisions C1 (SGLT2) and C9 (diabetes) | Change `ELIGIBLE_PATIENT_FLAG` only; NB06 needs a re-run, no code change |
-| D5 | HCP universe | 3.1 (X1) |
-
----
-
-## 11. Full HCP universe run
-
-### 11.1 Current run: `full_2026_11_11` (Delta, 28 cohorts)
-
-Job **1010893614518587**, run **441950237921**. Parameters: `VALIDATION_MODE=false`, `RUN_OUTPUT_DIR=full_2026_11_11`, `EXPECTED_COHORTS=28`. All inputs from this run's own patient-journey and query folders.
-
-Full detail: `Alignment_Markdowns/Review_and_Findings/NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_11.md`.
-
-* **PJ01–PJ06:** all succeeded (14.6 / 13.5 / 37.1 / 5.9 / 1.3 / 15.5 min).
-* **NB01–NB06:** all succeeded. Durations: NB02 31.6 min, NB03 146.2, NB05 148.6, NB06 146.5, NB01 151.9, NB04 221.2.
-* **NB07 (cohort-set check):** in progress after a fix for empty `PROVIDER_ID` rows (O2). Manual verification: 0 real duplicates, 28 cohorts, 7 groups, DATASET matches.
-* **Outputs:** 11 Delta tables, 449 files total, 231 GB. NPI-level: NB01 8.09M rows / 4,677 cols; NB02 5.17M / 152; NB03 7.59M / 122; NB04 8.09M / 3,074; NB05 6.45M / 163; NB06 8.09M / 226.
-* **Provider tables (O2, open):** empty `PROVIDER_ID` rows: 3,094 (NB01/NB04), 949 (NB03), 3,001 (NB06). NPI-level and NB05 have none. Same root cause as 2026-11-04.
-* **Delta vs Parquet:** NB01 156 files / 73.5 GB (was ~65,000 files / 906 GB in the 2026-11-07 Parquet run). Read 307× faster, null-count QC 45× faster (test on one group).
-
-### 11.2 Previous full run: `full_2026_11_04` (20 cohorts, offset 7)
-
-Job 36449327509782, run 361860399857197 + re-run 1050221322333806 (NB01 198 min, NB04 195 min). 20 cohorts, Parquet, NB01 4,441 cols / NB04 2,892 cols. 268 of 277 selected features present (9 missing = X5). Full detail: `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_04.md`. The 2026-11-07 run (28 cohorts, Parquet) was cancelled: NB01/NB04 took > 5 h.
-
-### 11.3 Inputs (current run `full_2026_11_11/`)
-
-| Input | Source | Content |
-| --- | --- | --- |
-| Patient tables (PJ01–PJ06) | `full_2026_11_11/patient_journey/` | This run's patient journey, 3.1 universe |
-| HCP Rx pull (PJ03 Step 4d) | `full_2026_11_11/_stage/rx_hcp_pull` | NPI-level Rx claims from the 3.1 Rx journey |
-| Lab pull | `full_2026_11_11/_stage/lab_step4_pull` | NPI-level lab data from PJ01 |
-| Dx pull | `full_2026_11_11/_stage/dx_step4_pull` | NPI-level Dx data from PJ02 |
-| Claims cohort file | `cohorts/claims/cohorts.parquet` | 28 cohorts c1–c28, offset 0
-
----
-
-## 12. Decisions taken
-
-### 12.1 Cross-notebook decisions (decision log)
-
-| ID | Notebook | Decision | To reverse |
-| --- | --- | --- | --- |
-| X1 | All | 3.1 HCP universe (`HCP_Universe_without_call_hcps/`), same as the patient journey | Job parameter `HCP_UNIVERSE_PATH` |
-| X2 | NB01, NB04, NB06 | 3.1 HCP Rx pull (PJ03 Step 4d) from `DATA_START_DATE`, `Rx_01_new` before | `HCP_RX_SOURCE = "3.0"` |
-| X3 | NB02, NB04 | Lab pull kept in the run folder | `HCP_LAB_SOURCE = "3.0"` |
-| X4 | NB03 | Keep the stage 5 columns | Column list in NB03 |
-| X5 | NB04 | Keep the patient-journey rule; drop the 9 DPP-IV / other-glucose features from the model list | Keep `Other- glucose mgmt` in PJ06 and rerun PJ06 + NB04 |
-| X6 | NB04 | 7 `..._WITH_GLP_1` features: no change. **Closed:** present and populated in the full run | – |
-| X7 | NB05 | Keep 3.0 `Rx_05` for first starts | Revisit with new drugs |
-| X8 | NB06 | Windows = sum of the last N monthly counts | Average in NB06's window step |
-| X9 | NB06 | Accept the 6,264 parity differences (explained by X8) | – |
-| X10 | All | One folder per run (`RUN_OUTPUT_DIR`) | Job parameter |
-| X11 | All | One job for NB01–NB06 in parallel | – |
-| X12 | Config | `HCP_CLAIMS_LAB_TABLE` not added to `HCP_SOURCE_TABLES` now | – |
-
-### 12.2 Per-notebook decisions (summary)
-
-| Notebook | Decided | Open |
-| --- | --- | --- |
-| NB01 Rx | D1–D5, X16, X17 | D6 (fixed column list) |
-| NB02 Lab | D1–D4, X18, X19 | Lab journey L1 (specialty filter) |
-| NB03 Dx | D1–D4 | D5 (T1D kidney codes) |
-| NB04 Combined | D1–D4, X6 (closed) | – |
-| NB05 New starts | D1–D2 | Phase B input for new drugs |
-| NB06 Eligible | D1–D5, X20 | Re-run after patient-journey C1 / C9 |
-
----
-
-## 13. Data readiness
-
-| Data | Source | Coverage | Status | Gap / action | Owner |
-| --- | --- | --- | --- | --- | --- |
-| HCP Rx pull | `full_2026_11_11/_stage/rx_hcp_pull` (PJ03 Step 4d) | NPI-level Rx claims, 3.1 universe | **Ready** | Lives in `_stage/` (do not delete) | NBA team |
-| Lab pull | `full_2026_11_11/_stage/lab_step4_pull` (PJ01 Step 4) | NPI-level lab data | **Ready** | Lives in `_stage/` (X3) | NBA team |
-| Dx pull | `full_2026_11_11/_stage/dx_step4_pull` (PJ02 Step 4) | NPI-level Dx data | **Ready** | Lives in `_stage/` | NBA team |
-| New-start input | `kerendia_nba_3_0_Rx_05` (3.0) | 4.03B rows, 2021-01-02 .. 2026-09-30 | **Ready** | Phase B: basket-based all-HCP input for new drugs | NBA team |
-| `Rx_01_new` (column list before 2023) | 3.0 query output | NB01, NB04, NB06 | **Ready** | D6: replace with a fixed column list | NBA team |
-| Patient tables | `full_2026_11_11/` (PJ01–PJ06, 3.1 universe) | Full universe, 28 cohorts | **Ready** | Re-run HCP notebooks after patient-journey C1 / C9 | Patient-journey owners |
-| HCP universe (3.1) | `HCP_Universe_without_call_hcps` (Parquet) | 294,727 providers | **Ready** | Config default is still the 3.0 universe when the parameter is empty | NBA team |
-| NPI to provider mapping | `kerendia_nba_3_0_npi_bhid_mapping` (agreed BHID-NPI mapping) | 1.57M NPIs; same ID as the 3.1 Rx input for all but 1 mapped HCP; misses 105 HCPs, 2 IDs for 52 HCPs | **Ready, with gaps (open)** | Fill / de-duplicate the 157 HCPs from the 3.1 input (O2, section 11.2) | NBA team |
-| 3.0 reference snapshot | `ops_pipeline_bkp/` | Test HCPs | **Ready** | Parity only | NBA team |
-
----
-
-## 14. Work plan
-
-| Phase | Content | Main tasks | Status | Depends on |
+| GLP-1 drugs counted | Already in 3.0: Ozempic, Trulicity, Rybelsus, Victoza, Bydureon BCise, Byetta. New: Mounjaro, Zepbound, Wegovy, Wegovy HD, liraglutide, Saxenda, exenatide | The new ones are not in the Snowflake view; 3.1 adds them (basket update of 2026-11-05) |
+| Generic dapagliflozin counted as SGLT2 | Dapagliflozin, dapagliflozin / metformin | Not in the view; a generic of Farxiga |
+| Kerendia its own category and brand | Kerendia | The target drug; kept out of MRA so the competitor MRA counts are not inflated |
+| New dialysis code | J0606 (etelcalcetide, given only to hemodialysis patients) | Finds more dialysis patients |
+| DPP-IV and other glucose drugs **off** in the patient journey | For example Januvia, Tradjenta, glipizide, pioglitazone (`ACTIVE_JOURNEY = N`, note "Not in the 3.0 journey") | The basket was built on the product list of the 3.0 patient journey. This causes decision X5 (section 6) |
+
+**New products in the 3.1 Rx input** (claims since 2023-01-01) [S4, S6]
+
+| Product | Claims (3.1) | Counted under |
+| --- | ---: | --- |
+| Mounjaro | 124.1M | Brand GLP-1, category "Other glucose mgmt" |
+| Zepbound | 29.0M | Same |
+| Wegovy, Wegovy HD | 25.8M | Same |
+| Liraglutide, Saxenda, exenatide | 2.6M | Same |
+| Generic dapagliflozin, dapagliflozin / metformin | 16.2M | Category SGLT2, no brand (Farxiga stays the brand) |
+| Kerendia | 3.9M | Own category and brand: new columns |
+
+**Why most new drugs add no columns.** NB01 builds one set of columns per treatment category and per brand on the brand list (the same 8 brands as 3.0 [S15]). A new drug that joins an existing category or brand fills the existing columns: their values rise, no columns are added. Only Kerendia is a new category and brand, so only Kerendia adds columns (234 in NB01, 180 in NB04 [S2]).
+
+**Is the GLP-1 setup the same as in 3.0?** Yes. In 3.0 the Snowflake view put the GLP-1 drugs in the category "Other glucose mgmt", and GLP-1 was a brand. The 3.1 basket gives the GLP-1 drugs the category "GLP-1". Because GLP-1 is also on the brand list, NB01 would have created the same column names twice (for example `TOTAL_RX_CLAIMS_GLP_1_IN_LAST_3_MONTH` as category and as brand). Decision "option C" (2026-11-05) maps the GLP-1 category back to "Other glucose mgmt" in NB01 and NB04, so the structure is the same as in 3.0 [S15, S12]. The patient journey keeps "GLP-1" as a category.
+
+**Treatment categories, 3.0 vs 3.1** (Rx claims 2023-01 to 2026-09; "Same HCPs" = the 220,892 HCPs in both versions) [S3, S4, my check]
+
+| Category | 3.0 | 3.1 | Change | Same HCPs: 3.0 → 3.1 | Added HCPs (3.1 only) | Why it changed |
+| --- | ---: | ---: | ---: | --- | ---: | --- |
+| ACE/ARB | 472.1M | 510.6M | +8% | 462.0M → 462.1M | 48.5M | Added HCPs only |
+| Calcium channel / beta blocker | 765.7M | 854.3M | +12% | 748.8M → 748.9M | 105.3M | Added HCPs only |
+| Combo drug | 338.5M | 364.8M | +8% | 331.0M → 331.1M | 33.8M | Added HCPs only |
+| Diuretic (non-MRA) | 293.8M | 320.0M | +9% | 286.7M → 286.8M | 33.2M | Added HCPs only |
+| Insulin | 167.3M | 173.5M | +4% | 164.2M → 164.2M | 9.2M | Added HCPs only |
+| Metformin | 267.4M | 281.3M | +5% | 261.4M → 261.5M | 19.8M | Added HCPs only |
+| MRA | 59.5M | 67.1M | +13% | 58.3M → 58.3M | 8.8M | Added HCPs only |
+| SGLT2 | 143.3M | 165.2M | +15% | 141.3M → 156.7M | 8.5M | Generic dapagliflozin (+15.4M for the same HCPs) and added HCPs |
+| Other glucose mgmt (incl. GLP-1, as NB01 counts it) | 337.4M | 531.7M | +58% | 331.3M → 494.0M | 37.7M | New GLP-1 drugs, and added HCPs |
+| Kerendia | 0 | 3.9M | new | 0 → 3.9M | 0.0M | New product |
+
+For the same HCPs, every unchanged category has the same claims in both versions. The growth there comes only from the added HCPs. The 3.0 totals also hold the claims of the 13,278 HCPs that are not in 3.1 (for example 8.8M ACE/ARB claims) and claims without an NPI (for example 1.3M ACE/ARB claims); 3.1 has no claims without an NPI.
+
+**Brands, 3.0 vs 3.1** (same period and sources; columns = all NB01 columns named after the brand: look-back, running total, ratio and 3–6-month difference [S1, S2, my check])
+
+| Brand | 3.0 | 3.1 | Change | Same HCPs: 3.0 → 3.1 | Why it changed | NB01 columns 3.0 → 3.1 |
+| --- | ---: | ---: | ---: | --- | --- | --- |
+| Jardiance | 87.9M | 91.7M | +4% | 86.6M → 86.6M | Added HCPs | 263 → 263 |
+| Farxiga | 40.6M | 42.2M | +4% | 40.1M → 40.1M | Added HCPs | 254 → 254 |
+| Invokana 100 mg | 0.81M | 0.85M | +5% | 0.79M → 0.79M | Added HCPs | 261 → 261 |
+| Invokana 300 mg | 1.09M | 1.13M | +4% | 1.07M → 1.07M | Added HCPs | 252 → 252, plus 153 → 155 "SGLT2 without Invokana 300 mg" columns |
+| SGLT2 without brand | 12.9M | 29.4M | +128% | 12.8M → 28.1M | Generic dapagliflozin | – |
+| GLP-1 | 186.4M | 376.0M | +102% | 183.6M → 346.4M | Mounjaro, Zepbound, Wegovy and others | 261 → 261 |
+| DPP-IV | 39.4M | 40.6M | +3% | 38.5M → 38.5M | Added HCPs | 252 → 252 |
+| Other glucose mgmt without brand | 111.8M | 115.4M | +3% | 109.4M → 109.4M | Added HCPs | – |
+| Spironolactone-MRA | 58.4M | 65.8M | +13% | 57.2M → 57.2M | Added HCPs | 254 → 254 |
+| Kerendia | 0 | 3.9M | new | 0 → 3.9M | New product | 0 → 234 |
+
+The changes above 100% (GLP-1, SGLT2 without brand) are real: they are the new drugs, not errors. The "SGLT2 without Invokana 300 mg" family has 2 more columns because two of its running totals now have claims. "Diuretic + MRA" is on the brand list but has no claims since 2023, so it has no columns in either version.
+
+### 4.4 Lab and diagnosis inputs
+
+| Input | 3.0 | 3.1 | Why it changed | Source |
 | --- | --- | --- | --- | --- |
-| **0. Build and validate** | NB01–NB06 synced with the 3.1 patient journey and validated on the test HCPs | Inputs switched to the 3.1 pulls, patient tables from the run folder, plans, client summaries, decision log, jobs | **Done** (2026-11-03) | Patient journey Phase A |
-| **1. Full run** | All six notebooks written for the full universe, outputs checked | NB01 / NB04 re-run; output checks (duplicates, nulls, selected features, trace HCP recount); empty `PROVIDER_ID` rows | **Done** (2026-11-04); `PROVIDER_ID` mapping change open (O2) | Phase 0 |
-| **2. Decisions and reviews** | Settle the open points that change values | Patient-journey C1 / C9 / C3 then re-run; NB03 D5; `RUNNING_` meaning; `SGLT2_WO_INVOKANA_300MG` family; NB05 null vs 0 | **In progress** | Phase 1 |
-| **3. New features (Phase B)** | Follow the patient-journey Phase B | New drugs (Kerendia, Mounjaro, Wegovy, Zepbound, generic dapagliflozin) through the basket; NB05 input for their starts; `HF_FLAG` / `DM_TYPE` features | **Mostly done:** product mapping updated and Kerendia brand features (2026-11-05, X16); HbA1c / potassium lab flags (X18); DM / HF type features (X20). Open: NB05 input for new-drug starts (still 3.0 `Rx_05`, X7) | Patient journey Phase B |
-| **4. Go-live** | HCP features feed the model | Downstream combine (`99_Combine_Physician_Data`) wired to `COHORT_ID`; feature list updated (X5) and model retrained; production paths; commit | **Not started** | Phases 1–2 |
+| NB02 lab tests (eGFR, UACR) | `Lab_03`: 108.8M tests (GFR 92.2M, UACR 16.6M), 122.9K HCPs | 207.5M tests (GFR 174.6M, UACR 32.9M), 199.9K HCPs | 3.1 uses the patient-journey lab data, found by LOINC code; `Lab_03` was an older query. Tests in both get the same stage (June 2025: 100% of UACR, 99.98% of eGFR) | S3, S4, S11 (NB02 plan), my check |
+| NB04 lab tests | `Lab_04`: GFR 90.2M, UACR 12,247 | Same pull as NB02 | The unit mismatch in `Lab_04` (section 3.4) | S3, S9, my check |
+| NB03 diagnosis claims | Stage from the description text | Stage from the code; stage 3: 12.6K → 65.4M, stage 5: 0 → 115.9M | The code lists catch the sub-codes and stage 5 | S3, S4, my check |
+| Potassium (new) | – | 61.6M tests, 23.7M patients, 163.0K HCPs; 4.5M tests above 5.0 mmol/L (2.8M patients) | New signal; only the 10 primary-care specialties of the lab pull | S4, my check |
+| HbA1c (new) | – | 38.4M tests, 16.6M patients, 144.8K HCPs; 1.7M tests of 9% or higher (0.94M patients) | New signal | S4, my check |
 
----
+All counts are from 2023-01-01 to 2026-09-30; patient and HCP counts are exact distinct counts.
 
-## 15. Readiness gates
+### 4.5 The patient journey
 
-| Gate | Ready when | Status |
-| --- | --- | --- |
-| G0 | All six notebooks synced and validated on the test HCPs; plans, client summaries and decision log written | **Done** (2026-11-03) |
-| G1 | All six written for the full universe; completeness checks pass (28 cohorts, 0 duplicates, 0 null cells); selected features present; trace HCP recount passes | **Done** (2026-11-11): NB01–NB06 all succeeded with 28 cohorts, Delta output; 0 real duplicates in all 11 tables. NB07 check in progress (O2 empty-key fix). Provider-table mapping (O2) still open |
-| G2 | Patient-journey decisions (C1, C9, C3) settled and HCP notebooks re-run; HCP open points (section 16) closed | Not started |
-| G3 | Downstream combine wired; 3.1 feature list final (X5); model retrained on the 3.1 output | Not started |
-| **G4 (freeze)** | Production paths, named pulls, old copies cleaned up, all changes committed | Not started |
+The HCP notebooks read patient tables to know each patient's CKD stage, treatments, diabetes, heart failure, dialysis and Kerendia eligibility. The patient-journey notebooks PJ01–PJ06 build them [S10].
 
----
+**What changed in each patient-journey notebook [S10]**
 
-## 16. Open points
-
-| # | Point | Status | Effect |
+| Notebook | What it builds | What changed in 3.1 | Why |
 | --- | --- | --- | --- |
-| O1 | NB01 / NB04 full re-run | **Done** (2026-11-11): run 441950237921, `full_2026_11_11` | – |
-| O2 | Provider tables: empty `PROVIDER_ID` (1,911 NB01 / NB04, 698 NB03, 1,828 NB06) and HCPs written twice (52 / 43 / 52; 27 in NB02) | **Open (explained):** gaps of the agreed mapping table; proposal = keep it, fill / de-duplicate the 157 HCPs from the 3.1 input | Provider tables only; NPI-level tables not affected |
-| O3 | NB01 4,441 / NB04 2,892 columns at full scale vs 3,693 / 1,785 in validation | **Explained:** rare values seen only with all HCPs; no selected feature among them | Column list depends on the run (D6) |
-| O4 | 7 `..._WITH_GLP_1` features (X6) | **Closed:** present and populated | – |
-| O5 | Pulls live in `_stage/` of the run folder | Open | Must not be deleted before the next run |
-| O6 | `HCP_UNIVERSE_PATH` falls back to the 3.0 universe when empty | Proposal: default to the 3.1 path | A validation run can silently use 3.0 |
-| O7 | `99_Combine_Physician_Data` joins on `SVC_DT_M`; 3.1 outputs are keyed by `COHORT_ID` | Open | Downstream not wired |
-| O8 | `RUNNING_` meaning (from `DATA_START_DATE`) | Open, confirm with Wenjie | Differs from 3.0 for history before 2023 |
-| O9 | `SGLT2_WO_INVOKANA_300MG` family (187 columns, r about 1.0 with SGLT2) | Awaiting decision (analysis recommendation R5 = drop) | Redundant columns |
-| O10 | NB05: months without claims are 0 in 3.1, null in 3.0 | Confirm 0 | Small value differences vs 3.0 |
-| O11 | NB03 D5: T1D kidney codes counted as Dx claims | Open | 1.39M rows all US |
-| O12 | Patient-journey C1 (SGLT2 rule) and C9 (diabetes) | Open (patient-journey owners) | NB06 eligibility and the patient tables of NB01, NB03, NB04 change; re-run, no code change |
-| O13 | Commit of the HCP work | **Done:** code and docs on `dev/hcp-claims-features`, latest commits 2026-11-11 (Delta output `b1ebbf9`, Delta docs `4fb6f67`) | – |
-| O14 | HCP notebooks outside this folder (the combine step) still use `00_step23_function` (3.0 logic) | Open | Refactor or confirm they stay on 3.0 logic |
-| O15 | Clean-up after `full_2026_11_11` passes: point `HCP_LATEST_FULL_RUN` to it; delete the incomplete Parquet run `full_2026_11_07` and `_scratch_delta_test/`; update or retire job 36449327509782 (3.0 volume) | Open | Old Parquet output takes a lot of volume space; a validation run would read the 2026-11-05 inputs |
+| PJ01 Labs | Each patient's eGFR / UACR tests and stage | Tests found by LOINC code from the lab basket; results such as ">90" kept; new table with potassium and HbA1c values and flags (potassium above 5.0, HbA1c 9% or higher) | Catch tests the 3.0 name and unit rules missed; new signals |
+| PJ02 Diagnosis | Each patient's CKD stage from diagnosis codes | Stage from the code (stage 3 sub-codes, stage 5); one stage per month instead of a list; a missing stage stays empty instead of 0; months start at the patient's first CKD diagnosis | In 3.0 a stage of 0 hid the lab stage of the same month; stage 5 patients were not recognised |
+| PJ03 Rx | Each patient's treatments per month | New Rx basket (section 4.3): GLP-1 its own category, Kerendia added, generic dapagliflozin as SGLT2; DPP-IV and other glucose drugs off | Count the new drugs |
+| PJ04 Diabetes / heart failure | Diabetes and heart-failure flags per patient | 3.0: one type 2 diabetes flag. 3.1: diabetes type (type 2, type 1, other, none) and heart-failure type (preserved-EF proxy, reduced-EF proxy, mixed, unknown); the 3.0 flag is kept as `T2D_FLAG_30` | Kerendia's two indications |
+| PJ05 Procedures | Dialysis patients and first dialysis date | New codes incl. J0606; a column that was always 1 is dropped | Find more dialysis patients |
+| PJ06 Combine | Eligibility per patient and month; the tables the HCP notebooks read | Heart-failure flag and diabetes type added. Eligibility rule unchanged: stage 2–4 or unknown, not on dialysis. The SGLT2 rule is still not applied (it compares the stage with -1, copied from 3.0) | Open decisions C1 and C9 (open point 6) |
+
+**What the patient tables look like now, and the effect on the HCP features** (rows 3.0 → 3.1) [S3, S5, my check]
+
+| Patient table | Read by | Rows 3.0 → 3.1 | Why the rows changed | Effect on the HCP features |
+| --- | --- | --- | --- | --- |
+| New and total treatments | NB01 | 4.50B → 4.12B | 3.0 covers 70 months (2021-01 to 2026-10), 3.1 45 months (2023-01 to 2026-09). For the same months (2023-01 to 2026-08), 3.1 has more rows: 4.01B vs 3.01B | Patient-treatment features, for example `TOTAL_RX_CLAIMS_PATIENT_WITH_NO_NEW_TREATMENT_IN_LAST_3_MONTH`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_2_OR_3_ACTIVE_TREATMENTS` [S8]; model features in this family change by 0.94 per HCP (median, section 7) |
+| New CKD stage | NB03 | 4.50B → 4.12B | Same months as above | "Patients new to a stage" features rise 1.32× per HCP, because stage 3 and 5 are now recognised |
+| Stage × treatment (GFR / diagnosis) | NB04 | 4.50B → 4.12B | Same months as above | Claims move between stages (table below): stage 4 down, stage 1–3 up. The DPP-IV and other glucose columns are gone (X5) |
+| Stage × treatment (UACR) | NB04 | 18.76B → 14.45B | Same months; one row per patient, month, treatment and brand | Same as above for the UACR stage |
+| Eligibility | NB06, NB02 | 4.50B → 4.12B; eligible 4.38B (97%) → 3.17B (77%) | Same months. The eligible share falls because many more patient-months are stage 1 or 5, which are not eligible (table below) | Eligible-patient features are lower; the model's NB06 feature falls to 0.43 per HCP. Source of the 148 new diabetes and heart-failure features |
+| Dialysis | NB06 | 1.49M → 1.54M patients | New dialysis codes incl. J0606 | `DIALYSIS_FLAG`; fewer eligible patients |
+| Diabetes / heart failure | NB06 | 77.2M → 89.1M patients | 3.1 also lists patients with heart failure (23.8M) or type 1 diabetes, not only type 2 | New `..._DM_TYPE_...` and `..._HF_TYPE_...` features |
+| Lab flags | NB02 | new | New | New potassium and HbA1c features |
+
+The number of patient rows per month is higher in 3.1 (August 2026: 113.2M vs 72.2M). We have not yet split this by source (more lab patients, new drugs, months from the first diagnosis on); open point 14.
+
+**CKD stage of the patient-months in August 2026** (`GFR_UACR_DX_STAGE`) [S3 `pat_gfr_dx_stage_and_treatment_category`, S5 `..._pat_gfr_dx_stage_validation`, my check]
+
+| Stage | 3.0 | 3.1 | Eligible? | Why it changed |
+| --- | ---: | ---: | --- | --- |
+| 0 | 9.84M | 0 | Yes (as unknown) | 3.1 leaves a missing stage empty instead of 0 [S10, N1] |
+| 1 | 2.45M | 32.48M | No | In 3.0 the Dx value 0 hid the lab stage (only about 18% of 3.0 lab months carried a lab stage into the combine [S10, B1]); 3.1 shows it |
+| 2 | 4.93M | 24.24M | Yes | Same reason |
+| 3 | 0.68M | 11.78M | Yes | Same reason, plus the stage 3 sub-codes |
+| 4 | 2.38M | 1.24M | Yes | Patients now at a more precise stage (3 or 5) |
+| 5 | 0.02M | 1.42M | No | Stage 5 codes now read |
+| Unknown | 51.87M | 42.08M | Yes, unless on dialysis | The rest |
+
+This is why the eligible share falls from 97% to 77%: the stage 1 and stage 5 months (33.9M in August 2026) are not eligible. The SGLT2 rule plays no part.
 
 ---
 
-## 17. Risks
+## 5. What we have in 3.1: notebook by notebook
 
-| Risk | Effect | Mitigation |
+All counts and names from S1 and S2 (feature columns, without ID and date columns).
+
+| Notebook | 3.0 | 3.1 | Kept | New | Not built |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| NB01 Rx claims | 5,411 | 4,668 | 4,432 | 236 | 979 |
+| NB02 Lab claims | 116 | 143 | 95 | 48 | 21 |
+| NB03 Diagnosis claims | 127 | 113 | 104 | 9 | 23 |
+| NB04 Combined claims | 3,691 | 3,065 | 2,840 | 225 | 851 |
+| NB05 New patient starts | 188 | 154 | 154 | 0 | 34 |
+| NB06 Eligible patients | 84 | 217 | 69 | 148 | 15 |
+| **Total** | **9,617** | **8,360** | **7,694** | **666** | **1,923** |
+
+**The 666 new features**
+
+| Notebook | New features | Count | Example names | Why new |
+| --- | --- | ---: | --- | --- |
+| NB01 | Kerendia prescriptions by window, payer, days supply, refill, age, gender, rejections, running totals | 234 | `TOTAL_RX_CLAIMS_KERENDIA_IN_LAST_3_MONTH`, `TOTAL_RX_CLAIMS_KERENDIA_COMMERCIAL_IN_LAST_1_MONTH`, `PCT_TOTAL_REJECTED_RX_CLAIMS_KERENDIA_IN_LAST_3_MONTH`, `RUNNING_TOTAL_RX_CLAIMS_KERENDIA` | Kerendia is a new category and brand |
+| NB01 | SGLT2 without Invokana 300 mg, running totals | 2 | `RUNNING_TOTAL_RX_CLAIMS_SGLT2_WO_INVOKANA_300MG_DAYS_SUPPLY_UNKNOWN` | These values have claims in the 3.1 data; NB01 builds a column for each value it finds |
+| NB02 | Potassium: patients tested, above 5.0 mmol/L, % flagged; all and eligible patients; 4 windows | 24 | `TOTAL_PATIENTS_POTASSIUM_TESTED_IN_LAST_1_MONTH`, `TOTAL_PATIENTS_POTASSIUM_GT_5_IN_LAST_3_MONTH`, `PCT_ELIGIBLE_PATIENTS_POTASSIUM_GT_5_IN_LAST_12_MONTH` | New signal: the label advises against starting Kerendia above 5.0 |
+| NB02 | HbA1c: same, at 9% or higher | 24 | `TOTAL_ELIGIBLE_PATIENTS_HBA1C_GE_9_IN_LAST_6_MONTH`, `PCT_ELIGIBLE_PATIENTS_HBA1C_GE_9_IN_LAST_12_MONTH` | New signal: uncontrolled diabetes |
+| NB03 | CKD stage 5 diagnosis claims: 4 windows, % and running total | 9 | `TOTAL_DX_CLAIMS_STAGE_5_IN_LAST_3_MONTH`, `PCT_TOTAL_DX_CLAIMS_STAGE_5_IN_LAST_12_MONTH`, `RUNNING_TOTAL_DX_CLAIMS_STAGE_5` | Stage 5 codes now read |
+| NB04 | Kerendia by the patient's CKD stage | 180 | `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_3_WITH_KERENDIA_IN_LAST_6_MONTH`, `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_5_WITH_KERENDIA_IN_LAST_12_MONTH` | Kerendia is a new treatment |
+| NB04 | UACR test stage × Invokana 100 / 300 mg | 45 | `TOTAL_RX_CLAIMS_PATIENT_WITH_TEST_UACR_STAGE_1_WITH_INVOKANA_300MG_IN_LAST_3_MONTH` | The 3.1 lab data has UACR tests (section 4.4), so these combinations now have claims |
+| NB06 | Patients by diabetes type (type 2, type 1, other, none); all and eligible; % shares | 64 | `TOTAL_RX_PATIENTS_DM_TYPE_T2D_IN_LAST_3_MONTH`, `PCT_ELIGIBLE_PATIENTS_DM_TYPE_T2D_IN_LAST_12_MONTH` | Kerendia's CKD indication requires type 2 diabetes |
+| NB06 | Patients by heart-failure type (preserved-EF proxy, reduced-EF proxy, mixed, unknown) | 64 | `TOTAL_ELIGIBLE_PATIENTS_HF_TYPE_HFREF_PROXY_IN_LAST_6_MONTH`, `PCT_ELIGIBLE_PATIENTS_HF_TYPE_HFPEF_PROXY_IN_LAST_12_MONTH` | Kerendia's heart-failure indication (LVEF 40% or more) |
+| NB06 | Patients with any heart failure | 16 | `TOTAL_RX_PATIENTS_HF_IN_LAST_12_MONTH`, `PCT_ELIGIBLE_PATIENTS_HF_IN_LAST_12_MONTH` | Same |
+| NB06 | Treated patients (denominator) | 4 | `TOTAL_RX_PATIENTS_IN_LAST_1_MONTH` | Base for the % shares |
+| **Total** | | **666** | | |
+
+**How the kept features change, per notebook**
+
+| Notebook | Kept | What changes in the values | Why |
+| --- | ---: | --- | --- |
+| NB01 | 4,432 | GLP-1 brand about 2×; SGLT2 +15%; per-HCP values of the other categories lower | New drugs; added HCPs with fewer claims (section 4.2) |
+| NB02 | 95 | About twice as many tests | 3.1 lab data (section 4.4) |
+| NB03 | 104 | Stage 3 claims counted; missing stage stays unknown | Stage from the code |
+| NB04 | 2,840 | Stage 4 down, stages 1–3 up, GLP-1 by stage up to 20× | New stage rules (section 4.5) and new GLP-1 drugs |
+| NB05 | 154 | Unchanged | Still reads the 3.0 input `kerendia_nba_3_0_Rx_05` [S3] (open point 12) |
+| NB06 | 69 | Eligible patients lower | Stage 1 and 5 months not eligible (section 4.5) |
+
+---
+
+## 6. What is no longer built, and why
+
+**Repeated monthly columns (1,703).** 3.0 stored each monthly value twice: as a plain monthly column (for example `PCT_TOTAL_RX_CLAIMS_DPP_IV`) and as "last 1 month" (`PCT_TOTAL_RX_CLAIMS_DPP_IV_IN_LAST_1_MONTH`). We compared both on all rows of each 3.0 table (7.4M rows for NB02, 13.0M–13.6M for the others) [S1, my check]:
+
+| Notebook | Plain monthly columns | Same values as "last 1 month" | Different | Example dropped columns |
+| --- | ---: | ---: | ---: | --- |
+| NB01 Rx claims | 979 | 975 | 4 | `PCT_TOTAL_REJECTED_RX_CLAIMS_ACE_OR_ARB`, `PCT_TOTAL_RX_CLAIMS_DPP_IV`, `AVG_PATIENT_AGE` |
+| NB02 Lab claims | 21 | 21 | 0 | `PCT_TOTAL_LAB_CLAIMS_A1`, `PCT_TOTAL_LAB_CLAIMS_A2` |
+| NB03 Diagnosis claims | 23 | 23 | 0 | `PCT_TOTAL_DX_CLAIMS_STAGE_1`, `PCT_TOTAL_DX_CLAIMS_STAGE_3` |
+| NB04 Combined claims | 631 | 631 | 0 | `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_1_WITH_ACE_OR_ARB` |
+| NB05 New patient starts | 34 | 34 | 0 | `PCT_TOTAL_PATIENTS_START_ACE_OR_ARB`, `TOTAL_PATIENTS_START_DPP_IV` |
+| NB06 Eligible patients | 15 | 0 | 15 | `PCT_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_3` |
+| **Total** | **1,703** | **1,684** | **19** | |
+
+The six categories without brands (ACE/ARB, calcium channel / beta blocker, combo drug, diuretic non-MRA, insulin, metformin) are still fully built; only their plain monthly copies (322 of the 979 in NB01) are gone.
+
+**The 19 columns that need a decision** (open point 1)
+
+| Notebook | Columns | Why they are not exact repeats |
 | --- | --- | --- |
-| NB01 / NB04 run out of memory again | Full outputs missing for the two widest notebooks (most selected features) | Fix applied and passed (re-run 1050221322333806); if it fails again, write per cohort group |
-| Patient-journey C1 / C9 change eligibility | NB06 and patient-based columns of NB01, NB03, NB04 change | Re-run the HCP job after the patient-journey re-run (one job: 1010893614518587) |
-| Pulls deleted from `_stage/` | HCP notebooks cannot run | Keep until they are named outputs of every run |
-| 3.0 universe used by mistake | Different HCP and patient set | Pass `HCP_UNIVERSE_PATH` in every run; change the default (O6) |
-| Dropped model features (X5) | 9 selected NB04 features missing | Rerun the feature selection on the 3.1 output |
-| Empty / repeated `PROVIDER_ID` rows | Repeated provider keys downstream | Fill / de-duplicate the 157 HCPs from the 3.1 input (O2) before the combine step |
+| NB01 | 4: `AVG_PATIENT_AGE`, `AVG_TREATMENT_PER_PATIENT`, patient count, treatment count | In 3.0 the averages cover one extra month, and 3.1 keeps that rule, so the value for the month alone is not in 3.1 |
+| NB06 | 15: eligible patients in total, by GFR / diagnosis stage and by UACR stage, and their % shares, for example `PCT_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_3` | 3.0 NB06 look-backs were averages over one extra month; 3.1 counts the month itself (decision X8 [S12]). The 3.1 "last 1 month" column holds the month alone; it has not been checked against these 15 |
 
----
+**Decision X5 (NB04, 220 columns)**
 
-## 18. Next actions
-
-| # | Action | Owner |
+| What | Detail | Source |
 | --- | --- | --- |
-| 1 | ~~Check all six full outputs~~ (done 2026-11-04, E2E file) | Patricio |
-| 2 | Decide the `PROVIDER_ID` gap fill (O2, open): keep the mapping table, fill / de-duplicate 157 HCPs from the 3.1 input; re-write the provider tables | NBA team, Patricio |
-| 3 | ~~Check the 7 `..._WITH_GLP_1` features (X6)~~ (done) | Patricio |
-| 4 | Review this plan with the NBA team | NBA team |
-| 5 | Decide NB03 D5, `RUNNING_` meaning, `SGLT2_WO_INVOKANA_300MG`, NB05 null vs 0 | NBA team, Wenjie |
-| 6 | Re-run the HCP job after the patient-journey decisions C1 / C9 | NBA team |
-| 7 | Wire the cohort outputs into `99_Combine_Physician_Data` | NBA team |
-| 8 | Commit and push the full-run documentation (when asked) | Patricio |
+| Columns | Claims by the patient's CKD stage for DPP-IV and other glucose drugs: 66 GFR / Dx stage × DPP-IV, 66 GFR / Dx stage × other glucose mgmt, 44 UACR stage × DPP-IV, 44 UACR stage × other glucose mgmt. The 220 include 40 plain monthly copies. Claims by the stage of a same-day lab test for these drugs are still built (180 columns, for example `TOTAL_RX_CLAIMS_PATIENT_WITH_TEST_GFR_STAGE_1_WITH_DPP_IV_IN_LAST_6_MONTH`), because they come from the Rx claims, not the patient table | S1, S2 |
+| Why they cannot be built | NB04 takes the patient's treatments from the patient table. In 3.1 that table has no "Other- glucose mgmt" or "DPP-IV" (August 2026, 3.0: 8.47M and 0.98M patient-months). The Rx basket keeps these drugs off for the patient journey (Januvia, Tradjenta, glipizide, pioglitazone: `ACTIVE_JOURNEY = N`), and the GLP-1 drugs, which were part of "Other glucose mgmt" in 3.0, now have their own category "GLP-1" | S3, S5, S6, my check |
+| Why we accepted it | Switching these drugs on only for the HCP features would make the HCP patient tables differ from the patient journey used everywhere else | S12 (X5) |
+| Effect on the model | 9 of the 277 model features are among them (list below) | S8 |
+| How to reverse | Switch the drugs on in the Rx basket and rerun PJ03, PJ06 and NB04 (open point 5) | S12 |
+
+The 9 model features: `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_UNKNOWN_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_1_MONTH`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_3_WITH_OTHER_GLUCOSE_MGMT`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_DPP_IV_IN_LAST_12_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_12_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_6_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_3_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_6_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_UNKNOWN_WITH_DPP_IV_IN_LAST_3_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_UNKNOWN_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_1_MONTH` [S8, S2].
 
 ---
 
-## 19. References
+## 7. What this means for the model
 
-* `01 Rx Claims Files/NBA_3_1_Rx_Claims_Features_Plan.md` and `..._Client_Summary.md`: NB01
-* `02 Lab Claims Files/NBA_3_1_Lab_Claims_Features_Plan.md` and `..._Client_Summary.md`: NB02
-* `03 Diagnosis Claims Files/NBA_3_1_Dx_Claims_Features_Plan.md` and `..._Client_Summary.md`: NB03
-* `04 Monthly Cohort Claims Files/NBA_3_1_Claims_Features_Plan.md` and `..._Client_Summary.md`: NB04
-* `05 Rx NPS Claims Files/NBA_3_1_Rx_NPS_Features_Plan.md` and `..._Client_Summary.md`: NB05
-* `06 Eligible HCP Claims Files/NBA_3_1_Eligible_HCP_Features_Plan.md` and `..._Client_Summary.md`: NB06
-* `NBA_3_1_HCP_Features_Decisions.md`: decision log (X1–X12), jobs
-* `Alignment_Markdowns/Review_and_Findings/NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_04.md`: full run, checks and findings
-* `../00_cohort_config`: shared configuration
-* `../Patient_Journey_Validation/Alignment_Markdowns/Strategy and Execution/AI_Readiness_Plan.md`: patient journey readiness plan
-* `Feature Analysis/NBA_3_1_HCP_Claims_Selected_Features_277.csv`: selected features
-* 3.0 pipeline: `kerendia_nba_3_0_develop/NBA 3.0 Ops - Pipeline/03_Feature_Engineering/03_HCP_Level_Features/`
-* Feature analysis docs: `kerendia_nba_3_1_develop/NBA 3.1 - Dev/Feature Analysis/NBA_3_1_HCP_Claims_Features_Analysis.md` and `..._Recommendations.md`
-* Patient features readiness plan: `03_patient_features/NBA_3_1_Patient_Features_AI_Readiness_Plan.md`
+### 7.1 Will 3.1 use the same features as 3.0?
+
+No. The 752 features were chosen for the 3.0 model. For 3.1 the model is retrained and feature selection runs again on all 3.1 features: the 8,360 claims features, including the 666 new ones, plus the other sources [S12, X5]. The selection decides which new features are used. It can only run once the step that joins all HCP features is switched to cohorts (open point 9); no date is set yet.
+
+The number 268 is therefore only a check: of the 277 claims features in the 3.0 model, 268 still exist in 3.1 under the same name. It does not mean 3.1 will use them.
+
+### 7.2 How much do the 268 features change?
+
+For each feature we took the average per HCP in August 2026 (3.0: month 2026-08; 3.1: cohort c28) and divided 3.1 by 3.0. 1.00 = no change; 0.80 = 20% lower [S1, S2, S8, my check].
+
+| Notebook | Model features in 3.1 | Similar (±20%) | Lower | Higher | Typical change | Main reason |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| NB01 Rx claims | 172 | 114 | 54 | 4 | 0.82–0.95 by family (SGLT2 without Invokana 300 mg: 1.04) | Added HCPs with fewer claims (section 4.2); running totals start later |
+| NB03 Diagnosis claims | 3 | 1 | 0 | 2 | 0.83 and 1.32 | Stage 3 and 5 now recognised |
+| NB04 Combined claims | 78 (9 missing, X5) | 7 | 38 | 33 | 0.46 (stage) to 0.80 (stage × treatment) | New stage mix (section 4.5); new GLP-1 drugs |
+| NB05 New patient starts | 14 | 13 | 1 | 0 | 1.00 | Same 3.0 input |
+| NB06 Eligible patients | 1 | 0 | 1 | 0 | 0.43 | Fewer eligible stage 4 patient-months (1.98M → 1.20M, August 2026) |
+| **Total** | **268** | **135** | **94** | **39** | | |
+
+NB01 includes the 2 features shared with NB04.
+
+**By window** [S8, my check]
+
+| Window | Features | Similar | Lower | Higher | Median | Why |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Running total | 69 | 2 | 58 | 9 | 0.65 | 3.1 counts from 2023-01, 3.0 from 2021-01: 44 vs 68 months in August 2026 (44 / 68 = 0.65) |
+| 12 months | 66 | 47 | 7 | 12 | 0.91 | Added HCPs |
+| 6 months | 52 | 33 | 11 | 8 | 0.90 | Same |
+| 3 months | 47 | 29 | 11 | 7 | 0.90 | Same |
+| 1 month | 33 | 23 | 7 | 3 | 0.88 | Same |
+| Ratio | 1 | 1 | 0 | 0 | 0.95 | Same |
+
+**Examples of the largest changes** [S8, my check]
+
+| Feature | Change | Why |
+| --- | ---: | --- |
+| `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_1_WITH_GLP_1_IN_LAST_6_MONTH` | 19.9× | 13× more stage 1 patient-months and twice the GLP-1 claims |
+| `TOTAL_DX_CLAIMS_WITH_PATIENT_NO_NEW_STAGE_IN_LAST_6_MONTH` | 1.32× | Stage 3 and 5 claims now counted |
+| `PCT_TOTAL_RX_CLAIMS_MEDICARE_IN_LAST_12_MONTH` | 1.72× | Not checked yet |
+| `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_GFR_STAGE_4_AND_UACR_STAGE_UNKNOWN` | 0.33 | Fewer stage 4 patients; running total starts later |
+| `RUNNING_TOTAL_RX_CLAIMS_METFORMIN_MGD_MEDICAID` | 0.49 | Running total starts later; added HCPs |
+| `RUNNING_TOTAL_PATIENTS_START_SGLT2` | 0.63 | Running total starts later |
+| `RUNNING_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_4` | 0.43 | Fewer eligible stage 4 patient-months |
+
+---
+
+## 8. Run status
+
+Run 441950237921 finished with SUCCESS: all 13 tasks, all 28 cohorts [S14]. From the first patient-journey task to the end of NB04: 4 h 40 min; 17 h 40 min in total, including the NB07 retries.
+
+| Task | Runtime (min) | Task | Runtime (min) |
+| --- | ---: | --- | ---: |
+| PJ01 Labs | 14.6 | NB01 Rx claims | 151.9 |
+| PJ02 Diagnosis | 13.5 | NB02 Lab claims | 31.6 |
+| PJ03 Rx | 37.1 | NB03 Diagnosis claims | 146.2 |
+| PJ04 Diabetes / heart failure | 5.9 | NB04 Combined claims | 221.2 |
+| PJ05 Procedures | 1.3 | NB05 New patient starts | 148.6 |
+| PJ06 Combine | 15.5 | NB06 Eligible patients | 146.5 |
+| | | NB07 Cohort-set check | 3.0 (attempt 5) |
+
+| Output [S2] | Rows | Columns (incl. 9 ID and date columns) |
+| --- | ---: | ---: |
+| NB01 Rx claims | 8.09M | 4,677 |
+| NB02 Lab claims | 5.17M | 152 |
+| NB03 Diagnosis claims | 7.59M | 122 |
+| NB04 Combined claims | 8.09M | 3,074 |
+| NB05 New patient starts | 6.45M | 163 |
+| NB06 Eligible patients | 8.09M | 226 |
+
+All outputs together: 231 GB. NB07 checks that every output has the 28 cohorts in the right training, validation and back-testing groups, without duplicate rows. Attempts 1–4 stopped on rows without a provider ID (open point 8); attempt 5 passed.
+
+---
+
+## 9. Open points
+
+| # | Point | Who decides | Rerun needed |
+| --- | --- | --- | --- |
+| 1 | 19 monthly columns not in 3.1 | Wenjie | NB01, NB06 if restored |
+| 2 | GLP-1 has no category feature of its own | Wenjie | NB01, NB04 if added |
+| 3 | New drugs have no features of their own | Wenjie | NB01, NB04 if added |
+| 4 | Two copies of the product basket | Team | No |
+| 5 | DPP-IV and other glucose drugs off in the patient journey (X5) | Wenjie, product mapping | PJ03, PJ06, NB04 if switched on |
+| 6 | Eligibility rules C1 (SGLT2) and C9 (diabetes) | NBA team | PJ06, NB01–NB06 |
+| 7 | Retraining and feature selection | Raman | Model only |
+| 8 | Rows without a provider ID | Team | NB01–NB06 provider tables |
+| 9 | Combine step not switched to cohorts | Team | Combine step |
+| 10 | Running totals start in 2023 | Wenjie | All if changed |
+| 11 | Near-duplicate SGLT2 features | Wenjie, Raman | No (selection) |
+| 12 | NB05 still reads the 3.0 input | Team | NB05 |
+| 13 | Type 1 diabetes kidney codes in NB03 | Wenjie | NB03 if removed |
+| 14 | More patient rows per month in 3.1, not yet explained | Team (check) | No |
+| 15 | Clean-up and defaults | Team | No |
+
+**1. 19 monthly columns are not in 3.1.** What is going on: 4 NB01 averages and counts and 15 NB06 eligibility columns held values for the month alone that 3.1 does not store (section 6). Options: (a) accept, because 3.1 keeps the look-back versions, for example `TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_3_IN_LAST_1_MONTH`; (b) restore them as extra columns. None of them is in the 752 [S7, my check]. Recommendation: (a).
+
+**2. GLP-1 has no category feature of its own.** What is going on: by option C, GLP-1 drugs count under "Other glucose mgmt" and under the GLP-1 brand, as in 3.0 (section 4.3). GLP-1 claims doubled (186.4M → 376.0M), so "Other glucose mgmt" is now 71% GLP-1 (375.7M of 531.7M) [S4]. Options: (a) keep; (b) a separate GLP-1 category, which needs a new name to avoid the clash with the brand columns. Effect of (b): a new set of category columns in NB01 and NB04; other categories have 236–245 NB01 columns each [S2].
+
+**3. The new drugs have no features of their own.** What is going on: Mounjaro (124.1M claims), Zepbound (29.0M), Wegovy (25.8M) sit inside the GLP-1 brand, generic dapagliflozin (16.2M) inside SGLT2 [S4]. The model cannot tell them apart. Options: (a) keep; (b) add some of them to the brand list; today's brands have 252–263 NB01 columns each (brand table in section 4.3).
+
+**4. Two copies of the product basket.** What is going on: the run reads the volume folder [S6]. The workspace folder `Final Product Basket` holds the version before the 2026-11-05 update (16 Rx products and J0606 switched off). If someone uses the workspace copy, Kerendia and the new GLP-1 drugs drop out. Action: update or clearly label the workspace copy.
+
+**5. DPP-IV and other glucose drugs are off in the patient journey (X5).** What is going on: section 6. 3.0 tracked them per patient (0.98M DPP-IV patient-months in August 2026 [S3]); 3.1 does not, so 220 NB04 columns and 9 model features are gone. Options: (a) accept; (b) switch them on in the Rx basket for the journey. Effect of (b): rerun PJ03, PJ06 and NB04; the patient journey also changes (treatment counts per patient).
+
+**6. Eligibility rules C1 and C9 (patient journey).** What is going on: the SGLT2 rule (C1) is meant to exclude patients with unknown stage who never had an SGLT2, but it compares the stage with -1 and never applies, in 3.0 and in 3.1 [S10, PJ06 combine]. Fixing it makes 56% of the eligible months not eligible. C9: 58% of eligible months have no type 1 or type 2 diabetes diagnosis [S10]. Effect of a change: eligibility and all patient-based features in NB01, NB03, NB04 and NB06 change; rerun PJ06 and the HCP job (no code change in the HCP notebooks).
+
+**7. Retraining and feature selection.** What is going on: 133 of the 268 model features move by more than 20% per HCP (section 7), and 666 new features are available. The 3.0 model cannot be applied to 3.1 as it is. Action: run feature selection and training on 3.1 after point 9.
+
+**8. Rows without a provider ID.** What is going on: the provider tables have 3,094 rows without a provider ID (NB01, NB04), 949 (NB03) and 3,001 (NB06), because the NPI-to-provider mapping misses 105 HCPs and gives 2 IDs to 52 [S2, mapping `query_output/kerendia_nba_3_0_npi_bhid_mapping`]. The NPI tables are complete. Proposal: keep the mapping, fill or de-duplicate these 157 HCPs from the provider ID in the 3.1 Rx input, before the combine step.
+
+**9. Combine step not switched to cohorts.** What is going on: the step that joins all HCP features for the model (`99_Combine_Physician_Data`) joins by calendar month; 3.1 delivers the claims features by cohort. Other HCP feature notebooks (promotion and others) still use the 3.0 logic. Action: join on provider and cohort; plan in `99 Combine Physician Data Files/NBA_3_1_Combine_Physician_Data_Plan.md`.
+
+**10. Running totals start in 2023.** What is going on: 3.1 counts from 2023-01-01, 3.0 from 2021 (section 3.1), so running totals are about a third lower (median 0.65, section 7). 69 of the 268 model features are running totals [S8]. Options: (a) keep 2023; (b) pull data from 2021, which makes every pull larger.
+
+**11. Near-duplicate SGLT2 features.** What is going on: 155 "SGLT2 without Invokana 300 mg" columns in 3.1 (187 in 3.0) [S1, S2], for example `RUNNING_TOTAL_RX_CLAIMS_SGLT2_WO_INVOKANA_300MG`, are almost equal to the SGLT2 columns (correlation about 1.0), because Invokana 300 mg has 1.13M of the 165.2M SGLT2 claims [S4]. Options: drop them before selection, or let selection handle them.
+
+**12. NB05 still reads the 3.0 input.** What is going on: a "new start" needs each patient's claims since 2021, which the 3.1 Rx pull (from 2023) does not have, so NB05 reads `kerendia_nba_3_0_Rx_05` [S3]. Starts on Kerendia, Mounjaro, Zepbound or Wegovy are not counted. Also, months without claims are 0 in 3.1 and empty in 3.0. Options: a 3.1 input with history from 2021 for these drugs; confirm 0 for empty months.
+
+**13. Type 1 diabetes kidney codes in NB03.** What is going on: 1.39M rows with type 1 diabetes kidney codes count as CKD diagnosis claims with unspecified stage [`hcp_level_features/03 Diagnosis Claims Files/NBA_3_1_Dx_Claims_Features_Plan.md`]. Options: keep (CKD with type 1 diabetes is still CKD) or remove (if the features should follow the type 2 indication).
+
+**14. More patient rows per month in 3.1.** What is going on: August 2026 has 113.2M patient rows in 3.1 against 72.2M in 3.0 [S3, S5]. We have not split the difference by source yet (more lab patients, new drugs, months counted from the first diagnosis). Action: check, because it drives the patient-based features.
+
+**15. Clean-up and defaults.** What is going on: the settings still point the "latest run" to an older run and fall back to the 3.0 HCP universe when none is given; older run outputs take a lot of space [S15]. Action: point to `full_2026_11_11`, default to the 3.1 universe, remove old run outputs.
+
+

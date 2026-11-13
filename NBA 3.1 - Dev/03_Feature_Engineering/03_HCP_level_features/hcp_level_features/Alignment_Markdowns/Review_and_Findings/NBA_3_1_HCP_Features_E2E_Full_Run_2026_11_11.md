@@ -2,17 +2,18 @@
 
 **Scope:** full job from patient journey to cohort sets, for the full 3.1 HCP universe, with 28 cohorts (c1–c28, offset 0, claims cohort file).
 **Run name:** `full_2026_11_11`. **Previous run:** `full_2026_11_07` (Parquet, cancelled — see `NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_07.md`). **Before that:** `full_2026_11_05` (20 cohorts, offset 7).
-**Status:** NB01–NB06 all succeeded. NB07 (cohort-set check) is in progress after a fix to the duplicate check for empty `PROVIDER_ID` rows (O2). Feature comparison and output tables below are complete.
+**Status:** run 441950237921 finished with SUCCESS. NB01–NB06 succeeded; NB07 (cohort-set check) succeeded on attempt 5 after the fix to the duplicate check for empty `PROVIDER_ID` rows (O2).
+**Correction 2026-11-12:** section 4 was re-done against the 3.0 production tables (`ops_pipeline/notebook_output/`). The earlier version compared against `ops_pipeline_bkp/notebook_output/` cohort tables. Those are test-HCP outputs of an early cohort version (152–190 rows), not 3.0 production; the NB02 one still had a 9-month window, and the NB04 one is the NPI-level intermediate table. This led to wrong removal reasons (six Rx categories, 9-month window, NB06 stage breakdowns). Details: readiness plan, Appendix A.2–A.8.
 
 ---
 
 ## 1. In short
 
-* **First run with Delta output:** all HCP feature tables are Delta partitioned by `COHORT_SET` (7 groups) with `optimizeWrite`. The 2026-11-07 Parquet run wrote about 455,000 small files per table (NB01: 906 GB, 75% metadata); this run writes a few large files per group (NB01: 156 files, 73.5 GB). Read and QC are 30–300× faster.
+* **First run with Delta output:** all HCP feature tables are Delta partitioned by `COHORT_SET` (7 groups) with `optimizeWrite`. The 2026-11-07 Parquet run wrote 455,057 small files for NB01 alone (about 65,000 per cohort set, 906 GB); this run writes a few large files per group (NB01: 156 files, 73.5 GB). On one cohort set, a row count is 307× faster and a null-count check 45× faster (section 5).
 * **28 cohorts c1–c28** (May 2024 – Aug 2026), offset 0 (calendar months), from the claims cohort file `cohorts/claims/cohorts.parquet`.
-* **Across all 6 NPI-level notebooks, 3.1 has 8,360 features vs 7,440 in 3.0 — a net gain of +920 features.** 1,935 new features were added and 1,015 were intentionally removed.
-* **Key additions:** 234 Kerendia brand features (NB01), 48 HbA1c / Potassium lab features (NB02), 9 CKD Stage 5 features (NB03), 128 DM/HF type features (NB06).
-* **Key removals:** 979 features from 6 treatment categories outside the 3.1 brand list (NB01), 21 features with the retired 9-month lookback window (NB02), 15 incomplete GFR/UACR stage breakdowns (NB06).
+* **Across the 6 notebooks, 3.1 has 8,360 features vs 9,617 in the 3.0 production tables.** 7,694 are kept, 666 added, 1,923 removed.
+* **Key additions:** 234 Kerendia features (NB01, own treatment category), 180 Kerendia features (NB04), 48 HbA1c / Potassium lab features (NB02), 9 CKD Stage 5 features (NB03), 148 DM / HF features (NB06).
+* **Removals (1,923):** 1,684 are single-month (window-less) columns that 3.0 kept next to the `_IN_LAST_1_MONTH` columns. They hold the same values (0 mismatches on all rows of the 3.0 tables: 7.4M rows for NB02, 13.0M–13.6M for the others), so this removes redundancy, not information. 220 NB04 stage × DPP-IV / other-glucose columns are dropped by decision X5. 19 are single-month columns that are **not** identical to the 1-month columns and need review (NB01: 4 averages / counts; NB06: 15 eligibility columns). **No treatment category was removed:** ACE/ARB, Calcium channel / Beta blocker, Combo drug, Diuretic non-MRA, Insulin and Metformin are all in the 3.1 output.
 * **Provider tables (O2, open):** rows with an empty `PROVIDER_ID` (NPIs without a provider ID in the mapping table) are present in the provider-level tables. These are known and explained, not duplicates.
 
 ---
@@ -33,9 +34,9 @@ Parameters: `VALIDATION_MODE=false`, `RUN_OUTPUT_DIR=full_2026_11_11`, `EXPECTED
 | NB06 eligible | 146.5 min | Success |
 | NB01 Rx | 151.9 min | Success |
 | NB04 claims | 221.2 min | Success |
-| NB07 cohort sets | in progress (after fix) | In progress |
+| NB07 cohort sets | attempts 1–4 failed; attempt 5: 3.0 min | Success |
 
-**Total wall-clock (PJ01 start to NB04 finish): ~4 h 55 min.**
+**Total wall-clock (PJ01 start to NB04 finish): 4 h 40 min** (from the Jobs API start / end times; whole run including NB07 retries: 17 h 40 min).
 
 ### Comparison with the 2026-11-07 Parquet run
 
@@ -43,7 +44,7 @@ Parameters: `VALIDATION_MODE=false`, `RUN_OUTPUT_DIR=full_2026_11_11`, `EXPECTED
 | --- | --- | --- |
 | NB01 Rx | > 5 h (cancelled) | 151.9 min |
 | NB04 claims | > 5 h (cancelled) | 221.2 min |
-| NB01 file count | ~65,000 per table | 156 |
+| NB01 file count | 455,057 (about 65,000 per cohort set) | 156 |
 | NB01 total size | ~906 GB | 73.5 GB |
 
 ---
@@ -64,42 +65,44 @@ To read a table back from its sets: `read_cohort_sets(table)` in `00_cohort_conf
 
 ## 4. Feature comparison: 3.0 vs 3.1
 
-All comparisons are at **NPI level** (the canonical output per notebook). The provider-level tables have the same feature columns (NPI_NUMBER replaced by PROVIDER_ID), so feature counts are identical.
+Counts are the column names of the output tables. 3.0 = the 3.0 production tables written by the 3.0 notebooks (`kerendia_nba_3_volume/hcp_level_model/ops_pipeline/notebook_output/`); 3.1 = `full_2026_11_11/hcp_claims/`. For NB03 and NB04 the provider-level tables are compared (no 3.0 NPI-level table exists); the provider and NPI tables have the same feature columns.
 
 ### 4a. Summary per notebook (feature columns only, excluding metadata)
 
-| Notebook | Table | 3.0 features | 3.1 features | New | Dropped | Net |
+| Notebook | 3.0 table → 3.1 table | 3.0 features | 3.1 features | New | Dropped | Net |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| NB01 | `claim_rx_monthly_cohort` | 5,411 | 4,668 | +236 | −979 | −743 |
-| NB02 | `claim_lab_monthly_cohort` | 116 | 143 | +48 | −21 | +27 |
-| NB03 | `claim_diagnosis_monthly_cohort` | 104 | 113 | +9 | 0 | +9 |
-| NB04 | `claims_monthly_cohort` | 1,571 | 3,065 | +1,494 | 0 | +1,494 |
-| NB05 | `claim_rx_nps_monthly_cohort` | 154 | 154 | 0 | 0 | 0 |
-| NB06 | `claim_eligible_patient_cohort` | 84 | 217 | +148 | −15 | +133 |
-| **Total** | | **7,440** | **8,360** | **+1,935** | **−1,015** | **+920** |
+| NB01 | `claim_rx_monthly` → `claim_rx_monthly_cohort` | 5,411 | 4,668 | +236 | −979 | −743 |
+| NB02 | `claim_lab_monthly_ZS` → `claim_lab_monthly_cohort` | 116 | 143 | +48 | −21 | +27 |
+| NB03 | `provider_claim_diagnosis_monthly` → `provider_claim_diagnosis_monthly_cohort` | 127 | 113 | +9 | −23 | −14 |
+| NB04 | `final_claims_monthly` → `final_claims_monthly_cohort` | 3,691 | 3,065 | +225 | −851 | −626 |
+| NB05 | `kerendia_nba_3_0_claim_rx_nps_monthly` → `claim_rx_nps_monthly_cohort` | 188 | 154 | 0 | −34 | −34 |
+| NB06 | `kerendia_nba_3_0_claim_eligible_patient` → `claim_eligible_patient_cohort` | 84 | 217 | +148 | −15 | +133 |
+| **Total** | | **9,617** | **8,360** | **+666** | **−1,923** | **−1,257** |
 
-3.0 baselines: NB01 uses `claim_rx_monthly` (the clean production table, not the cohort table inflated by Delta mergeSchema). NB06 uses `kerendia_nba_3_0_claim_eligible_patient`. All others use their cohort tables in `ops_pipeline_bkp/notebook_output/`. Feature counts exclude metadata columns (NPI_NUMBER, COHORT_ID, COHORT_MONTH, OFFSET_DAYS, CUTOFF_DATE, SVC_DT_M, PULL_DT, DATASET, COHORT_SET).
+Feature counts exclude metadata columns (NPI_NUMBER, PROVIDER_ID, COHORT_ID, COHORT_MONTH, OFFSET_DAYS, CUTOFF_DATE, SVC_DT_M, PULL_DT, DATASET, COHORT_SET).
+
+**Why the dropped columns are dropped:**
+
+| Notebook | Single-month copies (identical to `_IN_LAST_1_MONTH`) | Decision X5 | Not identical, needs review |
+| --- | ---: | ---: | ---: |
+| NB01 | 975 | – | 4 (`AVG_PATIENT_AGE`, `AVG_TREATMENT_PER_PATIENT`, `TOTAL_PATIENT_COUNT`, `TOTAL_TREATMENT_COUNT`) |
+| NB02 | 21 | – | – |
+| NB03 | 23 | – | – |
+| NB04 | 631 | 220 | – |
+| NB05 | 34 | – | – |
+| NB06 | – | – | 15 |
+| **Total** | **1,684** | **220** | **19** |
+
+How this was checked: each 3.0-only column `X` without a window suffix was matched to `X_IN_LAST_1_MONTH`, which exists in both 3.0 and 3.1. The values of `X` and `X_IN_LAST_1_MONTH` were then compared on all rows of the 3.0 table (NB01 13.6M, NB02 7.4M, NB03 13.0M, NB04 13.6M, NB05 13.4M, NB06 13.6M rows). For NB04, 671 columns were compared: the 631 single-month columns and the 40 single-month columns among the 220 X5 columns; all 671 match. The NB01 averages differ because the 3.0 averages cover one extra month (`step3_lag_avg`, kept in 3.1 as `AVG_EXTRA_MONTH`). The NB06 columns differ because the 3.0 NB06 windows are averages of N+1 months (X8).
 
 ### 4b. Feature categories per notebook
 
 #### NB01 — Rx Claims
 
-| Category | 3.0 | 3.1 | Delta | Notes |
-| --- | ---: | ---: | ---: | --- |
-| Total Rx Claims | 496 | 382 | −114 | 6 non-brand categories removed |
-| Percentage (PCT) | 2,485 | 2,052 | −433 | Same cause |
-| Brand | 626 | 572 | −54 | +234 Kerendia, −GLP-1 treatment-category overlap |
-| Patient Attributes (Age/Gender) | 922 | 800 | −122 | Fewer categories to cross |
-| Running (cumulative) | 511 | 520 | +9 | +Kerendia running features |
-| Refill | 85 | 32 | −53 | Non-brand categories removed |
-| Treatment Category | 238 | 182 | −56 | GLP-1 → Other- glucose mgmt (option C) |
-| Ratio / Difference / Average | 22 | 20 | −2 | Minor |
-| SGLT2 WO INVOKANA (derived) | 40 | 32 | −8 | Fewer cross-cuts |
-| Other | 90 | 76 | −14 | — |
-| **Total** | **5,515** | **4,668** | **−847** | |
+Kept 4,432, added 236, removed 979 (all single-month columns). Every windowed and running column of 3.0 is in 3.1, so the columns per group are unchanged: ACE/ARB, Calcium channel / Beta blocker, Combo drug, Diuretic non-MRA, Insulin and SGLT2 245 each, Metformin 236, Other glucose mgmt 243, Farxiga 254, Jardiance 263, Invokana 100 mg 261, Invokana 300 mg 252, Spironolactone-MRA 254, DPP-IV 252, GLP-1 261; SGLT2 without Invokana 300 mg 153 → 155 (+2 running totals). Counts are all 3.1 columns named after the group (look-back, running total, ratio and 3–6-month difference); SGLT2 and Invokana 300 mg exclude the SGLT2-without-Invokana-300-mg columns.
 
 **Added (+236):**
-* 234 Kerendia brand features, following the same cross-cut pattern as other brands:
+* 234 Kerendia features. They come from the treatment-category pivot (Kerendia is its own `TREATMENT_CATEGORY` in the 2026-11-05 product mapping; it is not in `HCP_BRANDS`) and follow the same cross-cut pattern as the other groups:
   * `TOTAL_RX_CLAIMS_KERENDIA_IN_LAST_{1,3,6,12}_MONTH`, `PCT_TOTAL_RX_CLAIMS_KERENDIA_IN_LAST_{1,3,6,12}_MONTH`
   * Age: `KERENDIA_AGE_GROUP_{0_10, 10_20, ..., ABOVE_80, IGNORE}` × 4 windows
   * Gender: `KERENDIA_{F, M, U}` × 4 windows
@@ -110,25 +113,19 @@ All comparisons are at **NPI level** (the canonical output per notebook). The pr
   * Rejection: `TOTAL_REJECTED_RX_CLAIMS_KERENDIA_IN_LAST_{1,3,6,12}_MONTH`, `PCT_TOTAL_REJECTED_RX_CLAIMS_KERENDIA_IN_LAST_{1,3,6,12}_MONTH`
 * 2 running features: `RUNNING_TOTAL_RX_CLAIMS_SGLT2_WO_INVOKANA_300MG_DAYS_SUPPLY_UNKNOWN`, `RUNNING_TOTAL_RX_CLAIMS_SGLT2_WO_INVOKANA_300MG_NOT_30_60_90_DAYS_SUPPLY`
 
-**Removed (−979):** All features for 6 treatment categories that are outside the 3.1 HCP brand list (each with ~54 columns for total, pct, age, gender, payer, supply cross-cuts × 4 windows + running):
-* `ACE_OR_ARB` (54 columns): `TOTAL_RX_CLAIMS_ACE_OR_ARB_IN_LAST_{1,3,6,12}_MONTH`, `PCT_...`, `ACE_OR_ARB_{F,M,U}`, `ACE_OR_ARB_{CASH,COMMERCIAL,...}`, etc.
-* `CALCIUM_CHANNEL_OR_BETA_BLOCKER` (54 columns): same cross-cut pattern
-* `COMBO_DRUG` (54 columns): same pattern
-* `DIURETIC_NON_MRA` (54 columns): same pattern
-* `INSULIN` (54 columns): same pattern
-* `METFORMIN` (52 columns): same pattern (slightly fewer cross-cuts)
-* Plus 657 columns that were overall cross-cuts of the removed categories: standalone `AGE_GROUP_*`, `F/M/U`, `CASH/COMMERCIAL/MEDICARE/...` totals and percentages without a brand prefix, per-brand rejection totals without a window (`PCT_TOTAL_REJECTED_RX_CLAIMS_DPP_IV`, etc.), and `AVG_PATIENT_AGE`, `AVG_TREATMENT_PER_PATIENT`, `TOTAL_PATIENT_COUNT`, `TOTAL_TREATMENT_COUNT`.
+**Removed (−979):** all 979 are single-month columns without a window suffix (the 3.0 monthly value kept next to the lag columns). The cohort design builds only windowed columns. **No treatment category was removed**; the six categories below are in the 3.1 output with all their windowed columns.
+* 322 single-month columns of the six non-brand categories: `ACE_OR_ARB`, `CALCIUM_CHANNEL_OR_BETA_BLOCKER`, `COMBO_DRUG`, `DIURETIC_NON_MRA`, `INSULIN` (54 each), `METFORMIN` (52). Examples: `TOTAL_RX_CLAIMS_ACE_OR_ARB` (kept as `TOTAL_RX_CLAIMS_ACE_OR_ARB_IN_LAST_1_MONTH`), `PCT_TOTAL_RX_CLAIMS_ACE_OR_ARB_F`, `TOTAL_RX_CLAIMS_ACE_OR_ARB_MEDICARE`.
+* 653 single-month columns of the other groups (brands, standalone age / gender / payer totals, rejections, totals).
+* 975 of the 979 equal their `_IN_LAST_1_MONTH` column. The 4 exceptions, `AVG_PATIENT_AGE`, `AVG_TREATMENT_PER_PATIENT`, `TOTAL_PATIENT_COUNT` and `TOTAL_TREATMENT_COUNT`, are single-month values not produced in 3.1 (needs review).
+* Evidence: the 3.1 `TOTAL_RX_CLAIMS_ACE_OR_ARB_IN_LAST_12_MONTH` sums to 3,890,810,648 claims over the table.
 
 #### NB02 — Lab Claims
 
-| Category | 3.0 | 3.1 | Delta | Notes |
+| Group | 3.0 | 3.1 | Delta | Notes |
 | --- | ---: | ---: | ---: | --- |
-| GFR tests | 5 | 4 | −1 | 9-month window removed |
-| UACR tests | 5 | 4 | −1 | 9-month window removed |
-| Lab tests (combined) | 45 | 36 | −9 | 9-month window removed |
-| Percentage | 50 | 56 | +6 | New lab test percentages |
-| Running (cumulative) | 11 | 11 | 0 | — |
-| HbA1c / Potassium (new) | 0 | 32 | +32 | New in 3.1 |
+| Kept | 95 | 95 | 0 | eGFR / UACR / CKD stage lab features (windowed and running) |
+| Single-month columns | 21 | 0 | −21 | Same values as `_IN_LAST_1_MONTH` |
+| HbA1c / Potassium (new) | 0 | 48 | +48 | New in 3.1 |
 | **Total** | **116** | **143** | **+27** | |
 
 **Added (+48):** HbA1c and Potassium lab features, each across 4 lookback windows (1, 3, 6, 12 months):
@@ -140,11 +137,7 @@ All comparisons are at **NPI level** (the canonical output per notebook). The pr
 * `PCT_ELIGIBLE_PATIENTS_HBA1C_GE_9_IN_LAST_{1,3,6,12}_MONTH`
 * Same 6 patterns for Potassium > 5: `..._POTASSIUM_TESTED_...`, `..._POTASSIUM_GT_5_...`, `PCT_..._POTASSIUM_GT_5_...`
 
-**Removed (−21):** All 21 features with the `IN_LAST_9_MONTH` lookback window. 3.0 used windows [1, 3, 6, 9, 12]; 3.1 standardized to [1, 3, 6, 12]. Examples:
-* `TOTAL_LAB_CLAIMS_GFR_IN_LAST_9_MONTH`, `TOTAL_LAB_CLAIMS_UACR_IN_LAST_9_MONTH`, `TOTAL_LAB_CLAIMS_IN_LAST_9_MONTH`
-* `TOTAL_LAB_CLAIMS_A1_IN_LAST_9_MONTH`, `..._A2_...`, `..._A3_...`
-* `TOTAL_LAB_CLAIMS_CHRONIC_KIDNEY_DISEASE_STAGE_{1,2_MILD,3_MODERATE,4_SEVERE,5}_IN_LAST_9_MONTH`
-* `PCT_TOTAL_LAB_CLAIMS_*_IN_LAST_9_MONTH` (same set)
+**Removed (−21):** the 21 single-month columns (no window suffix): `TOTAL_LAB_CLAIMS`, `TOTAL_LAB_CLAIMS_{GFR,UACR,A1,A2,A3}`, `TOTAL_LAB_CLAIMS_CHRONIC_KIDNEY_DISEASE_STAGE_{1,2_MILD,3_MODERATE,4_SEVERE,5}` and the 10 matching `PCT_` columns. They equal their `_IN_LAST_1_MONTH` columns (0 mismatches). The 3.0 production table `claim_lab_monthly_ZS` has no 9-month columns. The earlier "9-month window" reason came from the `ops_pipeline_bkp` test table.
 
 #### NB03 — Diagnosis Claims
 
@@ -154,58 +147,57 @@ All comparisons are at **NPI level** (the canonical output per notebook). The pr
 | Dx Claims | 4 | 4 | 0 | — |
 | Percentage | 44 | 48 | +4 | Stage 5 percentages |
 | Running (cumulative) | 12 | 13 | +1 | Stage 5 running total |
-| **Total** | **104** | **113** | **+9** | |
+| **Total (windowed and running)** | **104** | **113** | **+9** | |
+| Single-month columns (3.0 only) | 23 | 0 | −23 | Same values as `_IN_LAST_1_MONTH` |
+| **Total incl. single-month** | **127** | **113** | **−14** | |
 
-**Added (+9):** CKD Stage 5 features (3.0 stopped at Stage 4):
+**Added (+9):** CKD Stage 5 features (the 3.0 Dx input had no stage 5 claims):
 * `TOTAL_DX_CLAIMS_STAGE_5_IN_LAST_{1,3,6,12}_MONTH`
 * `PCT_TOTAL_DX_CLAIMS_STAGE_5_IN_LAST_{1,3,6,12}_MONTH`
 * `RUNNING_TOTAL_DX_CLAIMS_STAGE_5`
 
-**Removed:** none.
+**Removed (−23):** single-month columns `TOTAL_DX_CLAIMS`, `TOTAL_DX_CLAIMS_STAGE_{1,2,3,4,UNSPECIFIED}`, `TOTAL_DX_CLAIMS_WITH_PATIENT_NEW_TO_STAGE_{1..5}`, `TOTAL_DX_CLAIMS_WITH_PATIENT_NO_NEW_STAGE` and the 11 matching `PCT_` columns (0 mismatches).
 
 #### NB04 — Combined Claims (NB01 + NB02 + NB03)
 
-| Category | 3.0 | 3.1 | Delta | Notes |
+| Group | 3.0 | 3.1 | Delta | Notes |
 | --- | ---: | ---: | ---: | --- |
-| Patient Attributes | 696 | 1,360 | +664 | Kerendia cross-cuts flow in |
-| Percentage | 696 | 1,360 | +664 | Same cause |
-| Running (cumulative) | 175 | 341 | +166 | Kerendia + new lab/dx running |
-| Rx Claims | 4 | 4 | 0 | — |
-| **Total** | **1,571** | **3,065** | **+1,494** | |
+| Kept | 2,840 | 2,840 | 0 | Rx claims by patient GFR / UACR stage and lab test (windowed and running) |
+| Single-month columns | 631 | 0 | −631 | Same values as `_IN_LAST_1_MONTH` |
+| Stage × DPP-IV / other glucose (family C) | 220 | 0 | −220 | Decision X5 |
+| Kerendia (new) | 0 | 180 | +180 | Kerendia own category |
+| UACR test stage × Invokana (new) | 0 | 45 | +45 | New combinations in the 3.1 data |
+| **Total** | **3,691** | **3,065** | **−626** | |
 
-**Added (+1,494):** NB04 joins NB01+NB02+NB03 at NPI level. The 1,494 new features are the Kerendia Rx columns from NB01 (brand, age, gender, payer, supply, refill, rejection cross-cuts × 4 windows + running totals), plus the HbA1c/Potassium features from NB02 and the CKD Stage 5 features from NB03, all flowing into the combined table. Column name patterns: `TOTAL_RX_CLAIMS_KERENDIA_*`, `PCT_TOTAL_RX_CLAIMS_KERENDIA_*`, `RUNNING_TOTAL_RX_CLAIMS_KERENDIA*`, `*_HBA1C_*`, `*_POTASSIUM_*`, `*_STAGE_5_*`.
+The 3.0 baseline is the production table `final_claims_monthly` (3,694 columns). The earlier 1,571 came from the NPI-level `claims_monthly_cohort` test table in `ops_pipeline_bkp`.
 
-**Removed:** none.
+**Added (+225):** 180 Kerendia columns (`..._WITH_KERENDIA...`) and 45 = 9 each of `TOTAL_RX_CLAIMS_PATIENT_WITH_TEST_UACR_STAGE_{1,3}_WITH_INVOKANA_{100MG,300MG}` and `..._STAGE_2_WITH_INVOKANA_300MG` (windows, PCT, running). NB02 / NB03 features are not part of this table.
+
+**Removed (−851):** 631 single-month columns (0 mismatches) and 220 X5 columns: `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_{1..5,UNKNOWN}_WITH_{DPP_IV,OTHER_GLUCOSE_MGMT}` (132) and `..._DX_UACR_STAGE_{1,2,3,UNKNOWN}_WITH_{DPP_IV,OTHER_GLUCOSE_MGMT}` (88), with windows, PCT and running variants. 9 of them are in the 752 model features.
 
 #### NB05 — Rx NPS Claims
 
-No feature changes. The 154 features are identical between 3.0 and 3.1. The total column count difference (161 → 163) comes from the DATASET and COHORT_SET metadata columns added by `write_hcp_output`.
+Kept 154, added 0, removed 34. The removed columns are single-month columns (`TOTAL_PATIENTS_VISIT`, `TOTAL_NEW_PATIENT_START`, `TOTAL_PATIENTS_START_<category / brand>` and the matching `PCT_` columns); they equal their `_IN_LAST_1_MONTH` columns (0 mismatches). The 3.0 baseline is `kerendia_nba_3_0_claim_rx_nps_monthly` (190 columns: 188 features + `PROVIDER_ID`, `SVC_DT_M`).
 
 #### NB06 — Eligible HCP
 
-| Category | 3.0 | 3.1 | Delta | Notes |
+| Group | 3.0 | 3.1 | Delta | Notes |
 | --- | ---: | ---: | ---: | --- |
-| Eligible patients | 83 | 140 | +57 | New eligibility structure |
-| DM/HF type (new in 3.1) | 0 | 64 | +64 | Diabetes type, HF type, per-window |
-| Dialysis flag | 1 | 1 | 0 | — |
-| Percentage / Totals | 0 | 12 | +12 | New summary features |
+| Kept | 69 | 69 | 0 | Eligible patients by GFR / Dx and UACR stage (windowed, running), dialysis flag |
+| Single-month columns | 15 | 0 | −15 | Not identical to the 3.0 1-month columns (needs review) |
+| Diabetes type (new) | 0 | 64 | +64 | DM_TYPE T2D / T1D / OTHER / NONE |
+| HF type (new) | 0 | 64 | +64 | HF_TYPE HFPEF_PROXY / HFREF_PROXY / MIXED / UNKNOWN |
+| Any HF (new) | 0 | 16 | +16 | |
+| Total Rx patients (new) | 0 | 4 | +4 | Denominator per window |
 | **Total** | **84** | **217** | **+133** | |
 
-**Added (+148):**
-* 128 DM/HF type features from the new PJ04 diabetes and heart failure flags, each across 4 lookback windows (1, 3, 6, 12 months):
-  * `TOTAL_ELIGIBLE_PATIENTS_DM_TYPE_{NONE, OTHER, T1D, T2D}_IN_LAST_{1,3,6,12}_MONTH`
-  * `PCT_ELIGIBLE_PATIENTS_DM_TYPE_{NONE, OTHER, T1D, T2D}_IN_LAST_{1,3,6,12}_MONTH`
-  * `TOTAL_ELIGIBLE_PATIENTS_HF_TYPE_{NONE, HFPEF, HFREF, HF_UNSPECIFIED}_IN_LAST_{1,3,6,12}_MONTH`
-  * `PCT_ELIGIBLE_PATIENTS_HF_TYPE_{NONE, HFPEF, HFREF, HF_UNSPECIFIED}_IN_LAST_{1,3,6,12}_MONTH`
-  * Same patterns for `TOTAL_RX_PATIENTS_DM_TYPE_*` and `TOTAL_RX_PATIENTS_HF_TYPE_*` (Rx-treated patients)
-* 20 HF-related eligibility features:
-  * `TOTAL_ELIGIBLE_PATIENTS_HF_IN_LAST_{1,3,6,12}_MONTH` — eligible patients with any HF diagnosis
-  * `PCT_ELIGIBLE_PATIENTS_HF_IN_LAST_{1,3,6,12}_MONTH`
-  * `TOTAL_RX_PATIENTS_HF_IN_LAST_{1,3,6,12}_MONTH` — Rx-treated patients with HF
-  * `PCT_RX_PATIENTS_HF_IN_LAST_{1,3,6,12}_MONTH`
-  * 4 additional HF summary features
+**Added (+148):** for each window 1 / 3 / 6 / 12 months:
+* `TOTAL_RX_PATIENTS_DM_TYPE_{T2D,T1D,OTHER,NONE}`, `TOTAL_ELIGIBLE_PATIENTS_DM_TYPE_{...}` and the matching `PCT_RX_PATIENTS_` / `PCT_ELIGIBLE_PATIENTS_` columns (64)
+* The same four patterns for `HF_TYPE_{HFPEF_PROXY,HFREF_PROXY,MIXED,UNKNOWN}` (64)
+* `TOTAL_RX_PATIENTS_HF`, `TOTAL_ELIGIBLE_PATIENTS_HF`, `PCT_RX_PATIENTS_HF`, `PCT_ELIGIBLE_PATIENTS_HF` (16)
+* `TOTAL_RX_PATIENTS_IN_LAST_{1,3,6,12}_MONTH` (4)
 
-**Removed (−15):** Stage-level GFR/UACR breakdowns that were not windowed (replaced by the new family-based eligibility structure):
+**Removed (−15):** single-month columns (no window suffix). The windowed versions are kept in 3.1. In the 3.0 table they differ from the 1-month column, because the 3.0 windows are averages of N+1 months (X8), so they need review:
 * `TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_{2, 3, 4, UNKNOWN}`
 * `PCT_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_{2, 3, 4, UNKNOWN}`
 * `TOTAL_ELIGIBLE_PATIENTS_UACR_STAGE_{2, 3, UNKNOWN}`
@@ -216,19 +208,21 @@ No feature changes. The 154 features are identical between 3.0 and 3.1. The tota
 
 | Feature group | Count | Source notebook |
 | --- | ---: | --- |
-| Kerendia brand Rx features | 234 | NB01 |
+| Kerendia Rx features (own treatment category) | 234 | NB01 |
+| SGLT2 without Invokana 300 mg running totals | 2 | NB01 |
 | HbA1c ≥ 9 / Potassium > 5 lab features | 48 | NB02 |
 | CKD Stage 5 diagnosis features | 9 | NB03 |
-| Kerendia + lab + Dx in the combined table | 1,494 | NB04 |
-| DM/HF type + new eligibility features | 148 | NB06 |
-| **Total new features** | **1,935** | |
+| Kerendia by patient stage / lab test | 180 | NB04 |
+| UACR test stage × Invokana | 45 | NB04 |
+| DM / HF type, any HF, total Rx patients | 148 | NB06 |
+| **Total new features** | **666** | |
 
 | Removed group | Count | Reason |
 | --- | ---: | --- |
-| Non-brand treatment categories (NB01) | 979 | `ACE_OR_ARB`, `CALCIUM_CHANNEL_OR_BETA_BLOCKER`, `COMBO_DRUG`, `DIURETIC_NON_MRA`, `INSULIN`, `METFORMIN` — outside the 3.1 brand list |
-| 9-month lookback window (NB02) | 21 | Window standardized to [1, 3, 6, 12] months |
-| Old GFR/UACR stage breakdowns (NB06) | 15 | Replaced by windowed, family-based eligibility structure |
-| **Total removed features** | **1,015** | |
+| Single-month copies (NB01 975, NB02 21, NB03 23, NB04 631, NB05 34) | 1,684 | Same values as the kept `_IN_LAST_1_MONTH` columns; the cohort design builds only windowed columns |
+| Stage × DPP-IV / other glucose, family C (NB04) | 220 | Decision X5 (patient-journey rule) |
+| Single-month columns that are not identical (NB01 4, NB06 15) | 19 | Needs review |
+| **Total removed features** | **1,923** | |
 
 ---
 
@@ -249,7 +243,7 @@ All 11 tables written as Delta, partitioned by `COHORT_SET` (7 groups). Row coun
 | NB05 | `claim_rx_nps_monthly_cohort` | PID | 6,446,723 | 163 | 7 | 1.56 | 0 | 0 |
 | NB06 | `claim_eligible_patient_cohort` | NPI | 8,085,228 | 226 | 16 | 4.67 | 0 | 0 |
 | NB06 | `provider_claim_eligible_patient_cohort` | PID | 8,086,450 | 226 | 17 | 4.66 | 0 | 3,001 |
-| | | **Total** | | | **449** | **230.76** | | |
+| | | **Total** | | | **552** | **230.76** | | |
 
 **Key = NPI** → NPI_NUMBER; **Key = PID** → PROVIDER_ID. Empty keys are rows with `PROVIDER_ID = NULL` (NPIs without a provider ID in the mapping table, O2). The NPI-level tables have no empty keys.
 
@@ -273,7 +267,7 @@ NB07 checks all 11 tables: exactly the 7 COHORT_SET groups; each group has its c
 
 **Fix applied to cell 5 of `07_split_cohort_sets` (committed `81d9cb6`):** count rows with an empty key separately (`NULL_KEYS`) and run the duplicate check only on rows with a non-null key. A real duplicate still fails the check.
 
-**Repair 1 (run 372743477209890):** 2 of the 4 tables passed; `provider_claim_rx_monthly_cohort` and `final_claims_monthly_cohort` still failed. The fix code was verified correct on all four tables (rows − nulls = distinct non-null keys). The failure is under investigation; a second repair is in progress.
+**Repair 1 (run 372743477209890):** 2 of the 4 tables passed; `provider_claim_rx_monthly_cohort` and `final_claims_monthly_cohort` still failed. The fix code was verified correct on all four tables (rows − nulls = distinct non-null keys). Attempts 3 and 4 also failed. Attempt 5 succeeded (3.0 min, 2026-11-12).
 
 **Manual verification (this run):** all 11 tables checked independently — 0 real duplicates, 28 cohorts, 7 groups, DATASET matches. The empty-key counts are 3,094 (NB01/NB04 provider), 949 (NB03 provider), 3,001 (NB06 provider), 0 (NPI-level and NB05).
 
@@ -283,7 +277,7 @@ NB07 checks all 11 tables: exactly the 7 COHORT_SET groups; each group has its c
 
 | # | Point | Next step |
 | --- | --- | --- |
-| – | NB07 | Wait for the repair to finish and pass |
+| – | NB07 | Done: passed on attempt 5 (2026-11-12) |
 | – | `HCP_LATEST_FULL_RUN` | Point to `full_2026_11_11` so validation runs read this run's pulls |
 | O2 | `PROVIDER_ID` gaps | Same issue as 2026-11-05; 3,094 (NB01/NB04), 949 (NB03), 3,001 (NB06). Decide fill / de-duplication |
 | – | Downstream combine | Wire to `COHORT_ID` and the 7 COHORT_SET groups |

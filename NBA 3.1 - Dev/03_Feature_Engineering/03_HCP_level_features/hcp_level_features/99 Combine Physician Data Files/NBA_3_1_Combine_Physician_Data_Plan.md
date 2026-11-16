@@ -1,13 +1,13 @@
 # Combine Physician Data (99) in NBA 3.1: Plan
 
-**For:** Wenjie. **Version:** 2026-11-13.  
+**For:** Wenjie. **Version:** 2026-11-16.  
 **Notebook:** `hcp_level_features/99 Combine Physician Data Files/(Clone) 99_Combine_Physician_Data`. It still holds the 3.0 code (189 cells). The **first 3.1 iteration** is designed in section 6 and **not written into the notebook yet**.  
-**Inputs assessed:** HCP claims run `full_2026_11_11` [S8]; HCP-level, patient and promotional tables in the 3.1 volume as of 2026-11-12/13 [S9–S11].  
+**Inputs assessed:** HCP claims run `full_2026_11_13` [S8]; HCP-level, patient and promotional tables in the 3.1 volume as of 2026-11-12/13 [S9–S11].  
 **Closes:** readiness plan open point 9 (combine step not switched to cohorts) [S12].
 
 The plan tells the story in order: where to find things (1), a summary (2), what the 3.0 notebook did (3), what changes for 3.1 and why (4), the inputs family by family (5), what the first 3.1 iteration does (6), what we still do not have (7), the checks (8) and the decisions (9).
 
-Every number has a source in brackets, for example [S8]. "My check, 2026-11-13" means counted on those tables for this plan.
+Every number has a source in brackets, for example [S8]. "My check" means counted on those tables for this plan (2026-11-13, updated 2026-11-16 on `full_2026_11_13`).
 
 ---
 
@@ -24,7 +24,7 @@ Volume root: `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3
 | S5 | The 277 claims features among the 752 | `Feature Analysis/NBA_3_1_HCP_Claims_Selected_Features_277.csv` |
 | S6 | Cohort files | `kerendia_nba_3_1_volume/cohorts/claims/cohorts.parquet` (offset 0), `kerendia_nba_3_1_volume/cohorts/promotional/cohorts.parquet` (offset 17) |
 | S7 | 3.1 HCP universe | `kerendia_nba_3_1_volume/HCP_Universe_without_call_hcps/` |
-| S8 | 3.1 claims features NB01–NB06 | `kerendia_nba_3_1_volume/hcp_level_model/dev_pipeline/notebook_output/full_2026_11_11/hcp_claims/` |
+| S8 | 3.1 claims features NB01–NB06 | `kerendia_nba_3_1_volume/hcp_level_model/dev_pipeline/notebook_output/full_2026_11_13/hcp_claims/` |
 | S9 | 3.1 HCP-level features | `kerendia_nba_3_1_volume/notebook_output/hcp_features/` |
 | S10 | 3.1 patient features (3.0 "feature accelerator") | `kerendia_nba_3_1_volume/notebook_output/patient_features/{rx, dx, px, lab, addon}/` |
 | S11 | 3.1 promotional features | `kerendia_nba_3_1_volume/notebook_output/{hq_email_nba_3_1, digital_engagement_nba_3_1, high_intent_signals_nba_3_1, field_activity_nba_3_1, dtc_nba_3_1}/` |
@@ -44,7 +44,7 @@ Volume root: `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3
 | Join key | `PROVIDER_ID` + calendar month (`SVC_DT_M`); promotional tables on `BHID_<cohort>` | `PROVIDER_ID` + cohort id (`COHORT_ID`), one key `HCP_COHORT_ID = PROVIDER_ID_c<n>` | S1 |
 | Inputs | 48 tables (12 accelerator, 2 hospitalization, 34 HCP / promotional / claims), all 3.0 | 36 HCP tables to join (6 claims, 6 HCP-level, 15 patient, 9 promotional); 3 DTC tables not joined yet | S1, S8–S11 |
 | 3.0 families with no 3.1 table | – | HCP profile (static), SDoH (census), comorbidity, Kerendia claims, channel, colocation, additional indication, DRG, geo, clickstream; FTP and copay only for inference | S14 |
-| Model features | 752 | 368 of the 752 exist by name in the 3.1 inputs: 268 claims, 100 HCP-level and patient. 384 not found | S4, S5, my check |
+| Model features | 752 | 370 of the 752 exist by name in the 3.1 inputs: 270 claims, 100 HCP-level and patient. 382 not found | S4, S5, my check |
 | Missing features | Added as constant 0 | Not added; listed in a report | S1 |
 | Output | Overwrites the 3.0 production table | Delta table by `COHORT_SET` in the 3.1 run folder | S3, S15 |
 
@@ -92,7 +92,7 @@ Result of the last 3.0 run: 222,125 rows, 25,323 columns after the combine [S1, 
 | Feature list | 752, missing ones = 0 | Mode `752`: keep what exists, list what is missing, no 0-fill. Mode `all`: every feature | Retraining and feature selection run again on 3.1 (readiness open point 7); a 0-filled column looks like data | S4, S12 |
 | Imputation | Medians on all rows | Same rules; medians from the training cohorts only (exact median) | Medians from validation and backtest rows would leak into training. Today none of the median columns exists in 3.1 (no HCP profile, no SDoH) | S1 |
 | Name rules | `TIME_TO_ADOPT_FARXIGA` | Same rule; the 3.1 adoption table calls it `HCP_TIME_TO_ADOPT_FARXIGA` | Not renamed yet (open point 7.8) | S9 |
-| Output | Overwrite of the 3.0 table; snapshots in `ops_pipeline_snapshots/` | `<run>/hcp_combined/`, Delta partitioned by `COHORT_SET`, written one set at a time; an existing set is not overwritten without the overwrite parameter | Protects 3.0 production; NB01 alone is 8.09M rows x 4,677 columns [S12], so all sets at once are too large | S3, S15 |
+| Output | Overwrite of the 3.0 table; snapshots in `ops_pipeline_snapshots/` | `<run>/hcp_combined/`, Delta partitioned by `COHORT_SET`, written one set at a time; an existing set is not overwritten without the overwrite parameter | Protects 3.0 production; NB01 alone is 8.09M rows x 4,681 columns [S12], so all sets at once are too large | S3, S15 |
 | Check cells | Many `display` / `count` / `printSchema` cells (for example cells 8–12, 41–52) | One input check before the join and one QC section at the end | Each check reads the full tables | S1 |
 
 ---
@@ -123,20 +123,20 @@ Key columns read from the tables; writers from the Git search [S14].
 
 ### 5.1 The 752 model features in the 3.1 inputs
 
-My check, 2026-11-13: the 752 names [S4] (the file has 753 rows; one is `HCP_COHORT_ID`) compared with the column names of the 3.1 inputs, written the 3.0 way (upper case, `__` as `_`).
+My check: the 752 names [S4] (the file has 753 rows; one is `HCP_COHORT_ID`) compared with the column names of the 3.1 inputs, written the 3.0 way (upper case, `__` as `_`). Claims tables from `full_2026_11_13` [S8]; other tables from the 3.1 volume [S9–S11].
 
 | Where the feature is found | Model features | Example features |
 | --- | ---: | --- |
 | NB01 Rx claims | 172 | `PCT_TOTAL_REJECTED_RX_CLAIMS_JARDIANCE_IN_LAST_6_MONTH`, `PCT_TOTAL_RX_CLAIMS_ACE_OR_ARB_90_DAYS_SUPPLY_IN_LAST_3_MONTH` |
 | NB03 diagnosis claims | 3 | `TOTAL_DX_CLAIMS_STAGE_UNSPECIFIED_IN_LAST_3_MONTH`, `TOTAL_DX_CLAIMS_WITH_PATIENT_NO_NEW_STAGE_IN_LAST_6_MONTH` |
-| NB04 combined claims | 80 | `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_3_WITH_COMBO_DRUG_IN_LAST_1_MONTH` |
+| NB04 combined claims | 82 | `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_3_WITH_COMBO_DRUG_IN_LAST_1_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_DPP_IV_IN_LAST_12_MONTH` |
 | NB05 new patient starts | 14 | `PCT_TOTAL_PATIENTS_START_ACE_OR_ARB_IN_LAST_3_MONTH` |
 | NB06 eligible patients | 1 | `RUNNING_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_4` |
 | Prior writing | 5 | `KERENDIA_NBRX_IN_LAST_1_MONTH`, `KERENDIA_NBRX_IN_LAST_6_MONTH` |
 | NBRx / NRx / TRx | 24 / 30 / 38 | `RUNNING_TOTAL_HCP_NBRX_CLAIMS_GENDER_F`, `RUNNING_TOTAL_HCP_NBRX_CLAIMS_INDICATION_GROUP_T2D_AND_CKD_AND_CVD` |
 | Patient features | 3 | `TOTAL_EVENTS_TIME_180_DAYS_RX`, `TOTAL_EVENTS_TIME_360_DAYS_RX`, `TOTAL_EVENTS_TIME_180_DAYS_PX` |
-| **Found** | **368** | 268 claims features (the NB rows add up to 270 because 2 found names are in both NB01 and NB04), 100 others |
-| Not found | 384 | Among them: the 22 SDoH (`ACS_PCT_*`, `ACS_PER_CAPITA_INC_ZC`), `HCP_AGE`, `HCP_EXPERIENCE`, the 2 `HCP_SPECIALTY_*`, `TIME_TO_ADOPT_FARXIGA`, and the 9 claims features removed by X5 [S12] |
+| **Found** | **370** | 270 claims features (the NB rows add up to 272 because 2 found names are in both NB01 and NB04), 100 others |
+| Not found | 382 | Among them: the 22 SDoH (`ACS_PCT_*`, `ACS_PER_CAPITA_INC_ZC`), `HCP_AGE`, `HCP_EXPERIENCE`, the 2 `HCP_SPECIALTY_*`, `TIME_TO_ADOPT_FARXIGA`, and the 7 claims features still removed by X5 [S12] (the 2 DPP-IV features are back in `full_2026_11_13`) |
 
 Why so many are not found: whole families have no 3.1 table (section 5), and the 3.1 patient and promotional notebooks were rewritten with new column names (for example HQ email, field activity, and recency names such as `MIN_EVENT_TIME_ACARBOSE_TIME_MIN`). Created by the notebook itself and also in the 752: `CALENDAR_MONTH`, `CALENDAR_YEAR`, `MONTHS_SINCE_KER_LAUNCH`, `RATIO_KERENDIA_TO_SGLT2_CLAIMS_IN_LAST_12_MONTHS`.
 
@@ -146,7 +146,7 @@ Why so many are not found: whole families have no 3.1 table (section 5), and the
 
 | Section in the notebook | What it does |
 | --- | --- |
-| 1. Settings (planned) | `%run` of `00_cohort_config`; run parameters (source run `full_2026_11_11`, output run, cohort sets, feature mode `752` or `all`, overwrite); paths |
+| 1. Settings (planned) | `%run` of `00_cohort_config`; run parameters (source run `full_2026_11_13`, output run, cohort sets, feature mode `752` or `all`, overwrite); paths |
 | 2. Inputs | One list of the 39 3.1 tables: path, format, cohort column, cohort calendar, columns to drop; the 3.0 families without a 3.1 table; the rename rules |
 | 3. Helpers | Read an input for one cohort set as `PROVIDER_ID`, `COHORT_ID` and its features; cohort-month join for the calendar-month tables |
 | 4. Skeleton | 3.1 universe x 28 claims cohorts, with `HCP_COHORT_ID`, `COHORT_MONTH`, `PREDICTION_MONTH`, `DATASET`, `COHORT_SET`; stops if rows ≠ HCPs x 28 |
@@ -172,7 +172,7 @@ Why so many are not found: whole families have no 3.1 table (section 5), and the
 | 7.7 | Kerendia / SGLT2 ratio source | 3.0 source columns not in 3.1; NB01 has `TOTAL_RX_CLAIMS_KERENDIA_*` and `TOTAL_RX_CLAIMS_SGLT2_*` | Accept the NB01 columns; or find the 3.0 source | Ratio values may differ from 3.0 | 3.0 owner |
 | 7.8 | Renamed features | 3.1 notebooks renamed columns (for example `HCP_TIME_TO_ADOPT_FARXIGA` for `TIME_TO_ADOPT_FARXIGA`) | Rename map 3.1 → 3.0 names per family (the notebook has an empty one); or select on the 3.1 names | Without it, renamed features show as missing in mode `752` | Family owners |
 | 7.9 | Rows without a provider ID | 3,094 rows (NB01, NB04), 949 (NB03), 3,001 (NB06) [S12, open point 8] | Fill from the provider ID of the 3.1 Rx input (readiness proposal) | Those rows are lost in the join; the input check counts them | HCP claims (us) |
-| 7.10 | NB05 input | NB05 still reads the 3.0 input `Rx_05` (readiness open point 12): its columns keep the 3.0 categories and miss starts of the new drugs | Switch NB05 to the 3.1 Rx input, rerun the claims into a new run folder, set `COMBINE_SOURCE_RUN` to it | NB05 columns change; the combine must be rerun | HCP claims (us) |
+| 7.10 | NB05 input | ~~NB05 still reads the 3.0 input `Rx_05`~~ Resolved 2026-11-13: PJ03 now writes `rx_nps_pull` (3.1 Rx pull with history from 2021), NB05 reads it; Kerendia, Mounjaro, Zepbound and Wegovy starts are counted. `full_2026_11_13` has the fix | Done | HCP claims (us) |
 | 7.11 | 3.1 feature list | The 752 are the 3.0 model features [S4] | Feature selection on mode `all` (readiness open point 7) | Until then mode `752` is a report, not the model input | Raman |
 | 7.12 | Two calendars in one row | Claims c1 uses the lookback month May 2024 (`lookback_end_date` 2024-05-01); promotional c1 ends 2024-06-17; both predict 2024-07-01 and are joined on the same cohort id | Accept (same prediction month); or move one family to the other calendar | Promotional windows end later than claims windows | Team decision |
 | 7.13 | Config defaults | `HCP_UNIVERSE_PATH` is still the 3.0 universe and `HCP_LATEST_FULL_RUN` is `full_2026_11_05` [S13] | Update the config (readiness open point 15) | None for this notebook: it sets its own universe and run | HCP claims (us) |

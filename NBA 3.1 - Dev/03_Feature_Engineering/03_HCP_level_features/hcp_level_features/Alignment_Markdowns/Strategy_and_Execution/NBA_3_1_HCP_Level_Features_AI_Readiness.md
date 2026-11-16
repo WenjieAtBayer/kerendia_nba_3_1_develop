@@ -1,6 +1,6 @@
 # HCP-level claims features in NBA 3.1: Readiness Plan
 
-**For:** Wenjie. **Reviewed by:** Raman. **Version:** 2026-11-14.  
+**For:** Wenjie. **Reviewed by:** Raman. **Version:** 2026-11-16.  
 **Run assessed:** `full_2026_11_13` (job 1010893614518587, run 338478597334222). Earlier run: `full_2026_11_11` (run 441950237921).
 
 The plan tells the story in order: where to find things (section 1), a summary (2), what NBA 3.0 built (3), what changed on the way to 3.1 and why (4), including the changes of 2026-11-13 (4.6), what 3.1 delivers notebook by notebook (5), what is no longer built (6), what this means for the model (7), the run (8), and the open points (9).
@@ -44,13 +44,15 @@ Volume root: `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3
 | New signals | – | Potassium, HbA1c, diabetes type, heart-failure type, CKD stage 5, Kerendia | S2 |
 | Features in NB01–NB06 | 9,617 | 8,463 | S1, S2 |
 
-Of the 9,617 3.0 features, 7,788 are kept and 1,829 are not built any more: 1,704 were exact repeats of another column, 15 NB06 columns hold the same values as the 3.1 "last 1 month" columns (decisions X8, X9), and 110 "other glucose mgmt" stage columns are still not built (decision X5, section 6). 675 features are new.
+Of the 9,617 3.0 features, 7,788 are kept and 1,829 are not built any more: 1,704 were exact repeats of another column, 15 NB06 columns hold the same values as the 3.1 "last 1 month" columns (decisions X8, X9), and 110 "other glucose mgmt" stage columns are still not built (decision X5, section 6). The 4 NB01 columns for the month alone that were not exact repeats (`AVG_PATIENT_AGE`, `AVG_TREATMENT_PER_PATIENT`, `TOTAL_PATIENT_COUNT`, `TOTAL_TREATMENT_COUNT`) are built and are among the 7,788 kept. 675 features are new.
 
 The 3.0 model uses 277 of these features [S8]; 270 exist in 3.1. Their values per HCP change: 141 stay within ±20%, 93 are lower and 36 are higher (section 7). The main causes are the 73,720 added HCPs, who write fewer prescriptions each, the later start of the running totals, and the new CKD stage rules. The model is retrained, and feature selection runs again on all 3.1 features [S12, X5].
 
 **Changes of 2026-11-13 (section 4.6):** DPP-IV is back in the patient journey, GLP-1 claims are no longer counted twice in NB04, NB05 reads a 3.1 input that includes Kerendia and the new GLP-1 drugs, and NB01 again has the 4 averages and counts for the month alone.
 
-**Status:** the full run `full_2026_11_13` succeeded for all 13 tasks and all 28 cohorts in 5 h 31 min [S14]. Section 9 lists 16 open points; 1 and 12 are resolved, 5 is partly resolved. One correction to earlier versions of this plan: the SGLT2 rule of the Kerendia eligibility is **not** applied in 3.1 either (open point 6). The eligible share drops for other reasons (section 4.5).
+**Decision X5 (final 2026-11-16, section 6):** NB04 builds the DPP-IV stage columns (110 columns, 2 model features), not the "other glucose mgmt" stage columns (110 columns, 7 model features). The 7 have little weight in the 3.0 model, most of their signal is in the GLP-1 stage features, and building them would need the other glucose drugs in the shared patient journey. Feature selection runs again on 3.1. The run of record is `full_2026_11_13`.
+
+**Status:** the full run `full_2026_11_13` succeeded for all 13 tasks and all 28 cohorts in 5 h 31 min [S14]. Section 9 lists 16 open points; 1, 5 and 12 are resolved. One correction to earlier versions of this plan: the SGLT2 rule of the Kerendia eligibility is **not** applied in 3.1 either (open point 6). The eligible share drops for other reasons (section 4.5).
 
 ---
 
@@ -325,13 +327,13 @@ Compared with `full_2026_11_11`: NB01 +4 (the averages and counts for the month 
 
 ## 6. What is no longer built, and why
 
-1,829 3.0 columns are not built in `full_2026_11_13`: 1,704 exact repeats, 15 NB06 columns covered by the 3.1 "last 1 month" columns, and 110 "other glucose mgmt" stage columns (X5) [S1, S2, my check].
+1,829 3.0 columns are not built in `full_2026_11_13`: 1,704 exact repeats, 15 NB06 columns covered by the 3.1 "last 1 month" columns, and 110 "other glucose mgmt" stage columns (X5) [S1, S2, my check]. The 4 NB01 plain monthly columns that are not exact repeats are built (added 2026-11-13, below).
 
 **Repeated monthly columns (1,703 in 3.0).** 3.0 stored each monthly value twice: as a plain monthly column (for example `PCT_TOTAL_RX_CLAIMS_DPP_IV`) and as "last 1 month" (`PCT_TOTAL_RX_CLAIMS_DPP_IV_IN_LAST_1_MONTH`). We compared both on all rows of each 3.0 table (7.4M rows for NB02, 13.0M–13.6M for the others) [S1, my check]:
 
 | Notebook | Plain monthly columns | Same values as "last 1 month" | Different | Example dropped columns |
 | --- | ---: | ---: | ---: | --- |
-| NB01 Rx claims | 979 | 975 | 4 | `PCT_TOTAL_REJECTED_RX_CLAIMS_ACE_OR_ARB`, `PCT_TOTAL_RX_CLAIMS_DPP_IV`, `AVG_PATIENT_AGE` |
+| NB01 Rx claims | 979 | 975 | 4 | `PCT_TOTAL_REJECTED_RX_CLAIMS_ACE_OR_ARB`, `PCT_TOTAL_RX_CLAIMS_DPP_IV`, `TOTAL_RX_CLAIMS_SGLT2` |
 | NB02 Lab claims | 21 | 21 | 0 | `PCT_TOTAL_LAB_CLAIMS_A1`, `PCT_TOTAL_LAB_CLAIMS_A2` |
 | NB03 Diagnosis claims | 23 | 23 | 0 | `PCT_TOTAL_DX_CLAIMS_STAGE_1`, `PCT_TOTAL_DX_CLAIMS_STAGE_3` |
 | NB04 Combined claims | 631 | 631 | 0 | `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_1_WITH_ACE_OR_ARB` |
@@ -341,36 +343,39 @@ Compared with `full_2026_11_11`: NB01 +4 (the averages and counts for the month 
 
 The six categories without brands (ACE/ARB, calcium channel / beta blocker, combo drug, diuretic non-MRA, insulin, metformin) are still fully built; only their plain monthly copies (322 of the 979 in NB01) are gone. The 40 plain monthly copies among the X5 columns (20 DPP-IV, 20 other glucose mgmt) are also exact repeats in 3.0 (13.6M rows, 0 differences [S1, my check]); with the DPP-IV columns back, the 20 DPP-IV copies are repeats like the others, so 1,684 + 20 = 1,704 repeats are not built.
 
-**The 19 columns that were not exact repeats** (open point 1, resolved 2026-11-13)
+The 19 plain monthly columns that differ from "last 1 month" are treated separately: 4 are built, 15 are not (below).
+
+**The 19 columns that were not exact repeats: 4 built, 15 not built** (open point 1, resolved 2026-11-13)
 
 | Notebook | Columns | Why they are not exact repeats | Resolution |
 | --- | --- | --- | --- |
-| NB01 | 4: `AVG_PATIENT_AGE`, `AVG_TREATMENT_PER_PATIENT`, `TOTAL_PATIENT_COUNT`, `TOTAL_TREATMENT_COUNT` | In 3.0 the averages cover one extra month, and 3.1 keeps that rule for the look-backs, so the value for the month alone was missing | Built again under the 3.0 names; equal to 3.0 on the test HCPs (section 4.6) |
-| NB06 | 15: eligible patients in total, by GFR / diagnosis stage and by UACR stage, and their % shares, for example `PCT_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_3` | 3.0 NB06 look-backs were averages over one extra month; 3.1 counts the month itself (decision X8 [S12]) | Not built: the 3.1 "last 1 month" column holds the month alone and matches these 3.0 columns (decision X9 [S12]) |
+| NB01 | 4: `AVG_PATIENT_AGE`, `AVG_TREATMENT_PER_PATIENT`, `TOTAL_PATIENT_COUNT`, `TOTAL_TREATMENT_COUNT` | In 3.0 the averages cover one extra month, and 3.1 keeps that rule for the look-backs, so the value for the month alone was missing | **Built** in 3.1 under the 3.0 names (added 2026-11-13, present in `full_2026_11_13`); equal to 3.0 on the test HCPs (section 4.6) |
+| NB06 | 15: eligible patients in total, by GFR / diagnosis stage and by UACR stage, and their % shares, for example `PCT_TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_3` | 3.0 NB06 look-backs were averages over one extra month; 3.1 counts the month itself (decision X8 [S12]) | **Not built**: the 3.1 "last 1 month" column holds the month alone and matches these 3.0 columns (decision X9 [S12]) |
 
-**Decision X5 (NB04, 220 columns in `full_2026_11_11`; 110 since 2026-11-13)**
+**Decision X5 (NB04): the DPP-IV stage columns are built, the "other glucose mgmt" stage columns are not** (final 2026-11-16 [S12])
 
 | What | Detail | Source |
 | --- | --- | --- |
-| Columns | Claims by the patient's CKD stage for DPP-IV and other glucose drugs: 66 GFR / Dx stage × DPP-IV, 66 GFR / Dx stage × other glucose mgmt, 44 UACR stage × DPP-IV, 44 UACR stage × other glucose mgmt. The 220 include 40 plain monthly copies. Claims by the stage of a same-day lab test for these drugs are still built (180 columns, for example `TOTAL_RX_CLAIMS_PATIENT_WITH_TEST_GFR_STAGE_1_WITH_DPP_IV_IN_LAST_6_MONTH`), because they come from the Rx claims, not the patient table | S1, S2 |
-| Why they cannot be built | NB04 takes the patient's treatments from the patient table. In 3.1 that table has no "Other- glucose mgmt" or "DPP-IV" (August 2026, 3.0: 8.47M and 0.98M patient-months). The Rx basket keeps these drugs off for the patient journey (Januvia, Tradjenta, glipizide, pioglitazone: `ACTIVE_JOURNEY = N`), and the GLP-1 drugs, which were part of "Other glucose mgmt" in 3.0, now have their own category "GLP-1" | S3, S5, S6, my check |
-| Why we accepted it | Switching these drugs on only for the HCP features would make the HCP patient tables differ from the patient journey used everywhere else | S12 (X5) |
-| Effect on the model | 9 of the 277 model features are among them (list below) | S8 |
-| How to reverse | Switch the drugs on in the Rx basket and rerun PJ03, PJ06 and NB04 (open point 5) | S12 |
-| Status since 2026-11-13 | DPP-IV is on (section 4.6): its 90 look-back, % and running-total columns are back, and its 20 plain copies are repeats. Still not built: the 110 "other glucose mgmt" columns (90 plus 20 plain copies). NB04 counts GLP-1 and DPP-IV only through the brand, so no patient-month has the class "other glucose mgmt", and the other glucose drugs (for example glipizide, pioglitazone) are still off in the patient journey | S2, S6, my check |
+| Columns concerned | Claims by the patient's CKD stage for DPP-IV and other glucose drugs: 66 GFR / Dx stage × DPP-IV, 66 GFR / Dx stage × other glucose mgmt, 44 UACR stage × DPP-IV, 44 UACR stage × other glucose mgmt (220, including 40 plain monthly copies). Claims by the stage of a same-day lab test for these drugs are built in any case (180 columns, for example `TOTAL_RX_CLAIMS_PATIENT_WITH_TEST_GFR_STAGE_1_WITH_DPP_IV_IN_LAST_6_MONTH`), because they come from the Rx claims, not the patient table | S1, S2 |
+| Why they depend on the patient journey | NB04 takes the patient's treatments from the patient table. The table has a drug only if the Rx basket switches it on for the journey (`ACTIVE_JOURNEY = Y`). 3.0 had "DPP-IV" and "Other- glucose mgmt" in it (August 2026: 0.98M and 8.47M patient-months). In 3.1 the GLP-1 drugs, part of "Other glucose mgmt" in 3.0, have their own category "GLP-1" | S3, S5, S6, my check |
+| Added: DPP-IV by stage | 110 columns (90 built, plus 20 plain copies that are exact repeats) and 2 model features. The Rx basket of 2026-11-13 switches DPP-IV (for example Januvia, Tradjenta) on for the journey: 1,289,659 DPP-IV patients in August 2026 (section 4.6) | S2, S6 |
+| Not added: "other glucose mgmt" by stage | 110 columns (90 plus 20 plain copies) and 7 model features. The other glucose drugs (for example glipizide, pioglitazone, acarbose) stay off for the journey, and NB04 counts GLP-1 and DPP-IV only through their brand, so no patient-month has the class "other glucose mgmt" | S2, S6, my check |
 
-The 9 model features: `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_UNKNOWN_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_1_MONTH`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_3_WITH_OTHER_GLUCOSE_MGMT`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_DPP_IV_IN_LAST_12_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_12_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_6_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_3_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_6_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_UNKNOWN_WITH_DPP_IV_IN_LAST_3_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_UNKNOWN_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_1_MONTH` [S8, S2]. The 2 DPP-IV features are back in `full_2026_11_13`; the 7 "other glucose mgmt" features are still missing.
+The 9 model features: `PCT_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_UNKNOWN_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_1_MONTH`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT`, `RUNNING_TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_3_WITH_OTHER_GLUCOSE_MGMT`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_DPP_IV_IN_LAST_12_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_12_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_GFR_STAGE_4_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_6_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_3_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_6_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_UNKNOWN_WITH_DPP_IV_IN_LAST_3_MONTH`, `TOTAL_RX_CLAIMS_PATIENT_WITH_DX_UACR_STAGE_UNKNOWN_WITH_OTHER_GLUCOSE_MGMT_IN_LAST_1_MONTH` [S8, S2]. The 2 DPP-IV features are built in `full_2026_11_13`; the 7 "other glucose mgmt" features are not.
 
-**Why the 220 columns came back in two steps.** The 220 columns have two separate causes, and each needs its own fix [S2, S6, my check]:
+**Why DPP-IV is added.** DPP-IV is one of the brands with features of their own in 3.0 and 3.1 (`HCP_BRANDS` [S15]), with its own NB01 and NB04 columns, and 3.0 tracked DPP-IV patients in the journey (0.98M patient-months in August 2026 [S3]). With DPP-IV on for the journey, NB04 builds its stage columns as 3.0 did.
 
-| Part | Columns | Model features | What it needs | Fixed by |
-| --- | ---: | ---: | --- | --- |
-| DPP-IV by stage | 110 (90 built, 20 plain copies = repeats) | 2 | DPP-IV patients in the patient journey | Rx basket 2026-11-13 (`full_2026_11_13`) |
-| "Other glucose mgmt" by stage | 110 (90 + 20 plain copies) | 7 | (1) the other glucose drugs (sulfonylureas, pioglitazone, acarbose, ...) in the patient journey, and (2) NB04 counting GLP-1 and DPP-IV inside the class "other glucose mgmt", as 3.0 did | Rx basket 2026-11-15 and NB04 change of 2026-11-15 (in progress, below) |
+**Why "other glucose mgmt" is not added** [S12, my check]:
 
-The 2026-11-13 change covered only the first part, because the decision that day was about DPP-IV: the other glucose drugs stayed out of the patient journey (X5), since the journey is shared. The same day, NB04 was changed to count GLP-1 and DPP-IV only through the brand, to remove a double count; that was right on its own, but it also meant NB04 could not build the class "other glucose mgmt". The plan for 2026-11-13 should have said that only the DPP-IV part would come back; this became clear only when the `full_2026_11_13` results were checked. The "other glucose mgmt" columns were then not built from GLP-1 and DPP-IV alone, because the columns would have carried the 3.0 names with a narrower meaning; they are built in one change with the other glucose drugs.
+| Reason | Evidence |
+| --- | --- |
+| The 3.0 feature list is a reference only: the 3.1 model is retrained and feature selection runs again on all 3.1 features | S12 (X5); section 7.1 |
+| The 7 features matter little in the 3.0 model | 0.49% of the total mean absolute SHAP of the 3.0 production model (the 2 DPP-IV features: 0.06%); ranks 64 to 705 of 752 (MLflow run `f583bcbc9d56477fae983d44c16f8c70`, `Shap_Importances.csv`) |
+| Most of their signal is in the GLP-1 stage features, which 3.1 builds | Correlation with the GLP-1 version of the same column 0.77–0.89 (3.0 `final_claims_monthly`, August 2026, all 234,348 HCPs); 3 of the GLP-1 / DPP-IV versions are themselves model features |
+| The class needs drugs that the shared patient journey does not track | The other glucose drugs (115.4M claims, 10,127,453 patients and 252,921 HCPs in 2023-01 to 2026-09 [S4]) would have to be on for the journey. That changes the treatment counts per patient (NB01) and the eligibility tables (PJ06) for every user of the journey, for 7 features of low importance |
+| The class built from GLP-1 and DPP-IV alone would have a different meaning | The columns would carry the 3.0 names with a narrower content. NB04 counts GLP-1 and DPP-IV through their brand only, which also keeps a claim from being counted twice in the same column (section 4.6) |
 
-**In progress (2026-11-15).** Rx basket `Kerendia_Rx_Final_Product_Mapping_2026_11_15.csv`: 18 other glucose rows switched on as "Other- glucose mgmt", no brand of their own (372 rows, 284 active; only these 18 rows differ from 2026-11-13) [S6, my check]. These drugs have 115.4M claims, 10,127,453 patients and 252,921 HCPs in 2023-01 to 2026-09 [S4]. NB04: GLP-1 and DPP-IV map to the class "Other- glucose mgmt" (they stay brands), and each patient-month, class and brand is kept once, as 3.0. Validation run 656403816641381 (`validation_2026_11_15`) is running; a full run follows if it passes. Not changed: 8 products that are in the HCP Rx pull but not in the basket (Glucotrol XL, Bydureon Pen, Amaryl, Glucotrol, Prandin, Avandia, Actoplus Met XR, tolbutamide: 20,064 claims in 2023-01 to 2026-09).
+What 3.1 still has for these drugs: NB01 counts the other glucose drugs in its "other glucose mgmt" category features, and NB04 builds the same-day lab test × drug columns (above).
 
 ---
 
@@ -390,7 +395,7 @@ For each feature we took the average per HCP in August 2026 (3.0: month 2026-08;
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | NB01 Rx claims | 172 | 116 | 52 | 4 | 0.86 | Added HCPs with fewer claims (section 4.2); running totals start later |
 | NB03 Diagnosis claims | 3 | 1 | 0 | 2 | 1.32 | Stage 3 and 5 now recognised |
-| NB04 Combined claims | 80 (7 missing, X5) | 11 | 39 | 30 | 0.81 | New stage mix (section 4.5); new GLP-1 drugs |
+| NB04 Combined claims | 80 (7 not built, X5) | 11 | 39 | 30 | 0.81 | New stage mix (section 4.5); new GLP-1 drugs |
 | NB05 New patient starts | 14 | 13 | 1 | 0 | 0.89 | 3.1 input since 2026-11-13 (section 4.6) |
 | NB06 Eligible patients | 1 | 0 | 1 | 0 | 0.43 | Fewer eligible stage 4 patient-months (1.98M → 1.20M, August 2026) |
 | **Total** | **270** | **141** | **93** | **36** | | |
@@ -459,7 +464,7 @@ No table has duplicate column names, and no column of `full_2026_11_11` is missi
 | 2 | GLP-1 has no category feature of its own | Wenjie | NB01, NB04 if added |
 | 3 | New drugs have no features of their own | Wenjie | NB01, NB04 if added |
 | 4 | Two copies of the product basket | Team | No |
-| 5 | Other glucose drugs off in the patient journey (X5); DPP-IV on since 2026-11-13; other glucose drugs and NB04 change in progress (2026-11-15) | Wenjie, product mapping | PJ03, PJ06, NB04 (validation run running) |
+| 5 | ~~DPP-IV and other glucose drugs in the patient journey (X5)~~ Resolved 2026-11-16: DPP-IV stage columns built, "other glucose mgmt" stage columns not | Wenjie, Raman | Done |
 | 6 | Eligibility rules C1 (SGLT2) and C9 (diabetes) | NBA team | PJ06, NB01–NB06 |
 | 7 | Retraining and feature selection | Raman | Model only |
 | 8 | Rows without a provider ID | Team | NB01–NB06 provider tables |
@@ -480,7 +485,7 @@ No table has duplicate column names, and no column of `full_2026_11_11` is missi
 
 **4. Two copies of the product basket.** What is going on: the run reads the volume folder [S6]. The workspace folder `Final Product Basket` holds the version before the 2026-11-05 update (16 Rx products and J0606 switched off). If someone uses the workspace copy, Kerendia and the new GLP-1 drugs drop out. Action: update or clearly label the workspace copy.
 
-**5. Other glucose drugs are off in the patient journey (X5).** Status 2026-11-15: in progress, option (b) chosen (section 6, "Why the 220 columns came back in two steps"). What is going on: section 6. 3.0 tracked them per patient (0.98M DPP-IV patient-months in August 2026 [S3]). **Partly resolved 2026-11-13:** DPP-IV is on again (1,289,659 DPP-IV patients in August 2026), so its 90 NB04 columns and 2 of the 9 model features are back (section 4.6). Still open: the other glucose drugs (for example glipizide, pioglitazone; 115.4M claims since 2023 that NB01 counts) are off, and NB04 builds no "other glucose mgmt" stage columns (110 columns, 7 model features). Options: (a) accept; (b) switch the other glucose drugs on for the journey, and in the same rerun let NB04 count GLP-1, DPP-IV and the other glucose drugs as the class "other glucose mgmt" (each patient-month, class and brand once), as 3.0 did. Effect of (b): rerun PJ03, PJ06 and NB04; the patient journey also changes (treatment counts per patient). Counting only GLP-1 and DPP-IV under that class now would give the 3.0 names a narrower meaning, so we did not do it.
+**5. DPP-IV and other glucose drugs in the patient journey (X5) (resolved 2026-11-16).** What was going on: NB04 builds its patient stage × drug columns from the patient table, which in `full_2026_11_11` had neither DPP-IV nor the other glucose drugs (3.0, August 2026: 0.98M DPP-IV and 8.47M "other glucose mgmt" patient-months [S3]). Decision X5: DPP-IV is on for the journey since 2026-11-13 (1,289,659 DPP-IV patients in August 2026), so its 110 NB04 stage columns and 2 of the 9 model features are built (section 4.6). The other glucose drugs (for example glipizide, pioglitazone; 115.4M claims since 2023 that NB01 counts) stay off for the journey, so the 110 "other glucose mgmt" stage columns and their 7 model features are not built. Why: section 6, decision X5. 3.1 feature selection runs again on all 3.1 features.
 
 **6. Eligibility rules C1 and C9 (patient journey).** What is going on: the SGLT2 rule (C1) is meant to exclude patients with unknown stage who never had an SGLT2, but it compares the stage with -1 and never applies, in 3.0 and in 3.1 [S10, PJ06 combine]. Fixing it makes 56% of the eligible months not eligible. C9: 58% of eligible months have no type 1 or type 2 diabetes diagnosis [S10]. Effect of a change: eligibility and all patient-based features in NB01, NB03, NB04 and NB06 change; rerun PJ06 and the HCP job (no code change in the HCP notebooks).
 

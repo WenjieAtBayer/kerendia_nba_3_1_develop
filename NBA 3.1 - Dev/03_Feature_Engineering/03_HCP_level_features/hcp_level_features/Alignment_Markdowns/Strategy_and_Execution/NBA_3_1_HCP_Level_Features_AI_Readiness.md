@@ -477,7 +477,7 @@ No table has duplicate column names, and no column of `full_2026_11_11` is missi
 | 14 | More patient rows per month in 3.1, not yet explained | Team (check) | No |
 | 15 | Clean-up and defaults | Team | No |
 | 16 | NB04 counts a claim once per class × brand row of the patient-month | Wenjie | NB04 if changed |
-| 17 | Storage in Unity Catalog tables instead of files in the volume (team decision 2026-11-16) | Team | Validation run on tables; `full_2026_11_13` copied, not rerun |
+| 17 | Storage in Unity Catalog tables instead of files in the volume (team decision 2026-11-16) | Team | Validation run on tables (done); first full run on tables `full_2026_11_16` |
 
 **1. 19 monthly columns are not in 3.1.** What is going on: 4 NB01 averages and counts and 15 NB06 eligibility columns held values for the month alone that 3.1 does not store (section 6). Options: (a) accept, because 3.1 keeps the look-back versions, for example `TOTAL_ELIGIBLE_PATIENTS_GFR_DX_STAGE_3_IN_LAST_1_MONTH`; (b) restore them as extra columns. None of them is in the 752 [S7, my check]. **Resolved 2026-11-13:** the 4 NB01 columns are built again (equal to 3.0 on the test HCPs); the 15 NB06 columns stay out, because the 3.1 "last 1 month" columns hold the same values (X8, X9) (section 6).
 
@@ -511,27 +511,74 @@ No table has duplicate column names, and no column of `full_2026_11_11` is missi
 
 **16. NB04 counts a claim once per class × brand row.** What is going on: the patient table has one row for every pair of drug class and brand a patient has in a month, and NB04 counts each Rx claim once per row, as 3.0 did. So a claim counts once for every brand value of the patient-month, for example twice in the SGLT2 column for a patient on Jardiance and DPP-IV. Since DPP-IV is back, the class counts rose 1–3% (section 4.6). Options: (a) keep, as 3.0; (b) count each claim once per class and once per brand. Effect of (b): all stage × treatment features in NB04 change; rerun NB04.
 
-**17. Storage in Unity Catalog tables.** What is going on: the team decided on 2026-11-16 that nothing is saved as Parquet and every 3.1 input and output is a Unity Catalog table. Today the HCP universe and the cohort list are Parquet, the baskets are CSV, and the pulls, patient-journey and HCP outputs are Delta files in the volume, none of them a table [S2, S4, S5, S6]. Plan: section 10. Status 2026-11-16: built and validated. A validation run on tables gives the same features as a validation run on files with the same code (section 10.7). The job still defaults to files (`STORAGE_MODE = volume`) until the team switches it.
+**17. Storage in Unity Catalog tables.** What is going on: the team decided on 2026-11-16 that nothing is saved as Parquet and every 3.1 input and output is a Unity Catalog table. Today the HCP universe and the cohort list are Parquet, the baskets are CSV, and the pulls, patient-journey and HCP outputs are Delta files in the volume, none of them a table [S2, S4, S5, S6]. Plan: section 10. Status 2026-11-16: built and validated. A validation run on tables gives the same features as a validation run on files with the same code (section 10.5). The job saves to tables by default since 2026-11-16 (`STORAGE_MODE = uc`); the first full run on tables, `full_2026_11_16`, is running.
 
 ---
 
 ## 10. Storage in Unity Catalog tables
 
-Status 2026-11-16: built and validated (steps 0–3 and 5 done, step 4 partly done; section 10.6). One setting switches between files and tables: the job parameter `STORAGE_MODE` (`volume` = files in `kerendia_nba_3_1_volume`, as before; `uc` = tables in `kerendia_nba_3_1`). The job default is still `volume`. All changes are on the branch `dev/hcp-claims-features`, not committed yet.
+### 10.1 Summary
 
-### 10.1 Setup
+* **What:** every 3.1 input and output of the HCP pipeline (job 1010893614518587, PJ01–PJ06 and NB01–NB07) is saved as a managed Unity Catalog table in `kerendia_nba_3_1`, instead of Parquet, CSV or Delta folders in the volume (team decision 2026-11-16).
+* **Why:** tables can be found and read by name in Unity Catalog, each with a description and tags; access is managed in Unity Catalog; later steps (the combine step, the model) read fixed names; the HCP tables can later get keys and become time-series feature tables (step 7).
+* **The features do not change:** the pipeline logic is the same, only where data is read and saved. A validation run on tables gave the same 24 tables as a validation run on files (section 10.5).
+* **One switch:** the job parameter `STORAGE_MODE`: `uc` = tables (default since 2026-11-16), `volume` = files, as before. Switching back needs no code change; the volume folders of earlier runs are unchanged.
+* **Status 2026-11-16:** steps 0–5 done (section 10.4). The first full run on tables, `full_2026_11_16` (run 814119312914044), is running; after a comparison with `full_2026_11_13` it becomes the run of record. Until `HCP_LATEST_FULL_RUN` points to it, a validation run on tables fails (it reads the lab and Dx pulls of that full run as tables).
+* **Code:** branch `dev/hcp-claims-features` (commit 697f8d3, 2026-11-16).
+
+### 10.2 Today: files in the volume
+
+Up to `full_2026_11_13`, all 3.1 data are files in `kerendia_nba_3_1_volume` [S2, S4, S5, S6]:
+
+| Data | Where | Format |
+| --- | --- | --- |
+| HCP universe | `HCP_Universe_without_call_hcps/` | Parquet |
+| Claims cohorts c1–c28 | `cohorts/claims/cohorts.parquet` and `metadata.json` | Parquet, JSON |
+| Product baskets (Rx, Dx, Dx flag additions, Lab, Px) | Product mapping folder, one CSV per version with the date in the file name | CSV |
+| Raw pulls (PJ01–PJ03) | `hcp_level_model/dev_pipeline/query_output/<run>/` | Delta folders |
+| Patient journey (PJ01–PJ06) | `hcp_level_model/dev_pipeline/notebook_output/<run>/patient_journey/` | Delta folders |
+| HCP features (NB01–NB06) | `hcp_level_model/dev_pipeline/notebook_output/<run>/hcp_claims/`, partitioned by `COHORT_SET` | Delta folders |
+| Intermediate results | `.../hcp_claims/_stage/` and the Rx scratch pull `rx_fills_tagged` | Delta folders, kept after the run |
+
+How it works: `00_cohort_config` builds the paths from the run name (`RUN_OUTPUT_DIR`), and each notebook reads and writes by path; the newest basket is the file with the latest date in its name. What this means:
+
+* No description or tags: one has to know the path, and the folder names say little (for example the suffix `_validation` on every patient-journey folder, also in full runs).
+* Access is granted for the volume as a whole, not per dataset.
+* The run of record is a convention (a folder name in the settings and in this plan): anyone reading the outputs must change paths for every new run.
+* Intermediate folders stay after each run.
+
+### 10.3 With Unity Catalog tables: what changes
+
+The notebooks still name a path, but read and save through shared functions in `00_cohort_config` (cell "Storage helpers": `read_delta`, `write_delta`, `path_exists`, `read_mapping_csv`, `save_product_mapping`, `drop_temp_tables`, `register_run`, `set_run_of_record`). In table mode these turn the path into a table name (section 10.3.4), so the notebooks changed only a few lines each.
+
+| Topic | Files (`volume`) | Tables (`uc`) |
+| --- | --- | --- |
+| Inputs | Parquet and CSV in the volume | Tables `input_*` and `ref_*`, loaded once (section 10.3.3) |
+| New basket version | New CSV file | New rows in the `ref_` table with a new `BASKET_DATE` (`save_product_mapping`) |
+| Run outputs | Delta folders per run | Tables `<run>_<layer>_<dataset>` (section 10.3.4) |
+| Intermediate results | Folders, kept | Temporary tables `tmp_<run>_...`, deleted at the end of each notebook |
+| Description | None | Comment and tags on every table |
+| Runs | Folder names | Run list `run_registry` (NB07 adds a run when its checks pass) |
+| Run of record | A folder name by convention | Views with fixed names `hcp_*` (`set_run_of_record`) |
+| Safety | – | In table mode no file is written; a target without a table name stops the run |
+
+Not changed: the feature logic and values; the `COHORT_SET` partitions; the 3.0 tables read from the 3.0 volume (section 10.3.3); the DX, PX and RX event lists in the workspace (checks only).
+
+For anyone reading the outputs: runs from `full_2026_11_16` on exist only as tables. Read `kerendia_nba_3_1.hcp_<table>` (the run of record, once set) or `kerendia_nba_3_1.<run>_hcp_<table>` for a given run. Earlier runs stay in the volume folders. The combine step (step 8) and any code that reads the volume paths of the HCP outputs must move to these names.
+
+#### 10.3.1 Setup
 
 | Topic | Decision | Source |
 | --- | --- | --- |
-| Schema | `kerendia_nba_3_1` (owner Wenjie, created 2026-10-28). Tables since 2026-11-16 (sections 10.3, 10.4). The group `US_DSAA_PROD_GROUP` has all privileges on it through the catalog | S16, my check |
+| Schema | `kerendia_nba_3_1` (owner Wenjie, created 2026-10-28). Tables since 2026-11-16 (sections 10.3.3, 10.3.4). The group `US_DSAA_PROD_GROUP` has all privileges on it through the catalog | S16, my check |
 | Table type | Managed tables only; nothing new is saved as files | Team decision |
 | Job account | Job 1010893614518587 runs as a user account (patricio.guledjian.ext@bayer.com), so the tables will be owned by that account. Later: move the job to a service principal or hand the tables to the group | S14, my check |
 | Layout | The HCP tables keep the `COHORT_SET` partitions (training, validation and back-testing groups), as today | S15 |
 | Keys | HCP (`NPI_NUMBER` or `PROVIDER_ID`), `COHORT_ID` and the cutoff date, never empty, so the HCP tables can later become time-series feature tables | – |
-| Run of record | `full_2026_11_13` is copied into tables, not rerun. A validation run on tables proves the new code | – |
+| Run of record | The first full run on tables (`full_2026_11_16`) becomes the run of record after a comparison with `full_2026_11_13` (volume folders). A validation run on tables proved the new code first (section 10.5) | – |
 | Old runs in the volume | Kept until the tables are checked | – |
 
-### 10.2 How the tables are organised
+#### 10.3.2 How the tables are organised
 
 A Unity Catalog schema has no folders, so all tables sit side by side in `kerendia_nba_3_1`. They are organised by:
 
@@ -539,9 +586,9 @@ A Unity Catalog schema has no folders, so all tables sit side by side in `kerend
 * **A comment on each table:** run tables: layer, run, the notebook that wrote it, the date and the old volume path (set by `write_delta`); input and reference tables: what one row means, the source file and the load date.
 * **Tags on each table:** run tables `project`, `run`, `layer` (plus the notebook's own tags, e.g. `dataset`); input and reference tables `project`, `layer`, `dataset`, `load_date`.
 * **A run list (`run_registry`):** one row per run: `RUN_NAME`, `RUN_TYPE` (full or validation), `STATUS`, `JOB_ID`, `JOB_RUN_ID`, `IS_RUN_OF_RECORD`, `NOTE`, `UPDATED_AT`. NB07 adds the run when all its checks pass (table mode only).
-* **Views with fixed names for the run of record:** for example `hcp_claims_monthly_cohort` reads `full_2026_11_13_hcp_claims_monthly_cohort`. Later steps (the combine step, the model) always read the same names; a new run of record only changes the views.
+* **Views with fixed names for the run of record:** for example `hcp_claims_monthly_cohort` reads `<run of record>_hcp_claims_monthly_cohort`. Later steps (the combine step, the model) always read the same names; a new run of record only changes the views.
 
-### 10.3 Inputs and reference tables (no run)
+#### 10.3.3 Inputs and reference tables (no run)
 
 | Table | Today [S6, my check] | Note |
 | --- | --- | --- |
@@ -558,7 +605,7 @@ Loaded on 2026-11-16 by the notebook `03_HCP_level_features/00_load_uc_inputs` (
 
 The 3.0 reference tables in the 3.0 volume (S1, S3, the NPI-to-provider mapping) stay as they are: they are not ours and are only read. Three of them change what a run writes and are refreshed by the 3.0 pipeline: the NPI-to-provider mapping (provider IDs of the six provider tables and the NPI join of the patient journey), `Rx_01_new` (column list of NB01, rows before 2023 in NB04 and NB06, never counted) and `Lab_04` (rows before 2023 in NB04). Between the backup of 2026-10-23 and the live tables of 2026-10-26, the mapping gained 8,112 and lost 54 NPI-provider pairs [my check]. Rerunning an old run can therefore give other provider IDs. Not tracked yet (option: record their Delta versions in `run_registry`). All other 3.0 reads only feed checks (`RUN_CHECKS` or validation runs).
 
-### 10.4 Tables per run (example `full_2026_11_13`, 26 tables)
+#### 10.3.4 Tables per run (26 tables per full run; example `full_2026_11_13`)
 
 Each name below starts with the run name, for example `full_2026_11_13_pull_rx_hcp`.
 
@@ -582,30 +629,29 @@ Each name below starts with the run name, for example `full_2026_11_13_pull_rx_h
 
 NB07 only checks the `hcp_` tables. `rx_fills_tagged` (scratch pull of PJ03, no reader) and the `_stage/` folder become temporary tables `tmp_<run>_...`, deleted at the end of PJ03 and of each HCP notebook; after a failed run they stay until the next run of the same name. A validation run writes 24 tables (it reads the lab and Dx pulls of the run in `HCP_LATEST_FULL_RUN`, now `full_2026_11_13`). In table mode the save function never writes a file: a target without a table name stops the run.
 
-### 10.5 Still to confirm
+#### 10.3.5 Still to confirm
 
-1. `rx_fills_tagged`: decided 2026-11-16: temporary table, dropped at the end of PJ03.
-2. The original DX, PX and RX event lists (CSV in the workspace folder `Final Product Basket`, used only for checks) stay in Git as source documents.
-3. `HCP_Universe/` (with call HCPs) is also in the volume; only the universe in the settings is loaded.
-4. The provider-level tables keep their current base names, so the 3.0 names stay recognisable.
+1. The original DX, PX and RX event lists (CSV in the workspace folder `Final Product Basket`, used only for checks) stay in Git as source documents.
+2. `HCP_Universe/` (with call HCPs) is also in the volume; only the universe in the settings is loaded.
+3. The provider-level tables keep their current base names, so the 3.0 names stay recognisable.
 
-### 10.6 Steps
+### 10.4 Steps
 
 | Step | What | Check | Status |
 | --- | --- | --- | --- |
 | 0 | Job account and rights; table list (this section) | – | Done 2026-11-16 |
 | 1 | Shared save and read functions in the settings notebook (`00_cohort_config`, cell "Storage helpers") | Test on a test table | Done: write, read back, comment and tags on a test table (deleted); file writes refused in table mode |
 | 2 | PJ01–PJ06 and NB01–NB07 use them | No Parquet writes or volume output paths left in the job notebooks | Done: scan of the 13 notebooks; only 3.0 reads, event lists and the switched-off Rx basket draft (workspace) remain |
-| 3 | One-time load of inputs and baskets | Same rows and contents as the files | Done: 7 tables, 13 of 13 checks OK (section 10.3) |
-| 4 | Copy `full_2026_11_13` into tables | Same rows, columns and contents per table | Partly: 8 of 26 tables (the 4 pulls and 4 HCP tables), notebook `00_copy_run_to_uc`. The lab and Dx pulls the validation runs need are checked (same rows and values). The other 18 tables, the run list entry and the `hcp_*` views: later (not needed for the switch) |
-| 5 | Validation run on tables | Same features as a validation run on files with the same code | Done: section 10.7 |
-| 6 | Update this plan; one commit | – | Plan updated 2026-11-16; commit when the team agrees |
+| 3 | One-time load of inputs and baskets | Same rows and contents as the files | Done: 7 tables, 13 of 13 checks OK (section 10.3.3) |
+| 4 | Validation run on tables | Same features as a validation run on files with the same code | Done: section 10.5 |
+| 5 | Update this plan; one commit | – | Done: commit 697f8d3 (2026-11-16) |
+| 6 | Job default `STORAGE_MODE = uc`; first full run on tables (`full_2026_11_16`); compare with `full_2026_11_13`; make it the run of record (views `hcp_*`) and point `HCP_LATEST_FULL_RUN` to it | Same features as `full_2026_11_13`, apart from changes in the source data | Running (started 2026-11-16) |
 | 7 | Primary keys on the HCP tables (time-series feature tables) | Same values in a point-in-time lookup as in a plain join | To do |
 | 8 | Combine step on cohorts, reading the views (open point 9) | – | To do |
 
-Step 5 was planned against `validation_2026_11_13`. That run started before `full_2026_11_13` existed, so its lab and Dx features used the pulls of an older full run; it is not a fair comparison. Instead, two validation runs of the same code were run on 2026-11-16, one on files and one on tables (section 10.7).
+The validation was first planned against `validation_2026_11_13`. That run started before `full_2026_11_13` existed, so its lab and Dx features used the pulls of an older full run; it is not a fair comparison. Instead, two validation runs of the same code were run on 2026-11-16, one on files and one on tables (section 10.5).
 
-### 10.7 Validation: tables vs files (2026-11-16)
+### 10.5 Validation: tables vs files (2026-11-16)
 
 | Run | Mode | Output | Result |
 | --- | --- | --- | --- |
@@ -622,7 +668,5 @@ Comparison of all 24 tables (2 Rx pulls, 11 patient-journey, 11 HCP) [my check]:
 * The table run wrote no folders in the volume and left no temporary tables; NB07 added it to `run_registry` (SUCCESS, not the run of record).
 
 The table-mode run took longer: PJ01–PJ03 took about 66 min each in the table run against 3–10 min in the file run; the later tasks took about the same time. Both runs started at the same moment (the job allows one run at a time with a queue, but the second did not wait), so the likely cause is the two runs competing for Snowflake, not the tables. Not checked yet.
-
-To switch the pipeline to tables: set the job default `STORAGE_MODE = uc`. To switch back: `volume` (the volume folders are unchanged).
 
 

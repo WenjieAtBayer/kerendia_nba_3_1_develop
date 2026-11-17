@@ -102,7 +102,7 @@ LAB_STAGE_TEXT = {
 }
 
 def load_lab_input():
-    _df = spark.read.format("delta").load(hcp_input_path(HCP_LAB_TABLE))
+    _df = read_delta(hcp_input_path(HCP_LAB_TABLE))   # Delta folder or UC table (STORAGE_MODE)
     if HCP_LAB_SOURCE == "3.0":
         return _df
     _map = {t: F.create_map(*[x for k, v in m.items() for x in (F.lit(k), F.lit(v))])
@@ -586,7 +586,7 @@ print("PASS — fast engine = step-by-step" if _ok else "CHECK MISMATCHES")
 # Lab claims from DATA_START_DATE (team rule). Added to the existing rows only (left join, 0 when no flag test).
 from dateutil.relativedelta import relativedelta as _rd
 
-_pat_elig_lab = spark.read.format("delta").load(get_patient_table_path("sglt2_filter_m"))
+_pat_elig_lab = read_delta(get_patient_table_path("sglt2_filter_m"))
 _FLAG_OF_TEST = {t: f for f, (t, _, _) in LAB_FLAG_RULES.items()}
 
 
@@ -934,3 +934,11 @@ print(f"Trace NPI: {TRACE_NPI} | cohorts: {len(trace)} | checks: {trace['checks'
 display(trace)
 if bad:
     display(pd.DataFrame(bad).head(50))
+
+# COMMAND ----------
+
+# DBTITLE 1,Drop temporary tables (UC mode)
+# STORAGE_MODE = "uc": the staging tables of this notebook (materialize, full runs) are temporary tables of this
+# run (tmp_<run>_hcp_<stage prefix>...); they are dropped at the end. Volume mode / validation runs: nothing to drop.
+if HCP_STAGE_OUTPUT and globals().get("_STAGE_PREFIX"):
+    drop_temp_tables(_STAGE_PREFIX)

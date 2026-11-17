@@ -81,7 +81,7 @@ _NOTEBOOK_OUTPUT = HCP_NOTEBOOK_OUTPUT
 # (HCP_RX_TABLE, same claims as NB01 / NB04); before it the 3.0 Rx_01_new (walkthrough and column list only,
 # never counted). HCP_RX_SOURCE = "3.0" gives Rx_01_new only.
 _RX_COLS = [NPI_COL, F.col("PATIENT_ID").cast("string").alias("PATIENT_ID"), F.to_date(SVC_COL).alias(SVC_COL)]
-_rx_new  = spark.read.format("delta").load(hcp_input_path(HCP_RX_TABLE)).select(*_RX_COLS)   # 3.1 pull: full path (3.1 volume)
+_rx_new  = read_delta(hcp_input_path(HCP_RX_TABLE)).select(*_RX_COLS)   # 3.1 pull: Delta folder or UC table (STORAGE_MODE)
 if HCP_RX_TABLE.rstrip("/").endswith("Rx_01_new"):
     df_rx_raw = _rx_new
 else:
@@ -96,8 +96,8 @@ print(f"Rx input: {HCP_RX_TABLE} (+ Rx_01_new before {DATA_START_DATE})")
 # Patient eligibility per month (patient journey combine) and first dialysis date (Px journey)
 _ELIG_PATH = get_patient_table_path("sglt2_filter_m")
 _PX_PATH   = get_patient_table_path("px")
-pat_elig = spark.read.format("delta").load(_ELIG_PATH)
-pat_px   = spark.read.format("delta").load(_PX_PATH)
+pat_elig = read_delta(_ELIG_PATH)
+pat_px   = read_delta(_PX_PATH)
 
 # Rows of the patient-keyed tables that belong to the patients of this run's Rx claims
 _rx_patients  = df_rx.select("PATIENT_ID").distinct()
@@ -525,12 +525,13 @@ HF_TYPE_VALUES = ["HFPEF_PROXY", "HFREF_PROXY", "MIXED", "UNKNOWN"]
 # The table is written by PJ04 of the same run (RUN_OUTPUT_DIR). Full run: must exist. Validation run on an older
 # folder without it (e.g. validation_2026_10_30): the DM / HF columns are skipped, the rest of NB06 runs as before.
 import os
-_DMHF_IN_RUN = bool(RUN_OUTPUT_DIR) and os.path.exists(RUN_OUTPUT_DIR + get_patient_table("dm_hf_flags") + "/_delta_log")
+_DMHF_IN_RUN = bool(RUN_OUTPUT_DIR) and (path_exists(RUN_OUTPUT_DIR + get_patient_table("dm_hf_flags")) if STORAGE_MODE == "uc"
+                                         else os.path.exists(RUN_OUTPUT_DIR + get_patient_table("dm_hf_flags") + "/_delta_log"))
 DM_HF_FEATURES_ON = _DMHF_IN_RUN or not VALIDATION_MODE
 if not DM_HF_FEATURES_ON:
     print(f"SKIPPED DM / HF features: {get_patient_table('dm_hf_flags')} not in {RUN_OUTPUT_DIR} (validation run)")
 _DMHF_PATH = get_patient_table_path("dm_hf_flags") if DM_HF_FEATURES_ON else None
-pat_dmhf = None if not DM_HF_FEATURES_ON else (spark.read.format("delta").load(_DMHF_PATH)
+pat_dmhf = None if not DM_HF_FEATURES_ON else (read_delta(_DMHF_PATH)
             .select(F.col("PATIENT_ID").cast("string").alias("PATIENT_ID"), "DM_TYPE", "HF_TYPE",
                     F.trunc(F.to_date("HF_FIRST_DATE"), "month").alias("_HF_M")))
 _bad_dm = [] if not DM_HF_FEATURES_ON else sorted({r[0] for r in pat_dmhf.select("DM_TYPE").distinct().collect()} - set(DM_TYPE_VALUES) - {None})
@@ -888,3 +889,11 @@ print(f"Trace NPI: {TRACE_NPI} | Rx claims: {len(_rx_t):,} | eligible patient-mo
 display(trace)
 if bad:
     display(pd.DataFrame(bad).head(50))
+
+# COMMAND ----------
+
+# DBTITLE 1,Drop temporary tables (UC mode)
+# STORAGE_MODE = "uc": the staging tables of this notebook (materialize, full runs) are temporary tables of this
+# run (tmp_<run>_hcp_<stage prefix>...); they are dropped at the end. Volume mode / validation runs: nothing to drop.
+if HCP_STAGE_OUTPUT and globals().get("_STAGE_PREFIX"):
+    drop_temp_tables(_STAGE_PREFIX)

@@ -87,9 +87,42 @@ Removed from the Veeva specification at revision 1.8, absent from the official E
 
 ## 2. ER diagram — how the tables link
 
-![Veeva Link data model v2.0](1793362173998_image.png)
+```mermaid
+erDiagram
+    SCIENTIFIC_EXPERT {
+        string SE_ID PK
+        string NPI "38.0% null; 1:1 with SE_ID where populated"
+        string VEEVA_ID "98.1% populated"
+        string EXPERT_TYPE
+    }
 
-*Keep the image file alongside this document for the diagram to render.*
+    %% Scoring and ranking cluster (direct on SE_ID)
+    SCIENTIFIC_EXPERT ||--o{ FOCUS_AREA : "SE_ID"
+    SCIENTIFIC_EXPERT ||--o{ CLINICAL_LEADER : "SE_ID"
+    SCIENTIFIC_EXPERT ||--o{ DIGITAL_REACH_FOCUS_AREA : "SE_ID"
+    SCIENTIFIC_EXPERT ||--o{ INDEX : "SE_ID"
+    INDEX }o--|| SCIREACH_MAPPING : "decodes TYPE = Scientific Reach"
+
+    %% Profile, commercial and identity cluster (direct on SE_ID)
+    SCIENTIFIC_EXPERT ||--|| ADDRESS : "SE_ID (1:1 measured)"
+    SCIENTIFIC_EXPERT ||--o{ ASSOCIATION : "SE_ID"
+    SCIENTIFIC_EXPERT ||--o{ PAYMENT : "SE_ID"
+    SCIENTIFIC_EXPERT ||--o{ COMPANY_SPONSORSHIP : "SE_ID"
+    SCIENTIFIC_EXPERT ||--o{ COMPANY_COLLABORATION : "SE_ID (table empty)"
+
+    %% Two-hop activity chains: bridge -> dimension
+    SCIENTIFIC_EXPERT ||--o{ EVENT_ATTENDEE : "SE_ID"
+    EVENT_ATTENDEE }o--|| MEDICAL_EVENT : "event key"
+    SCIENTIFIC_EXPERT ||--o{ SCIENTIFIC_EXPERT_CLINICAL_TRIAL : "SE_ID"
+    SCIENTIFIC_EXPERT_CLINICAL_TRIAL }o--|| CLINICAL_TRIAL : "trial key"
+    SCIENTIFIC_EXPERT ||--o{ SCIENTIFIC_EXPERT_PUBLICATION : "SE_ID"
+    SCIENTIFIC_EXPERT_PUBLICATION }o--|| PUBLICATION : "publication key"
+
+    %% Identity changelog (self-referencing; not yet in the warehouse)
+    SCIENTIFIC_EXPERT ||--o{ SCIENTIFIC_EXPERT_CHANGELOG : "SE_ID / MERGED_INTO_SE_ID"
+```
+
+*Veeva Link data model v2.0. `COMMUNITY_LEADER_FOCUS_AREA` is left out because it is deprecated and absent from the official ERD. Bridge-to-dimension key names are shown generically; check the exact column names against the Veeva dictionary.*
 
 ### 2.1 Structure in words
 

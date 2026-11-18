@@ -152,7 +152,7 @@ Candidate set: about 60 to 80 columns. Feature selection (section 6) is expected
 
 **Question.** Should the colocation / IDN block and the Veeva block be combined, or built separately? **Answer:** build them as separate blocks on the same spine, plus a small set of cross features that passed the signal test below. Colocation peer writing is dated and low risk; Veeva scores are a snapshot (T3), so a full merge would carry T3 risk into the colocation features.
 
-**Method.** Notebook `60_veeva_colocation_idn_combined_signal_test`, the same method as `HCP_Colocation_data_assessment.md` (in the `_pg` / `_sa` repo copies, `NBA 3.0 Static Feature Analysis`):
+**Method.** Notebook `60_veeva_colocation_idn_combined_signal_test`, the same method as `33_2_colocation_idn_data_assessment.md` (in the `_pg` repo copy, `NBA 3.0 Static Feature Analysis`; the colocation / IDN readiness plan is `33_3_colocation_idn_nba_3_1_readiness_plan.md` in the same folder):
 
 * Universe and grouping: 294,727 HCPs. Practice (L1) = BEST_AFFL `BRAND_RANK = 1` account. IDN (L4) = `mdm_stg_acct_hrchy_ker`, with 'NA' / 'Multiple Doctors' counted as no IDN.
 * Writers: LRx V7, weekly rows, Kerendia NBRx > 0.
@@ -176,7 +176,7 @@ Candidate set: about 60 to 80 columns. Feature selection (section 6) is expected
 
 **Notes.**
 
-* The new-writer view here means no Kerendia TRx in the look-back; its baseline is 5.4%, against about 4.4% in the colocation assessment. Align the rule (Q11) before the two documents are compared on new writers.
+* The new-writer view here means no Kerendia TRx in the look-back (baseline 5.4%). The rule is now decided (Q11): writers and new writers come from KER-10 `active_nbrx_writers` in `kerendia_metric_views.mv_kerendia_nbrx`, so this test should be re-run on that definition before its numbers are reused.
 * Practice and IDN come from the Q4-2026 snapshots applied to past months (same caveat as the colocation assessment).
 * Ownership: the IDN peer **writer** share stays in the colocation notebook. The cross features need the Veeva expert flag, so they are built in the Veeva block from the colocation group keys (D7).
 
@@ -272,7 +272,7 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | Q8 | Can the 65,795 unmatched providers be recovered through `VEEVA_ID` / Veeva Network? | Test; expected small gain | NBA team |
 | Q9 | Who reviews the untargeted-authority list (B1) and how often? | Brand and sales operations, quarterly with the call plan | Brand, sales operations |
 | Q10 | Does NBA 3.0 already use any Veeva Link or KOL attribute? | Check the NBA 3.0 final feature list | NBA team |
-| Q11 | Which rule defines the new-writer view (no Kerendia NBRx, or no Kerendia TRx, in the look-back)? | Agree one rule with the colocation owner; section 5.2 uses no TRx (baseline 5.4% vs about 4.4%) | NBA team |
+| Q11 | Which rule defines writers and the new-writer view? | **Closed** (user, 2026-11-18): KER-10 `active_nbrx_writers` in `kerendia_metric_views.mv_kerendia_nbrx`; new writers = not counted by KER-10 in the look-back. Same rule as colocation plan D8 | NBA team |
 
 ## 9. Risks
 

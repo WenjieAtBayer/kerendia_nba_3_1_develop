@@ -36,7 +36,7 @@
 * **Grain:** one row per `HCP_COHORT_ID` (HCP × cohort `lookback_end_date`). Every feature in this plan is built per cohort and capped at `lookback_end_date`. No static builds (fixes the NBA 3.0 leakage in competitor and adoption features).
 * **Cohorts:** `kerendia_nba_3_1_volume/cohorts/claims/cohorts.parquet` for Dx and Rx features. `kerendia_nba_3_1_volume/cohorts/lrx/cohorts.parquet` for LRx (NBRx) features.
 * **Join key:** `HCP_COHORT_ID` in `99_Combine_Physician_Data`, replacing `PROVIDER_ID` / `NPI_NUMBER` + `SVC_DT_M`.
-* **Universe:** NBA 3.1 universe, 314,920 HCPs, 6,704 writers, base rate 2.13%.
+* **Universe:** NBA 3.1 universe without call-only HCPs (criteria C1–C4, C5 call-history-only HCPs excluded), 294,727 HCPs, read from `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_1_volume/HCP_Universe_without_call_hcps/`. This replaces the 314,920-HCP `HCP_Universe` (C1–C5). Backtest target (HCP wrote at least one Kerendia NBRx in August 2026, `KERENDIA_LAAD_BASED_LRX_V6`, `PRODUCT_GROUP = 'KERENDIA'`, `PERIOD_ID` in Aug 2026), recomputed 2026-11-17: 6,705 writers, base rate 2.28%. No writer is lost by dropping the call-only HCPs; on the old 314,920-HCP universe the same writers give 2.13% (6,704 in the original backtest; +1 from the V6 refresh of 2026-11-15).
 * **Dx panel:** distinct patients with any Dx event-list claim where the HCP is the referring (else rendering) doctor. Patient flags come from claims by any provider in the lookback.
 * **Null policy:** `NUM_*` = 0 when nothing qualifies. `PCT_*` / shares are empty when the denominator is empty. `MIN_DAYS_*` is empty when the HCP never prescribed the drug.
 * **Evaluation metrics (same as the backtests):** AUC, AUC within HCP size band ("in size"), AUC on new writers.
@@ -57,6 +57,21 @@
 | V8 | Cohort parity vs NBA 3.0 | Rebuild NBA 3.0 competitor features per cohort, compare to the static output | Differences explained by leakage only | NBA team |
 | V9 | Training support for event labels | Rows and writers per cohort after each event date in the training window | Enough post-event rows to learn from (Farxiga, Entresto). Events with too few rows wait for NBA 3.2 | NBA team |
 | V10 | Pre-LOE Entresto prescriber specialty mix (Q8 from the briefing, not answered in the meeting) | Specialty split of brand Entresto writers 2023–2024 vs Kerendia target segment | Overlap known. It decides whether the brand-adopter flag is a target-segment signal | NBA team |
+
+**Validation results (checked 2026-11-17 on LRx V7, `Rx_01_new` / `Dx_03` / Dx event list on the 294,727-HCP universe): 7 of 10 met, 2 partly met, 1 not met** (V2 moved to met on 2026-11-18 after the CKD source fix in 11). The details are in a "Phase 0 validation status" cell in each feature notebook.
+
+| # | Status | Key numbers | Affects |
+| --- | --- | --- | --- |
+| V1 | Met | Monthly share of NBRx with an indication group, 2023-06 to 2026-09: SGLT2 91.5-93.4%, Entresto 100%, steroidal MRA 44.1-49.3%; stable | 31 (MRA CKD scope sees about half of MRA NBRx) |
+| V2 | Met (fixed 2026-11-18) | Dx event list: 11,685,734 stage-3 patients (used by 09). `Dx_03`: 25,167; 3,144,676 stage-3 patients have no `Dx_03` CKD claim. Fix: 11 now takes CKD dates from the Dx event list (CKD + ESRD codes of 09 + D63.1): 20,200,200 CKD patients vs 16,634,749 in `Dx_03`, 54,697 `Dx_03` patients not covered | 11: CKD-based adoption columns rebuilt; c28 fill rates up 0.8-4.8 points (e.g. Farxiga same-HCP 43.28% to 46.83%) |
+| V3 | Not met | Medical sign-off on the HF proxy not done | 09: HF-proxy and any-indication columns provisional |
+| V4 | Met | V7: CKD, T2D + CKD, T2D + CKD + HF, CKD + HF (no CVD groups) | 31 |
+| V5 | Partly met | Two labels only; generic NBRx from 2023-11-03 (about 9-15k a month), rising from Jan 2026 (43,465) rather than 2026-04-06 | 31, 36 (confirm the Farxiga event date with Josh) |
+| V6 | Met | `Rx_01_new` generic from 2024-11-27; LRx generic ramps Jul-Aug 2025 (541 to 13,162 NBRx) | 11, 36 (exact day still Q6) |
+| V7 | Met | GLP-1 12M NBRx 7.01M; 5.29M T2D, 0.74M HF | 31 |
+| V8 | Partly met | Proxy only: 12M Jardiance / Farxiga vs the NBA 3.0 monthly output, correlation 0.71-0.93 by cohort, 3.1 totals about 20% higher | 31 (full 3.0 rebuild per cohort not done) |
+| V9 | Met | Entresto: 14 cohorts, 86,065 writer-cohorts. Farxiga: 5 cohorts, 32,731. Log-ratio: 3 cohorts, 19,772. c28 target month (Oct 2026) incomplete in LRx | 36 |
+| V10 | Met | Brand Entresto writers 2023-24: CARD 16.1%, NEPH 2.6%. Kerendia writers: NEPH 19.0%, CARD 3.4%. Kerendia writer rate 10.7% (Entresto brand writers) vs 8.0% (others) | 11 (weak target-segment signal) |
 
 ---
 

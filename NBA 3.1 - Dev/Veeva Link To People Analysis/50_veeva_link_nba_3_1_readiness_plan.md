@@ -144,8 +144,41 @@ From the feature plan and the 153-feature pilot, reduced to what the v2 findings
 | Profile | T2 | `veeva_expert_type`, `veeva_is_md_do`, `veeva_is_phd`, `veeva_is_academic`, `veeva_emerging_expert`, `veeva_n_editorial_boards`, `veeva_n_society_roles`, `veeva_kidney_society_flag`, `veeva_n_sponsors` | 8 to 10 | Practice setting and seniority (4.1, 4.8, 4.9) |
 | Influence rankings | T3 | `veeva_best_decile`, `veeva_decile_bin`, `veeva_cl_decile_{ckd,hf,t2d,t1d,htn}`, `veeva_cl_decile_mra_class`, `veeva_cl_decile_sglt2_class`, `veeva_fa_decile_max_inscope`, `veeva_dr_any_inscope`, `veeva_index_{publication,trial,event,guideline}` | 14 to 18 | Rank HCPs by disease authority (7); only if E6 passes |
 | Composites | mixed | `veeva_industry_engagement`, `veeva_network_breadth` | 2 to 4 | Standardised on the full HCP Universe, not the pilot |
+| Colocation x Veeva (cross) | T3 | `veeva_idn_expert_share`, `veeva_idn_expert_share_zero_flag`, `veeva_practice_expert_peer_flag` | 3 | Signal test, section 5.2 |
 
 Candidate set: about 60 to 80 columns. Feature selection (section 6) is expected to keep 15 to 30.
+
+### 5.2 Combined colocation, IDN and Veeva features: signal test (2026-11-18)
+
+**Question.** Should the colocation / IDN block and the Veeva block be combined, or built separately? **Answer:** build them as separate blocks on the same spine, plus a small set of cross features that passed the signal test below. Colocation peer writing is dated and low risk; Veeva scores are a snapshot (T3), so a full merge would carry T3 risk into the colocation features.
+
+**Method.** Notebook `60_veeva_colocation_idn_combined_signal_test`, the same method as `HCP_Colocation_data_assessment.md` (in the `_pg` / `_sa` repo copies, `NBA 3.0 Static Feature Analysis`):
+
+* Universe and grouping: 294,727 HCPs. Practice (L1) = BEST_AFFL `BRAND_RANK = 1` account. IDN (L4) = `mdm_stg_acct_hrchy_ker`, with 'NA' / 'Multiple Doctors' counted as no IDN.
+* Writers: LRx V7, weekly rows, Kerendia NBRx > 0.
+* Windows: look-back 2025-07-25 to 2025-10-23; outcome 2025-10-24 to 2026-10-23. The HCP is always excluded from their own group.
+* Expert: best Kerendia-relevant decile 8 to 10, computed with the section 5.3 lists of the assessment. That gives 37,076 experts (12.6% of the universe).
+* Veeva loads (hub 2025-06-30, scores 2025-03-06) are earlier than both windows, so there is no look-ahead in this test.
+* The baseline reproduces the colocation assessment exactly (233,102 HCPs with a practice peer; 15.7% vs 7.4%). Veeva coverage matches assessment v2 (228,932 matched; 147,489 with a decile).
+* An independent self-join recount matched the practice results.
+* These are one-feature-at-a-time checks, not model lift.
+
+| Idea | Result (forward Kerendia writer rate) | New-writer view | Decision |
+| --- | --- | --- | --- |
+| 1a. Expert colleague in the practice (L1) | Raw 10.7% vs 8.6%, but confounded by size (median 23 peers with an expert colleague vs 3 without). Within size bands: 1 to 4 peers 15.3% vs 9.6%; 5 to 19 peers 12.2% vs 6.9%; 20+ peers 8.4% vs 5.2% | 7.6% vs 5.1%; 6.5% vs 4.2%; 5.3% vs 3.5% | **Test**, only together with practice size |
+| 1b. Same, beyond the practice peer-writer flag | Practices with no peer writer, 5 to 19 peers: 7.7% vs 5.1%. Practices with a peer writer, 5 to 19 peers: 25.3% vs 22.1%. Without size bands the 2x2 reverses (14.2% vs 26.3%), so size control is required | 5.0% vs 3.6%; 11.7% vs 10.7% | Small gain on top of colocation |
+| 1c. Expert colleague in the IDN (L4), yes / no | 8.9% vs 11.2% (reversed; 89% of IDN HCPs have an expert peer) | 5.1% vs 5.8% | **Drop** the flag |
+| 1c. IDN expert share | Rises steadily from Q1 6.4% to Q5 12.3%; zero band (no expert peer) 11.2%. Holds for non-experts (Q1 5.6% to Q5 9.9%) | Q1 4.1% to Q5 6.8% | **Build** share + zero flag |
+| 1d. IDN expert share beyond IDN writer share | Writer share not in top fifth: top-fifth expert share 9.5% vs 7.2%. Writer share in top fifth: 19.4% vs 13.2%. Spearman 0.43 between the two shares | 5.8% vs 4.5%; 9.5% vs 6.5% | Adds beyond colocation |
+| 2a. Is the practice peer writer an expert? | 16.0% vs 15.3%. With the number of peer writers held fixed: 1 writer 17.7% vs 15.3%, 2 to 3 writers 15.4% vs 15.3%, 4+ writers 15.2% vs 16.8%. Reversed for non-expert HCPs (12.4% vs 13.5%) | 8.0% vs 7.6% | **Drop** |
+| 2b. Expert share of IDN peer writers | U-shaped; within IDN writer-share quintiles mostly flat, except the top quintile | Mixed | **Drop**; the IDN writer share already covers it |
+| 3. Non-writing experts in low-adoption IDNs | 33,601 experts with no look-back NBRx. 19,252 sit in 2,524 IDNs with a peer writer share of 5% or less: 10,790 Non-target, 3,842 segment B, 1,793 D, 1,255 A, 930 C, 642 E. Top specialties FM, CD, IM, END, NEP. Largest IDNs: HCA, CommonSpirit, Cleveland Clinic, Trinity, Piedmont. They still write at 12.5% to 14.0% vs 9.7% overall; experts in IDNs with a writer share above 20% write at 44.9% | 8.1% to 8.6% | **Business list** (B4), not a model feature |
+
+**Notes.**
+
+* The new-writer view here means no Kerendia TRx in the look-back; its baseline is 5.4%, against about 4.4% in the colocation assessment. Align the rule (Q11) before the two documents are compared on new writers.
+* Practice and IDN come from the Q4-2026 snapshots applied to past months (same caveat as the colocation assessment).
+* Ownership: the IDN peer **writer** share stays in the colocation notebook. The cross features need the Veeva expert flag, so they are built in the Veeva block from the colocation group keys (D7).
 
 ### Phase 1: T1 and T2 block (low risk)
 
@@ -165,6 +198,7 @@ Candidate set: about 60 to 80 columns. Feature selection (section 6) is expected
 | R2 | Prescribing-overlap test | `CLINICAL_LEADER` ranks patient volume. Correlate the MRA-class, SGLT2-class and CKD deciles with claims volume and Kerendia NBRx features already in the model; if a decile is a near copy of claims volume, drop it | R1, NBA 3.1 claims block |
 | R3 | Time-split test | Train on anchors before the score date and test on anchors after; compare with the same model without T3 (E6) | R1 |
 | R4 | Segment added-value test | Within each call-plan segment A to E, check that decile still separates NBRx (as it separates trial involvement in assessment 8.3) | R1 |
+| R5 | Build cross features | `veeva_idn_expert_share` + zero flag, and `veeva_practice_expert_peer_flag`, from the colocation L1 / L4 keys, self excluded; written to the T3 table (section 5.2) | R1, colocation L1 / L4 keys |
 
 ### Phase 3: Business use in the NBA
 
@@ -173,6 +207,7 @@ Candidate set: about 60 to 80 columns. Feature selection (section 6) is expected
 | B1 | Untargeted-authority list | Share the 18,209 Non-target HCPs at deciles 8 to 10 (10,113 at 9 to 10) with brand and sales operations for target-list review, split by specialty and indication |
 | B2 | Action hints | Map activity type to the NBA reason or channel: podium speakers to peer-to-peer or speaker programme invitation, trial investigators to clinical-evidence messaging, MRA / SGLT2 class authorities to cardiorenal messaging. Business rules on the NBA dropdown list, not model features |
 | B3 | Field review | Review hints and lists with Field Analytics and Medical Affairs before any rep-facing use |
+| B4 | Low-adoption IDN expert list | 19,252 non-writing experts in 2,524 IDNs with a peer writer share of 5% or less (10,790 Non-target), by IDN, specialty and segment, for brand and key account teams (section 5.2, idea 3) |
 
 ### Phase 4: Operations
 
@@ -196,6 +231,7 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | E4 | E3 + T2 profile (P3) | Do profile attributes add value? |
 | E5 | E4 + T3 scores (R1) | Do Veeva rankings add value on top of activity? |
 | E6 | E5 with time split (R3) | Does the E5 gain hold on anchors after the score date? |
+| E7 | E5 + cross features (R5), with the colocation block in E0 | Do the cross features add value on top of both colocation and Veeva? Keep only if E7 beats E5, also within segments and for new writers |
 
 **Measures for each experiment:** validation metric of the NBA 3.1 model (same as the main model), SHAP share of the Veeva block, rank of the best Veeva feature, number of Veeva features kept after selection, stability of importance across time folds, and the gain within call-plan segments A to E (R4). Feature selection uses the same method as the main NBA 3.1 model.
 
@@ -220,6 +256,7 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | D4 | Missing values | Three-state coverage flag (principle 2) |
 | D5 | Indication | Kerendia total plus HF / T1D / CKD views, same rule as the digital plan |
 | D6 | Feature prefix | `veeva_` for all features |
+| D7 | Colocation, IDN and Veeva | Separate blocks on the same spine. The cross features (R5) live in the Veeva T3 table and reuse the colocation L1 / L4 keys; the IDN peer writer share stays in the colocation notebook (section 5.2) |
 
 ### 8.2 Open questions
 
@@ -235,6 +272,7 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | Q8 | Can the 65,795 unmatched providers be recovered through `VEEVA_ID` / Veeva Network? | Test; expected small gain | NBA team |
 | Q9 | Who reviews the untargeted-authority list (B1) and how often? | Brand and sales operations, quarterly with the call plan | Brand, sales operations |
 | Q10 | Does NBA 3.0 already use any Veeva Link or KOL attribute? | Check the NBA 3.0 final feature list | NBA team |
+| Q11 | Which rule defines the new-writer view (no Kerendia NBRx, or no Kerendia TRx, in the look-back)? | Agree one rule with the colocation owner; section 5.2 uses no TRx (baseline 5.4% vs about 4.4%) | NBA team |
 
 ## 9. Risks
 
@@ -247,3 +285,4 @@ All experiments use the NBA 3.1 HCP-level model, target and validation split; on
 | Licence or compliance blocks rep-facing use | Phase 3 cannot ship | X3 asked in week 1; model-only fallback |
 | Load-to-load changes in focus names | Schema drift | U4, U7, O3 |
 | Building on old data, then the refresh changes results | Feature selection redone | Same code re-runs on the refresh (U1, U7); repeat E3 to E5 only |
+| Cross features driven by group size | Expert-colleague flags act as a practice-size proxy | Use shares, not flags, at IDN level; test the practice flag only with practice size in the model (section 5.2) |

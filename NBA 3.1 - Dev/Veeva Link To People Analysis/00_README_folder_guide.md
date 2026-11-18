@@ -19,7 +19,8 @@ File names use `NN_topic`. The tens digit is the step, and the files within a st
 | | | `32_veeva_hcp_decile_segments.csv` | Output | HCP decile segment assignments | From 30 |
 | | | `33_veeva_link_feature_engineering_plan.md` | Document | Feature engineering plan: 66 features, leakage tiers, indication patterns | Companion to 23; input to 50 |
 | 4. Assessment with HCP Universe and call plan (17 Nov 2026) | 40-49 | `40_veeva_link_data_assessment_v2.md` | Document | **Current data assessment**: tables, time dependence, HCP Universe overlap, call-plan segments, deciles, activity by decile and segment | Main reference for 50 |
-| 5. NBA 3.1 readiness (18 Nov 2026) | 50-59 | `50_veeva_link_nba_3_1_readiness_plan.md` | Document | Readiness plan: Phase 0 split into Track U (unblock, in-house) and Track X (external), phases 1 to 4, experiments E0 to E6, gates G0 to G3 | Draft |
+| 5. NBA 3.1 readiness (18 Nov 2026) | 50-59 | `50_veeva_link_nba_3_1_readiness_plan.md` | Document | Readiness plan: Phase 0 split into Track U (unblock, in-house) and Track X (external), phases 1 to 4, experiments E0 to E7, gates G0 to G3; section 5.2 holds the combined signal test results | Draft |
+| 6. Combined colocation, IDN and Veeva signal test (18 Nov 2026) | 60-69 | `60_veeva_colocation_idn_combined_signal_test` | Notebook | One-feature-at-a-time signal test of expert colleague (practice / IDN), expert peer writers and experts in low-adoption IDNs | Results in 50 section 5.2 |
 
 ## Notes
 

@@ -4,7 +4,7 @@
 **Profiled.** All 17 tables, 350 columns, every row — not a sample.
 **As-of.** `SCIENTIFIC_EXPERT` loaded 2025-06-25; all child tables loaded 2025-03-06; `COMMUNITY_LEADER_FOCUS_AREA` last loaded 2024-08-29.
 **Purpose.** Document what data the asset contains, which tables are present, what information each holds, and how it overlaps with (a) the NBA 3.1 HCP Universe and (b) the Kerendia call-plan segments A, B, C, D (and E), and (c) what model features it supports.
-**What changed from v1.** Added the time-dependent vs time-agnostic classification (Section 3), the HCP Universe overlap (Section 5), the call-plan segment overlap (Section 6), the decile distribution with segments across deciles (Section 7) and downstream activity by decile and segment, including clinical trials (Section 8). Section 9 gives a short overview of the features this data supports; the full feature design lives in `veeva_link_feature_engineering_plan.md`. Each section ends with a short summary. Deciles are shown as 1–10 only, with no High/Medium/Low grouping.
+**What changed from v1.** Added the time-dependent vs time-agnostic classification (Section 3), the HCP Universe overlap (Section 5), the call-plan segment overlap (Section 6), the decile distribution with segments across deciles (Section 7) and downstream activity by decile and segment, including clinical trials (Section 8). Section 9 gives a short overview of the features this data supports; the full feature design lives in `33_veeva_link_feature_engineering_plan.md`. Each section ends with a short summary. Deciles are shown as 1–10 only, with no High/Medium/Low grouping.
 
 ---
 
@@ -716,7 +716,7 @@ The NBA 3.1 model predicts HCP-level NBRx from claims, which tell us *what an HC
 - **Missing is not zero.** 22.3% of the universe has no Veeva match and 35.6% of matched HCPs have no in-scope decile. These should be treated as their own category.
 - **Skewed activity.** Most HCPs have no publications, trials or events (median 0), so flags, logs or bins work better than raw counts.
 
-The full feature list, logic and data-quality controls are in `veeva_link_feature_engineering_plan.md`.
+The full feature list, logic and data-quality controls are in `33_veeva_link_feature_engineering_plan.md`.
 
 > **Summary.** Claims tell us what an HCP prescribes; Veeva tells us how influential and engaged they are. Adding Veeva features (rankings, trial experience, congress and publication activity, industry ties) gives the model a signal it does not have today, sharpens targeting within each call-plan segment and highlights influential HCPs outside the call plan.
 

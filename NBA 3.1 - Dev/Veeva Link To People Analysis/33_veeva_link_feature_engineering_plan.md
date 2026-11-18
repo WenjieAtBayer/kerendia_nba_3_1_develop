@@ -1,6 +1,6 @@
 # Veeva Link — Feature Engineering Plan for HCP-Level NBRx Model
 
-**Companion to:** `veeva_link_to_people_data_assessment.md`
+**Companion to:** `23_veeva_link_data_assessment_v1.md`
 **Target model:** HCP-month NBRx forecast (T1D, T2D, Hypertension)
 **Feature grain:** NPI × month, matching the existing Kerendia NBA 3.x pipeline
 **Date:** November 2026

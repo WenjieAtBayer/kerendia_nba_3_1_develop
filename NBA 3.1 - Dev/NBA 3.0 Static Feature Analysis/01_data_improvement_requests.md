@@ -26,7 +26,7 @@
 * **Evidence:** `33_2_colocation_idn_data_assessment.md` section 5 item 3; `33_3_...` section 3.3 and F4.
 * **Ask:** keep each refresh of BEST_AFFL for all HCPs (not only call-plan HCPs) with a snapshot or effective date, at least quarterly, back to January 2024 if possible (start of the Kerendia metric views).
 * **NBA 3.1 workaround:** use the current snapshot for all anchors (`33_3` D7); size the change rate on the call-plan copies (F4); archive our own quarterly pulls (O1).
-* **Change rate measured (F4):** to be filled in.
+* **Change rate measured (F4, 2026-11-19, `33_colocation_idn_features`):** among universe HCPs in the call-plan copies, the rank-1 practice changed for 6.57% (Q2->Q3 2026, 68,945 HCPs) and 12.2% (Q3->Q4 2026, 83,985 HCPs); the real IDN changed for 3.27% and 6.31%.
 
 ### DR-02: History of the MDM account hierarchy
 

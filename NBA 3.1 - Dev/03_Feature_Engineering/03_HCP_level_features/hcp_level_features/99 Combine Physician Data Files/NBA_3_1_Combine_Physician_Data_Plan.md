@@ -29,7 +29,7 @@
 | Feature list | 158-171 | full column list saved as CSV snapshot; keep the 752 features of `input_files/Kerendia_NBA_3_feature_list_752_features.csv`; **missing features added as constant 0**; string and date columns dropped; names cleaned |
 | Impute + write | 172-187 | HCP age / experience and SDoH: median; recency (`TIME_MIN`): 9999; first occurrence: -9999; `TIME_TO_ADOPT_FARXIGA`: 9999; rest 0; cast to float; 8 hard-coded renames; write Parquet snapshot + **overwrite** Delta `ops_pipeline/notebook_output/kerendia_nba_3_hcp_selected_features_data` |
 
-Last stored outputs in the clone: 222,125 rows; 25,323 columns after the combine (cell 128); accelerator part 9,735 columns (cell 125).
+Last stored outputs in the clone: 222,125 rows; 25,323 columns after the combine (cell 128); accelerator part 9,735 columns (cell 125). Cell ranges and these numbers checked against the notebook on 2026-11-19 (section headers at cells 75, 102, 127, 153, 172; cell 188 is empty).
 
 ---
 
@@ -38,8 +38,11 @@ Last stored outputs in the clone: 222,125 rows; 25,323 columns after the combine
 1. Listed every folder of `NBA 3.1 - Dev` on the `combine` branch.
 2. Parsed the write path of 43 notebooks (feature notebooks, config and helpers) from their code.
 3. Opened every output found in the 3.1 volume and read format, column count, key columns and cohort ids.
+4. On every table: row count, one row per key, null keys and HCPs compared with the universe (section 4.9).
+5. Compared every table that is in both `NO` and `DEV` with a hash over all rows (`PULL_DT` excluded).
+6. Checked the DTC geo keys, the outputs in the 3.0 volume and the cohort months of the monthly tables.
 
-Not checked: row counts, one row per key, and whether two copies of the same table hold the same values.
+Still open: who writes the tables of N4 (their notebooks are not on this branch).
 
 ## 3. Goal of the 3.1 combine
 
@@ -67,7 +70,7 @@ The run folder also holds the non-provider versions (`claim_rx_monthly_cohort`, 
 
 ### 4.2 Patient events (rx, dx, px, lab, add-on)
 
-Notebooks in `03_patient_features/Final Notebooks/`. The code writes to `NO/patient_features/<family>/`. A copy with the same column counts is in `DEV/patient_features/`. Delta, key `PROVIDER_ID` + `HCP_COHORT_ID`, cohort column `COHORT` (28 cohorts).
+Notebooks in `03_patient_features/Final Notebooks/`. The code writes to `NO/patient_features/<family>/`. `DEV/patient_features/` holds an identical copy (same rows, columns and values). Delta, key `PROVIDER_ID` + `HCP_COHORT_ID`, cohort column `COHORT` (28 cohorts).
 
 | Notebook | Tables (columns) |
 | --- | --- |
@@ -84,9 +87,9 @@ The `*_censor_report` tables (5 columns) are checks, not features.
 | Notebook | Where the code writes | Output found | Columns | Key |
 | --- | --- | --- | --- | --- |
 | `03_HCP_Level_Features/10_kerendia_prior_writing` | `NO/hcp_features/kerendia_prior_writing` | only `DEV/hcp_features/kerendia_prior_writing` | 29 | `PROVIDER_ID` + `HCP_COHORT_ID`, `cohort_id` (28) |
-| `03_HCP_Level_Features/11_adoption_features` | `NO/hcp_features/adoption_features` | `NO` (19 columns) and `DEV` (20 columns) | 19 / 20 | same |
-| `05_NBRx_NRx_TRx/26_Features_NBRx`, `27_Features_NRx`, `28_Features_TRx` | **the 3.0 volume** (`V30/hcp_level_model/ops_pipeline/notebook_output/kerendia_nba_3_hcp_model_{nbrx,nrx,trx}_...`) | `NO` and `DEV` `hcp_features/{nbrx,nrx,trx}_features` | 1,266 each | `PROVIDER_ID` + `SVC_DT_M` (46 months), **no cohort id** |
-| not found in the scanned notebooks | - | `NO` and `DEV` `hcp_features/competitor_share_features` | 76 | `PROVIDER_ID` + `SVC_DT_M` (46 months) |
+| `03_HCP_Level_Features/11_adoption_features` | `NO/hcp_features/adoption_features` | `NO`: 8,817,760 rows, 314,920 HCPs (20,231 not in the universe, 38 universe HCPs missing). `DEV`: 8,252,356 rows = universe x 28, plus `ENTRESTO_BRAND_ADOPTER_FLAG` | 19 / 20 | same |
+| `05_NBRx_NRx_TRx/26_Features_NBRx`, `27_Features_NRx`, `28_Features_TRx` | **the 3.0 volume** (`V30/hcp_level_model/ops_pipeline/notebook_output/kerendia_nba_3_hcp_model_{nbrx,nrx,trx}_...`) | `NO` and `DEV` `hcp_features/{nbrx,nrx,trx}_features` | 1,266 each | `PROVIDER_ID` + `SVC_DT_M`, **no cohort id**; months 2023-01 to 2026-10 cover every cohort lookback-end month (2024-05 to 2026-08); `NO` and `DEV` identical |
+| not found in the scanned notebooks | - | `NO` and `DEV` `hcp_features/competitor_share_features` | 76 | `PROVIDER_ID` + `SVC_DT_M` (46 months); `NO` and `DEV` identical |
 
 ### 4.4 Static HCP features
 
@@ -96,7 +99,7 @@ All in `DEV/hcp_features/`, Delta, key `PROVIDER_ID` + `HCP_COHORT_ID`, `cohort_
 | --- | --- | --- |
 | `physician_attributes_features` | 27 | 07_physician_attributes_features, on `dev/claims-comorbidity-competitor-features` |
 | `census_features` | 41 | 08_census_features, same branch |
-| `colocation_idn_features` | 22 | 33_colocation_idn_features, same folder as 07 / 08 (`NBA 3.1 Static Feature Notebooks/`); branch not checked |
+| `colocation_idn_features` | 22 | 33_colocation_idn_features; not on `combine`, and its earlier workspace id no longer resolves. Most likely on the same branch as 07 / 08; confirming needs a switch to that branch |
 | `claim_comorbidity` | 19 | not identified |
 | `competitor_nbrx_share` | 55 | not identified |
 | `market_event_features` | 8 | not identified |
@@ -127,25 +130,52 @@ Notebooks in `04_Promotional_Features/non_personal_promotional_features/`. Outpu
 | HQ Emails/15_promotional_features_HQ_Emails_new | `hq_email_nba_3_1/kerendia_nba_3_1_hcp_model_hq_email_features.parquet` | 23 | `HCP_COHORT_ID` (28) |
 | Digital_Engagement/24_Features_Digital_NBA31 | `digital_engagement_nba_3_1/kerendia_nba_3_1_hcp_model_digital_paid_media_features.parquet` | 152 | `HCP_COHORT_ID` (28) |
 | High_Intent_Signal_Features/25_Features_High_Intent_Signals_NBA31 | `high_intent_signals_nba_3_1/kerendia_nba_3_1_hcp_model_high_intent_features.parquet` | 37 | `HCP_COHORT_ID` (28) |
-| DTC/34_promotional_features_DTC | `dtc_nba_3_1/kerendia_nba_3_1_dtc_zip_features.parquet` | 17 | `ZIP5` + `COHORT` (28) |
-| same | `dtc_nba_3_1/kerendia_nba_3_1_dtc_social_dma_features.parquet` | 7 | `COHORT` (28); geo key column not checked |
-| same | `dtc_nba_3_1/kerendia_nba_3_1_dtc_search_state_features.parquet` | 7 | `COHORT` (**20 cohorts only**); geo key column not checked |
+| DTC/34_promotional_features_DTC | `dtc_nba_3_1/kerendia_nba_3_1_dtc_zip_features.parquet` | 17 | `ZIP5` + `COHORT` (28); 32,305 ZIPs per cohort; also carries `DMA_CODE`, `STATE_NAME` and both the social and the search columns |
+| same | `dtc_nba_3_1/kerendia_nba_3_1_dtc_social_dma_features.parquet` | 7 | `DMA_CODE` + `COHORT` (28); 210 DMAs per cohort |
+| same | `dtc_nba_3_1/kerendia_nba_3_1_dtc_search_state_features.parquet` | 7 | `STATE_NAME` + `COHORT`; 51 states; **c1-c8 missing** |
 | no notebook in the branch (folder `OE/` has only the client summary) | `oe_nba_3_1/kerendia_nba_3_1_oe_promotional_features.parquet` | 320 | `PROVIDER_ID` + `HCP_COHORT_ID`, `COHORT` (28) |
 | same | `oe_nba_3_1/..._TEST.parquet` | 164 | 1 cohort (c28): a test, not used |
-| 51_digital_nba_phase1_features, 53_digital_nba_phase2_high_intent_features | write to `V30/hcp_level_model/dev_folder/notebook_output/nba_3_1_digital_phase{1,2}/` | not checked | `COHORT_ID` (from the code) |
-| 14_hcp_digital_phase1_feature_block | table `kerendia_nba_3.digital_features_phase1`, `SAVE_OUTPUT = False` | not checked | - |
+| 51_digital_nba_phase1_features | `V30/hcp_level_model/dev_folder/notebook_output/nba_3_1_digital_phase1/hcp_digital_phase1_features` | 160 | `COHORT_ID` with 21 ids of another calendar (`2025-01_offset7`, ...), not c1-c28; 5,893,532 rows |
+| 53_digital_nba_phase2_high_intent_features | `V30/.../nba_3_1_digital_phase2/hcp_digital_phase2_high_intent_features` | - | output does not exist |
+| 14_hcp_digital_phase1_feature_block | table `kerendia_nba_3.digital_features_phase1`, `SAVE_OUTPUT = False` | - | table does not exist |
 
 ### 4.7 Market access
 
 | Area | What the branch has | 3.1 output |
 | --- | --- | --- |
 | MMIT | only EDA notebooks (`04_MMIT_Features/MMIT_EDA_Checks/`) | none found in `NO` or `DEV` |
-| FTP | `FTP_and_Copay/19_ftp_features` writes `V30/.../ops_pipeline/notebook_output/kerendia_nba_3_1_hcp_model_ftp_features_for_inference` (inference cohort) | none found in `NO` or `DEV` |
-| Copay | `FTP_and_Copay/22_copay_features` writes `V30/.../dev_folder/notebook_output/kerendia_nba_3_hcp_model_copay_features.parquet` with the 3.0 anchor CSV | none found in `NO` or `DEV` |
+| FTP | `FTP_and_Copay/19_ftp_features` writes `V30/.../ops_pipeline/notebook_output/kerendia_nba_3_1_hcp_model_ftp_features_for_inference` (inference cohort) | only in the 3.0 volume: 9 columns, 4,556 rows, no cohort column |
+| Copay | `FTP_and_Copay/22_copay_features` writes `V30/.../dev_folder/notebook_output/kerendia_nba_3_hcp_model_copay_features.parquet` with the 3.0 anchor CSV | only in the 3.0 volume: 18 columns, 276,533 rows, no cohort column |
 
 ### 4.8 Not used: 3.0 promotional notebooks
 
 The notebooks at the root of `04_Promotional_Features/` (14, 15, 16, 17, 18, 19, 24, 25, 34) read the 3.0 anchor CSV and write to the 3.0 volume. They are replaced by sections 4.5 and 4.6. No 3.1 clickstream notebook or output was found.
+
+### 4.9 Row counts and keys (checked 2026-11-19)
+
+Universe: `HCP_Universe_without_call_hcps`, 294,727 HCPs, so a full table has 294,727 x 28 = 8,252,356 rows. Every table below has **one row per key**; the only key problems are the null `PROVIDER_ID`s of the claims tables (N10).
+
+| Tables | Rows | HCPs | Notes |
+| --- | --- | --- | --- |
+| NB01 `provider_claim_rx_monthly_cohort` | 8,089,535 | 294,497 | 3,094 rows with null `PROVIDER_ID` |
+| NB02 `provider_claim_lab_monthly_cohort` | 5,166,454 | 199,149 | |
+| NB03 `provider_claim_diagnosis_monthly_cohort` | 7,588,997 | 282,976 | 949 null `PROVIDER_ID` |
+| NB04 `final_claims_monthly_cohort` | 8,089,535 | 294,497 | 3,094 null `PROVIDER_ID` |
+| NB05 `claim_rx_nps_monthly_cohort` | 8,088,324 | 294,579 | |
+| NB06 `provider_claim_eligible_patient_cohort` | 8,086,528 | 294,460 | 3,001 null `PROVIDER_ID` |
+| rx first occurrence / frequency / recency | 8,056,166 / 8,245,160 / 8,046,833 | 293,947 / 294,470 / 294,454 | |
+| dx first occurrence / frequency / recency / hospitalization | 7,992,786 / 8,163,428 / 7,851,283 / 8,163,428 | 292,088 / 291,551 / 291,466 / 291,551 | |
+| px first occurrence / frequency / recency / hospitalization | 7,846,216 / 8,126,328 / 7,622,534 / 8,126,328 | 288,981 / 290,226 / 288,557 / 290,226 | |
+| lab first occurrence / frequency / recency | 5,373,514 / 5,714,576 / 4,776,999 | 204,092 / 204,092 / 198,196 | |
+| patient add-on | 8,095,859 | 294,550 | |
+| prior writing, adoption (`DEV`), census, physician, colocation, comorbidity, competitor NBRx share, market events | 8,252,356 each | 294,727 | full universe x 28 |
+| adoption (`NO`) | 8,817,760 | 314,920 | other HCP list (N2) |
+| NBRx, NRx, TRx, competitor share | 13,551,508 each | 294,598 | key `PROVIDER_ID` + `SVC_DT_M` |
+| field core, events, iRep, message, MSL, sample, account call, core account | 8,252,328 each | 294,726 | placeholder HCP `'0'` missing (N11) |
+| HQ email | 3,112,543 | 162,557 | only HCPs with emails |
+| digital paid media, high intent | 8,252,328 each | 294,726 | placeholder HCP `'0'` missing |
+| OE | 8,252,356 | 294,727 | |
+| DTC ZIP / DMA / state | 904,540 / 5,880 / 1,020 | - | 32,305 ZIPs x 28 / 210 DMAs x 28 / 51 states x 20 |
 
 ## 5. What we found
 
@@ -157,11 +187,11 @@ The notebooks at the root of `04_Promotional_Features/` (14, 15, 16, 17, 18, 19,
 | `PROVIDER_ID` + `HCP_COHORT_ID` + cohort column | patient (`COHORT`), static and Rx market (`cohort_id`), OE (`COHORT`) |
 | `HCP_COHORT_ID` only | field activity, HQ email, digital paid media, high intent |
 | `PROVIDER_ID` + `SVC_DT_M` (monthly, no cohort) | NBRx / NRx / TRx, competitor share |
-| geography + cohort | DTC (ZIP5 for the ZIP table; the DMA and state key columns were not checked) |
+| geography + cohort | DTC: `ZIP5`, `DMA_CODE` or `STATE_NAME` + `COHORT` |
 
 The cohort column has three names (`COHORT_ID`, `cohort_id`, `COHORT`).
 
-**N2. Two copies of several families.** Patient features, adoption, NBRx / NRx / TRx and competitor share exist in both `NO` and `DEV`. Adoption differs (19 vs 20 columns). We need one source per family.
+**N2. Two copies of several families.** The 15 patient tables, NBRx / NRx / TRx and competitor share are in both `NO` and `DEV`, and the copies are identical (same rows, columns and row hash). Only adoption differs: the `NO` copy was built on another HCP list (314,920 HCPs, 20,231 not in the universe, 38 universe HCPs missing) and lacks `ENTRESTO_BRAND_ADOPTER_FLAG`; the `DEV` copy matches the universe.
 
 **N3. The code on the branch does not always match the outputs.**
 * `10_kerendia_prior_writing` writes to `NO`, but the output exists only in `DEV`.
@@ -171,9 +201,9 @@ So some outputs come from a different version of the code than the one on `combi
 
 **N4. Missing from the branch.** The static notebooks (07, 08, 33, folder `NBA 3.1 Static Feature Notebooks/`) are not on `combine`. No writer was found in the scanned notebooks for `claim_comorbidity`, `competitor_nbrx_share`, `market_event_features`, `competitor_share_features`, OE and the two field account tables.
 
-**N5. Not 3.1-ready.** MMIT, FTP, copay and clickstream have no 3.1 cohort output. Digital phase 1 / 2 write to the 3.0 volume.
+**N5. Not 3.1-ready.** MMIT, FTP, copay and clickstream have no 3.1 cohort output. Digital phase 1 is in the 3.0 volume with its own cohort ids (21 ids like `2025-01_offset7`); phase 2 and `digital_features_phase1` do not exist. FTP (4,556 rows) and copay (276,533 rows) have no cohort column.
 
-**N6. DTC search by state covers 20 of 28 cohorts.** 8 cohorts will be empty for those columns.
+**N6. DTC search by state misses c1-c8.** The ZIP table already carries `DMA_CODE`, `STATE_NAME` and the social and search columns, so the combine may need only the ZIP table (to confirm with the owner).
 
 **N7. Size.** About 18,000 columns over all tables of section 4 (key and metadata columns included):
 * claims 8,517
@@ -184,15 +214,23 @@ So some outputs come from a different version of the code than the one on `combi
 
 3.0 already had 25,323 columns for a single cohort (section 1), so a full-width join over 28 cohorts is not realistic: select features per table first and process one `COHORT_SET` at a time.
 
-**N8. 3.0 notebook logic that must change** (steps of section 1; from the 2026-11-11 review of the notebook, not re-checked today):
-* Setup: `%run` of the 3.0 `00_connection` star-imports Spark functions and shadows `sum`, `min`, `max`; use the 3.1 `00_cohort_config` and `builtins`.
-* Joins: on `SVC_DT_M` and two different `HCP_COHORT_ID` rules (`BHID_COHORT` for promotional, `PROVIDER_ID_COHORT` for the rest); 3.1 must join on the cohort id.
-* Metadata: every 3.1 table carries `COHORT_MONTH, OFFSET_DAYS, CUTOFF_DATE, SVC_DT_M, PULL_DT, DATASET, COHORT_SET`; keep them once.
-* Feature list: missing features are filled with 0 without a warning.
+**N8. 3.0 notebook logic that must change** (steps of section 1; each point checked in the notebook code on 2026-11-19):
+* Setup: the 3.0 `00_connection` (line 58) does `from pyspark.sql.functions import *`; cell 46 imports Spark `min, max` and cell 52 sets `sum=0`, so the Python built-ins are shadowed. Use the 3.1 `00_cohort_config` and `builtins`.
+* Joins: part 1 joins 21 tables on `PROVIDER_ID` + `SVC_DT_M` and 2 on `PROVIDER_ID` (cell 53); `HCP_COHORT_ID` is `BHID_COHORT` for promotional (cell 25) and `PROVIDER_ID_COHORT` for the rest (cells 96, 104). 3.1 must join on the cohort id.
+* Metadata columns differ by family and must be dropped before the joins (kept once from the skeleton): claims have `COHORT_MONTH, OFFSET_DAYS, CUTOFF_DATE, SVC_DT_M, PULL_DT, DATASET, COHORT_SET`; static and Rx market `SVC_DT_M, PULL_DT`; HQ email, digital paid media, high intent `PULL_DT, DATASET`; field and OE `DATASET`; 6 patient tables `SVC_DT_M`, the other 9 none.
+* Feature list: missing features are set to `lit(0)` without a warning (cell 164).
 * Imputation: medians are taken over all rows; with 28 cohorts that includes validation and backtesting rows (leakage).
 * One-hot: specialty columns come from the data; fix the value list.
 * Renames: 8 hard-coded renames exist only to match the 3.0 model.
 * Write: the last cell overwrites the 3.0 production Delta table; 3.1 must write to a 3.1 path only.
+
+**N9. Keys are clean.** Every table has one row per key (section 4.9).
+
+**N10. Null `PROVIDER_ID` in claims.** NB01 and NB04 have 3,094 rows (86-131 per cohort), NB03 949 and NB06 3,001; NB02 and NB05 have none. These rows cannot join to the skeleton.
+
+**N11. Placeholder HCP `'0'`.** The universe contains `PROVIDER_ID = '0'` (28 rows). The static, Rx market and OE tables include it; field activity, digital paid media and high intent leave it out (28 rows fewer).
+
+**N12. Coverage differs by family.** HQ email covers 162,557 HCPs, lab claims and lab patient tables about 200,000; the rest cover almost the whole universe. After the left joins, HCPs without activity get nulls and need an imputation rule.
 
 ## 6. Category column (proposal)
 
@@ -228,20 +266,21 @@ The catalog is built from the list of source tables in one config cell, so every
 | D1 | Scope | Training c1-c28 first; inference later with the same code |
 | D2 | Category format | Feature catalog as in section 6 |
 | D3 | Static notebooks are on `dev/claims-comorbidity-competitor-features` | Merge that branch into `combine`, or read only the saved outputs |
-| D4 | Source of truth when a table is in both `NO` and `DEV` (N2, N3) | One root per family, agreed with each owner |
-| D5 | Monthly tables without a cohort (NBRx / NRx / TRx, competitor share) | Take the row whose `SVC_DT_M` is the lookback-end month of each cohort, or ask the owner to add the cohort id |
-| D6 | DTC geography | ZIP5 from the HCP ZIP of the census spine; DMA and state through a ZIP mapping; search-by-state empty for the 8 missing cohorts |
+| D4 | Source when a table is in both `NO` and `DEV` (N2) | Identical copies: either; adoption: `DEV` (matches the universe, has the Entresto flag). Owners confirm which root is official |
+| D5 | Monthly tables without a cohort (NBRx / NRx / TRx, competitor share) | Take the row whose `SVC_DT_M` is the lookback-end month of each cohort, or ask the owner to add the cohort id; all 28 lookback-end months are in the tables |
+| D6 | DTC geography | Join only the ZIP table (it already has DMA, state, social and search) on the HCP ZIP (source of the HCP ZIP to confirm); search columns empty for c1-c8 |
 | D7 | Families not 3.1-ready (MMIT, FTP, copay, clickstream, digital phase 1 / 2) | Leave out of the first version and list them in the catalog as pending |
 | D8 | Tables with no writer found (N4), field account tables, OE `_TEST` | Owner confirms each; `_TEST` left out |
 | D9 | Feature list | All 3.1 features; report against the 752 list only, no 0-fill |
 | D10 | Imputation statistics | Medians from the training cohorts only, applied to all sets |
 | D11 | Output | `<run>/hcp_combined/kerendia_nba_3_1_hcp_selected_features_data`, Delta partitioned by `COHORT_SET`, plus the feature catalog; never the 3.0 path |
 | D12 | Notebook location | New 3.1 notebook in this folder, next to this plan; the clone stays as the 3.0 reference |
-| D13 | `PROVIDER_ID` gaps in the NPI / BHID mapping (open point O2) | Decide before the combine |
+| D13 | Null `PROVIDER_ID` rows in claims (N10) and the placeholder HCP `'0'` (N11) | Drop both from the combine; fix the mapping gaps upstream (open point O2) |
+| D14 | Nulls for HCPs without activity (N12) | 0 for counts and flags, the 9999 / -9999 rules for recency and first occurrence, as in 3.0 |
 
 ## 8. Next steps
 
-1. Decide D1-D13.
+1. Decide D1-D14.
 2. Owners confirm the tables in N4 and D8.
 3. Write the list of notebook changes from sections 5 and 7, then rewrite the notebook.
 4. Validation:

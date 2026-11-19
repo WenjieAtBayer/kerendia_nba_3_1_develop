@@ -4,15 +4,30 @@
 NBA 3.0 describes the area around each HCP with 22 ZIP-level ACS columns from one static CSV (`SDoH Walgreens v2.csv`, notebook 08). All 22 made the 752, but each one is weak on its own. For NBA 3.1 we want to know (1) whether the current file and join are sound, (2) which other sources can describe the HCP's area better (newer or wider ACS data, population weights, territory / county roll-ups, metro status, rurality), and (3) which census features actually separate Kerendia writers from non-writers on the 3.1 universe. This document lists those sources, what each one holds, how well it covers the 3.1 universe, and which features it could support. It is a data assessment that feeds the readiness plan. Nothing here has been built in a pipeline notebook yet.
 
 ## Method (2026-11-18)
-* Population: NBA 3.1 universe `HCP_Universe_without_call_hcps` (294,727 PROVIDER_IDs). 294,578 (99.9%) map to a BH_ID through `kerendia_nba_3.SOURCE_PROVIDER_BHID_NPI_MAPPING`.
-* HCP ZIP: `HCP_ZIP` from the HCP's BRAND_RANK = 1 row in `pace_ker_in_house_schema.cust_mdm_best_affl_publish_pd_outp_static` (Kerendia BEST_AFFL, Q4-2026), cut to 5 digits and zero-padded. **282,881 HCPs (96.0%) have a ZIP**; 11,846 have none.
-* Outcome for the signal checks: Kerendia writer in LRx V7 (`PERIOD_TYPE = 'W'`, NBRX > 0, 2025-10-24 to 2026-10-23). Baseline **9.7% (28,628 HCPs)**. Same outcome as the colocation assessment.
-* "New-writer view": only HCPs with **no** Kerendia LRx row in the 3 months before the outcome window (2025-07-25 to 2025-10-23). 265,563 HCPs, baseline **5.4%**. It shows whether a feature predicts new adoption, not just continued writing.
-* Specialty group for the within-specialty checks: BEST_AFFL `HCP_SPECIALTY` mapped with `KERENDIA SPECIALTY MAPPINGS HF AND CKD Q2 2026.csv`. 3.1 counts and writer rates: PCP 188,267 (7.6%), CARD 49,398 (9.1%), NEPH 14,650 (42.3%), ENDO 10,202 (18.7%), OTHERS 18,890 (6.0%), no BEST_AFFL row 11,846 (4.8%). The 07 recommendations show PCP 220,476 because notebook 20 remaps OTHERS, OBGYN and no-specialty HCPs to PCP: 188,267 + 18,890 + 1,473 + 11,846 = 220,476 exactly. CARD, NEPH and ENDO match.
-* Quintiles: HCPs with a non-null value are sorted by the feature and cut into 5 equal groups (Q1 lowest, Q5 highest). rho = Spearman correlation with the writer flag on the same HCPs.
-* Census values are static, so there is no feature window and no leakage risk from the census data itself. The only time-dependent input is the HCP's ZIP (a Q4-2026 snapshot applied to past months).
-* These are one-feature-at-a-time checks, not model lift.
-* Verdicts used below: **Build** = passes all three gates in section 1, add to the pipeline. **Test** = passes creation and value but overlaps an existing feature, so keep it only if it adds model lift when both are in the model. **Skip** = fails at least one gate. **Later** = needs data that is not in the workspace.
+
+**In one sentence:** for each census measure, we check whether HCPs who practise in one kind of area go on to write Kerendia more often than HCPs in another kind of area.
+
+**Step by step**
+
+| Step | What we did | Result |
+| --- | --- | --- |
+| 1. Who | Took the NBA 3.1 HCP universe (`HCP_Universe_without_call_hcps`) | 294,727 HCPs |
+| 2. Where they practise | Gave each HCP the ZIP of their main account: the rank-1 row in the Kerendia best-affiliation table (`pace_ker_in_house_schema.cust_mdm_best_affl_publish_pd_outp_static`, Q4 2026), linked through the HCP's BH_ID | 282,881 HCPs (96.0%) have a ZIP; 11,846 have none |
+| 3. Area value | Looked up the census value for that ZIP (or the average over the HCP's territory or county) | See section 3 |
+| 4. Who wrote Kerendia | Writer = at least 1 Kerendia NBRx in LRx V7 (weekly data) between 2025-10-24 and 2026-10-23 | 28,628 writers (**9.7%**) |
+| 5. New writers only | Repeated the check on HCPs with no Kerendia LRx activity in the 3 months before (2025-07-25 to 2025-10-23). This shows whether a measure predicts *new* adoption, not just continued writing | 265,563 HCPs, of whom **5.4%** become writers |
+| 6. Inside each specialty | Repeated the check inside PCP, CARD, NEPH and ENDO, so an area measure is not just a stand-in for "nephrologists practise here" | PCP 188,267 / CARD 49,398 / NEPH 14,650 / ENDO 10,202 / OTHERS 18,890 / no specialty 11,846 |
+
+**How to read the results**
+* **Q1 vs Q5:** HCPs are sorted by the measure and split into five equal groups, from Q1 (lowest value) to Q5 (highest). If Q5 writes at 14% and Q1 at 7%, HCPs in high-value areas write about twice as often.
+* **rho:** one number for the whole trend (Spearman correlation with being a writer). 0 means no trend; the strongest census measures here reach about 0.08. That is small, but it holds for new writers and inside PCP (section 3.5).
+* Each measure is checked on its own, not inside the model.
+
+**Good to know**
+* The specialty counts differ from the 07 file (PCP 220,476 there) only because notebook 20 counts OTHERS, OBGYN and no-specialty HCPs as PCP: 188,267 + 18,890 + 1,473 + 11,846 = 220,476. CARD, NEPH and ENDO are the same. Mapping file: `KERENDIA SPECIALTY MAPPINGS HF AND CKD Q2 2026.csv`.
+* Census values do not change over time, so they cannot leak the outcome. The only thing that changes is the HCP's ZIP, which is today's snapshot applied to past months (section 5).
+
+**Verdicts used below:** **Build** = passes all three gates in section 1, add to the pipeline. **Test** = passes creation and value but overlaps an existing feature, so keep it only if it adds model lift when both are in the model. **Skip** = fails at least one gate. **Later** = needs data that is not in the workspace.
 
 ## 1. Sources Found
 
@@ -67,7 +82,7 @@ The signal check asks: *do HCPs in one kind of area go on to write Kerendia more
 **Source 1: SDoH Walgreens v2.csv (current file)**
 * *What it is:* 22 ZIP-level ACS columns (race / ethnicity, education, poverty by race, unemployment, per capita income, uninsured, transport).
 * *Role:* the only census input of NBA 3.0.
-* *Join check (section 2):* the file has a ZIPCODE column (41,011 postal ZIPs) and a ZCTA column (32,441 census areas). 8,583 file rows have ZIPCODE different from ZCTA. Joining the HCP ZIP to **ZIPCODE** matches 282,857 HCPs; joining to **ZCTA**, as the 3.1 draft notebook (`08_census_features_creation`) does, matches only 278,414. **4,443 HCPs (1.5% of the universe) are lost** by the ZCTA join.
+* *Join check (section 2):* the file has a ZIPCODE column (41,011 postal ZIPs) and a ZCTA column (32,441 census areas). 8,583 file rows have ZIPCODE different from ZCTA. Joining the HCP ZIP to **ZIPCODE** matches 282,857 HCPs; joining to **ZCTA**, as the 3.1 draft notebook does (`08_census_features_creation` in `/Users/sehar.aejaz.ext@bayer.com/Extra Notebooks/Feature Creation Static/`, last changed 2026-11-13; its notes say "Join key = `ZCTA` padded to 5 digits; one row kept per ZCTA"), matches only 278,414. **4,443 HCPs (1.5% of the universe) are lost** by the ZCTA join.
 * *Signal:* modest. The best single columns separate Q1 and Q5 by about 5 points (WHITE 13.4% vs 7.2%, LT_HS 8.0% vs 13.3%, HISPANIC 8.3% vs 13.5%), and the gaps hold for new writers. Degree columns and HS_GRADUATE are flat.
 * *Decision:* **Yes, keep**, with the ZIPCODE join and POSTHS_ED dropped (flagged for removal in the 08 recommendations).
 

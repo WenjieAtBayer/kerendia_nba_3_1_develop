@@ -4,13 +4,31 @@
 Decide which physician-attribute features to build for NBA 3.1, and from which sources. The 3.0 profile is in `07_1_physician_attributes_nba_3_0_profile.md`. This file checks the 3.1 draft output and three related MDM sources against the 3.1 outcome.
 
 ## Method (2026-11-18)
-* **Population:** NBA 3.1 universe `kerendia_nba_3_1_volume/HCP_Universe_without_call_hcps` (294,727 HCPs).
-* **Outcome:** Kerendia writer = at least 1 NBRx in `KERENDIA_LAAD_BASED_LRX_V7`, PERIOD_TYPE = 'W', weeks 2025-10-24 to 2026-10-23. **Baseline 9.7% (28,628 HCPs).**
-* **New-writer view:** HCPs with no Kerendia activity in the 3-month look-back (2025-07-25 to 2025-10-23): 265,563 HCPs, baseline 5.4%. A feature that only separates existing writers is weaker for NBRx.
-* **Specialty check:** nb 20 grouping (OTHERS, OBGYN and no-specialty HCPs count as PCP): PCP 220,477 / CARD 49,398 / NEPH 14,650 / ENDO 10,202. My PCP count is 1 above nb 20's 220,476 because I also mapped the one HOS-coded HCP to PCP.
-* **Features:** taken from the **3.1 nb 07 draft output** `{VOL_31}/hcp_level_model/dev_pipeline/notebook_output/static_features/07_phy_static_features` (Delta, written 2026-11-13, 314,920 HCPs, one row each, 53 columns = PROVIDER_ID + 51 features + PULL_DT). This output is built from the real Snowflake `MDM_STG_HCP_ACCT_AFFL`, so the proxy table used in the 07 recommendations (`whc_data_zone1_prod.mdm_hcp_hco_affl`) is no longer needed. 294,689 of the 294,727 universe HCPs have a row (38 missing).
-* **Statistics:** binary features as writer rate yes vs no; numeric features as writer rate in quintile 1 vs quintile 5 plus Spearman rho with the writer flag. Count features that are mostly 0 are tested as > 0 vs 0, because quintiles split ties arbitrarily.
-* **Verdicts:** **Build** = clear signal that holds within specialty and for new writers; **Test** = some signal, offer it to feature selection; **Skip** = no signal, or duplicates another feature; **Later** = needs a source or decision outside this notebook.
+
+**In one sentence:** for each physician feature, we compare how often HCPs with and without it go on to write Kerendia.
+
+**Step by step**
+
+| Step | What we did | Result |
+| --- | --- | --- |
+| 1. Who | Took the NBA 3.1 HCP universe (`kerendia_nba_3_1_volume/HCP_Universe_without_call_hcps`) | 294,727 HCPs |
+| 2. Feature values | Read the features from the output of the 3.1 draft notebook `07_phy_static_features_creation` (`/Users/sehar.aejaz.ext@bayer.com/Extra Notebooks/Feature Creation Static/`), saved at `{VOL_31}/hcp_level_model/dev_pipeline/notebook_output/static_features/07_phy_static_features` on 2026-11-13. It reads the real Snowflake affiliation table `MDM_STG_HCP_ACCT_AFFL`, so the stand-in table used in the 07 recommendations (`whc_data_zone1_prod.mdm_hcp_hco_affl`) is no longer needed | 294,689 HCPs have a row (38 missing) |
+| 3. Who wrote Kerendia | Writer = at least 1 Kerendia NBRx in LRx V7 (weekly data) between 2025-10-24 and 2026-10-23 | 28,628 writers (**9.7%**) |
+| 4. New writers only | Repeated the check on HCPs with no Kerendia activity in the 3 months before (2025-07-25 to 2025-10-23). This shows whether a feature predicts *new* adoption, not just continued writing | 265,563 HCPs, of whom **5.4%** become writers |
+| 5. Inside each specialty | Repeated the check inside PCP, CARD, NEPH and ENDO (notebook 20 grouping: OTHERS, OBGYN and no-specialty HCPs count as PCP), so a feature is not just a stand-in for specialty | PCP 220,477 / CARD 49,398 / NEPH 14,650 / ENDO 10,202 |
+| 6. New sources | Linked each HCP's main account (best-affiliation table, rank-1 row) to the MDM account hierarchy and account profile (section 3.3) | 282,881 HCPs linked |
+
+**How to read the results**
+* **Yes / no features** (for example NP/PA): writer rate of HCPs with the feature vs without. "7.6% vs 11.0%" means NP/PAs write less often than other HCPs.
+* **Number features** (for example years of experience): HCPs are sorted and split into five equal groups, Q1 (lowest) to Q5 (highest), and we compare the writer rate of Q1 with Q5. **rho** is one number for the whole trend (Spearman correlation with being a writer; 0 = no trend).
+* **Counts that are mostly 0** (for example number of nephrology accounts): compared as "at least one" vs "none", because five equal groups do not work when most values are 0.
+* Each feature is checked on its own, not inside the model.
+
+**Good to know**
+* The draft output holds 314,920 HCPs (more than the final universe) and 53 columns: PROVIDER_ID, 51 features and PULL_DT.
+* PCP is 1 HCP above notebook 20's 220,476 because I also counted the one HOS-coded HCP as PCP.
+
+**Verdicts:** **Build** = clear signal that holds within specialty and for new writers; **Test** = some signal, offer it to feature selection; **Skip** = no signal, or duplicates another feature; **Later** = needs a source or decision outside this notebook.
 
 ## Sources
 

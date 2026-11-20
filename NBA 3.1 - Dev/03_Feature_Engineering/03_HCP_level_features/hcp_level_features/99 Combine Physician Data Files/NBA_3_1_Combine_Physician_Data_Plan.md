@@ -1,6 +1,6 @@
 # NBA 3.1 – Combine physician data (99): move to the 3.1 pipeline, analysis and plan
 
-**Status (2026-11-19):** plan refreshed from everything on the `combine` branch and the outputs in the 3.1 volume. **No code changed and nothing run in the notebook.** The notebook is updated only after this plan and the decisions in section 7 are approved.  
+**Status (2026-11-20):** plan built from everything on the `combine` branch and the outputs in the 3.1 volume (checked 2026-11-19); decisions D1-D14 agreed on 2026-11-20 (section 7), D9 left for the end. **No code changed and nothing run in the notebook yet.**  
 **Structure:** section 1 explains how the 3.0 notebook works; sections 2-8 are the 3.1 plan. The 2026-11-11 analysis is kept in a separate file.
 
 **Roots used below**
@@ -48,7 +48,7 @@ Still open: who writes the tables of N4 (their notebooks are not on this branch)
 
 * One row per HCP x cohort for the 28 claims cohorts c1-c28, key `HCP_COHORT_ID = PROVIDER_ID_c<n>`.
 * Every feature family of section 4 joined on that key.
-* A **feature catalog** next to the table: one row per feature with its `CATEGORY` (section 6), so we know where each feature came from.
+* A **data dictionary** next to the table: one row per feature with its category, sub-category and definition (section 6), so we know where each feature came from and what it means.
 
 ## 4. What the branch and the volume hold
 
@@ -232,15 +232,16 @@ So some outputs come from a different version of the code than the one on `combi
 
 **N12. Coverage differs by family.** HQ email covers 162,557 HCPs, lab claims and lab patient tables about 200,000; the rest cover almost the whole universe. After the left joins, HCPs without activity get nulls and need an imputation rule.
 
-## 6. Category column (proposal)
+## 6. Data dictionary (decided 2026-11-20, D2)
 
-The model table has one column per feature, so the category goes in a **feature catalog** saved next to it.
+The model table has one row per HCP x cohort and one column per feature. A category describes a column, not a row, so it cannot be a column of the model table. It goes in a **data dictionary** saved next to it, one row per feature: feature, category, sub-category, one-line definition.
 
 | Column | Content |
 | --- | --- |
 | `FEATURE_NAME` | name in the combined table |
 | `CATEGORY` | one of the values below |
 | `SUB_CATEGORY` | family inside the category (e.g. `Rx frequency`, `F2F`, `Census`) |
+| `DEFINITION` | one line on what the feature means |
 | `SOURCE_NOTEBOOK` | notebook that builds it |
 | `SOURCE_TABLE` | path of the table it was read from |
 
@@ -255,40 +256,50 @@ The model table has one column per feature, so the category goes in a **feature 
 | Market access | MMIT, FTP, copay (4.7, once available) |
 | Derived in combine | specialty one-hot, calendar, ratio features |
 
-The catalog is built from the list of source tables in one config cell, so every column gets exactly one category. Checks:
+Definitions: HQ email and digital paid media already save a `feature_manifest.parquet` with a `DESCRIPTION` per feature; reuse them. No other source table has column descriptions (checked 2026-11-20), so the other definitions come from each notebook owner.
+
+The dictionary is built from the list of source tables in one config cell, so every column gets exactly one category. Checks:
 * no feature without a category
 * no feature name in two tables
 
-## 7. Decisions needed
+## 7. Decisions (agreed 2026-11-20)
 
-| ID | Question | Proposal |
-| --- | --- | --- |
-| D1 | Scope | Training c1-c28 first; inference later with the same code |
-| D2 | Category format | Feature catalog as in section 6 |
-| D3 | Static notebooks are on `dev/claims-comorbidity-competitor-features` | Merge that branch into `combine`, or read only the saved outputs |
-| D4 | Source when a table is in both `NO` and `DEV` (N2) | Identical copies: either; adoption: `DEV` (matches the universe, has the Entresto flag). Owners confirm which root is official |
-| D5 | Monthly tables without a cohort (NBRx / NRx / TRx, competitor share) | Take the row whose `SVC_DT_M` is the lookback-end month of each cohort, or ask the owner to add the cohort id; all 28 lookback-end months are in the tables |
-| D6 | DTC geography | Join only the ZIP table (it already has DMA, state, social and search) on the HCP ZIP (source of the HCP ZIP to confirm); search columns empty for c1-c8 |
-| D7 | Families not 3.1-ready (MMIT, FTP, copay, clickstream, digital phase 1 / 2) | Leave out of the first version and list them in the catalog as pending |
-| D8 | Tables with no writer found (N4), field account tables, OE `_TEST` | Owner confirms each; `_TEST` left out |
-| D9 | Feature list | All 3.1 features; report against the 752 list only, no 0-fill |
-| D10 | Imputation statistics | Medians from the training cohorts only, applied to all sets |
-| D11 | Output | `<run>/hcp_combined/kerendia_nba_3_1_hcp_selected_features_data`, Delta partitioned by `COHORT_SET`, plus the feature catalog; never the 3.0 path |
-| D12 | Notebook location | New 3.1 notebook in this folder, next to this plan; the clone stays as the 3.0 reference |
-| D13 | Null `PROVIDER_ID` rows in claims (N10) and the placeholder HCP `'0'` (N11) | Drop both from the combine; fix the mapping gaps upstream (open point O2) |
-| D14 | Nulls for HCPs without activity (N12) | 0 for counts and flags, the 9999 / -9999 rules for recency and first occurrence, as in 3.0 |
+| ID | Question | Decision | Status |
+| --- | --- | --- | --- |
+| D1 | Scope | Build the 28 training / testing / holdout cohorts (c1-c28); inference later with the same code | Decided |
+| D2 | Where the category lives | Data dictionary next to the model table: feature, category, sub-category, one-line definition (section 6) | Decided |
+| D3 | Static notebooks (07, 08, 33) are on `dev/claims-comorbidity-competitor-features` | Merge that branch into `combine` | Decided; merge done **separately, after this plan**, to keep it organized |
+| D4 | Source when a table is in both `NO` and `DEV` (N2) | `DEV` (`hcp_level_model/dev_pipeline/notebook_output/`) for every family | Decided |
+| D5 | NBRx / NRx / TRx and competitor share have no cohort | Join the cohort table first, then build the features (per cohort, in the source notebooks, not in the combine) | Decided; owner change needed, see D5 note below |
+| D6 | DTC geography | Match ZIP to HCP the way 3.0 did, then join the DTC ZIP table (it already has DMA, state, social and search) on ZIP + cohort; search columns empty for c1-c8 | Decided; copy the HCP-to-ZIP step of the census notebook after the D3 merge |
+| D7 | Families not 3.1-ready | Clickstream dropped. Digital: use the 3.1 digital paid media and high intent tables (both ready, 28 cohorts); digital phase 1 is an older version of paid media (142 of its 160 columns are the same), phase 2 has no output. MMIT, FTP, copay: pending in the dictionary until their 3.1 outputs exist | Decided |
+| D8 | Tables with no writer on the branch (N4), field account tables, OE `_TEST` | Owners sync their notebooks into `combine`; `_TEST` left out | Decided; sync done **separately, with the D3 merge** |
+| D9 | Final feature list | Combine all 3.1 features first; feature selection runs on the combined table; the final list is added as a filter step at the end. Until then the 752 list is used only for a present / missing report, no 0-fill | Left for the end, once everything else is sorted out |
+| D10 | Imputation statistics | Medians from the training cohorts only, applied to all sets | Decided |
+| D11 | Output | `<run>/hcp_combined/kerendia_nba_3_1_hcp_selected_features_data`, Delta partitioned by `COHORT_SET`, plus the data dictionary; never the 3.0 path | Decided |
+| D12 | Notebook location | New 3.1 notebook in this folder, next to this plan; the clone stays as the 3.0 reference | Decided |
+| D13 | Claims rows with null `PROVIDER_ID` (N10) and the placeholder HCP `'0'` (N11) | Keep them out of the main table, but save them to a separate file with their `NPI_NUMBER` (taken from the NPI-level claims tables), so the claims are not lost and can be mapped later. Source: NB01 `provider_claim_rx_monthly_cohort` (3,094 rows), NB04 `final_claims_monthly_cohort` (3,094), NB03 `provider_claim_diagnosis_monthly_cohort` (949), NB06 `provider_claim_eligible_patient_cohort` (3,001) | Decided |
+| D14 | Nulls for HCPs without activity (N12) | 0 for counts and flags, the 9999 / -9999 rules for recency and first occurrence, as in 3.0 | Decided |
+
+**D5 note: why NBRx / NRx / TRx are not built on the cohorts (checked 2026-11-20).**
+* The notebooks on `combine` (`NBA 3.1 - Dev/05_NBRx_NRx_TRx/26`-`28`) are still the 3.0 code. They run the 3.0 helpers, read the 3.0 HCP universe and the inference anchor file, keep only cohort `I01`, build one row per HCP per month ("fill missing months", "lag features") and write to the 3.0 volume. They do not produce the 3.1 tables.
+* The 3.1 tables (`DEV/hcp_features/{nbrx,nrx,trx,competitor_share}_features`) were written by Sehar's own notebooks `26_Features_NBRx_nba31`, `27_Features_NRx_nba31`, `28_Features_TRx_nba31` and a competitor share notebook, in `/Users/sehar.aejaz.ext@bayer.com/kerendia_nba_3_1_develop/NBA 3.1 - Dev/03_HCP_Level_Features/` (Delta history: 2026-11-04 for `NO`, 2026-11-07 for `DEV`). They are not on `combine`, and they are not shared with us, so their code could not be opened.
+* The search index shows that these `_nba31` notebooks reference the claims cohort file (`cohorts/claims/cohorts`) and `COHORT_ID`, but their saved output has no cohort id, only `SVC_DT_M` (46 months). Most likely the cohort file only sets the date range, and the features keep the 3.0 monthly design, where the combine matched on the month. The notebooks were edited again on 2026-11-17, after the last write, so the newest code has not written to these tables yet.
+* Next: ask Sehar to (1) share or sync the `_nba31` notebooks into `combine` (D8), and (2) build the features per cohort from the cohort table, with `COHORT_ID` in the output.
 
 ## 8. Next steps
 
-1. Decide D1-D14.
-2. Owners confirm the tables in N4 and D8.
-3. Write the list of notebook changes from sections 5 and 7, then rewrite the notebook.
-4. Validation:
+1. Decisions agreed on 2026-11-20 (section 7); D9 stays open until the end.
+2. Separately, merge the static branch (D3) and sync the owners' notebooks (D8, incl. Sehar's `_nba31` notebooks for D5) into `combine`.
+3. Sehar rebuilds NBRx / NRx / TRx / competitor share per cohort (D5).
+4. Write the list of notebook changes from sections 5 and 7, then build the 3.1 combine notebook.
+5. Feature selection on the combined table, then add the final list as a filter step (D9).
+6. Validation:
    * one row per `HCP_COHORT_ID` (universe x 28)
    * no row gain after each join; match rate per table and cohort reported
    * no duplicate column names; metadata columns once
    * promotional cohort c<n> lands on claims cohort c<n> (one HCP checked by hand)
    * 0 nulls after imputation
-   * the catalog checks of section 6
+   * the data dictionary checks of section 6
 
 

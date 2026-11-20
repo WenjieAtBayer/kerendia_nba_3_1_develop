@@ -1,0 +1,82 @@
+{
+  "_readme": "Config for combine_sync. Each branch may only change the paths in 'include' (a path ending with / is a folder, otherwise a glob). Changes outside 'include', in 'keep_combine' or in 'protected_paths' are reverted to the combine version. Edit this file on combine, never on a feature branch.",
+  "target_branch": "combine",
+  "remote": "origin",
+  "protected_paths": ["databricks-skills/", "Archived Skills/", "combine_sync/"],
+  "branches": [
+    {
+      "branch": "dev/promotional-features",
+      "enabled": true,
+      "area": "Promotional (personal, non-personal, OE, QC)",
+      "include": ["NBA 3.1 - Dev/04_Promotional_Features/"],
+      "keep_combine": []
+    },
+    {
+      "branch": "dev/claims-comorbidity-competitor-features",
+      "enabled": true,
+      "area": "Static HCP features (physician, census, colocation), comorbidity, prior writing, adoption, market events, feature analysis docs",
+      "include": [
+        "NBA 3.1 - Dev/00_Helper_Notebooks/00_Write_HCP_Inputs_31.ipynb",
+        "NBA 3.1 - Dev/03_HCP_Level_Features/",
+        "NBA 3.1 - Dev/06_Physician_Static_Features/",
+        "NBA 3.1 - Dev/07_Census_Sdoh_Features/",
+        "NBA 3.1 - Dev/09_Colocation_Features/",
+        "NBA 3.1 - Dev/Feature Analysis/"
+      ],
+      "keep_combine": []
+    },
+    {
+      "branch": "dev/hcp-claims-features",
+      "enabled": true,
+      "area": "HCP claims NB01-NB07, patient journey, FTP & copay docs, feature views",
+      "include": ["NBA 3.1 - Dev/03_Feature_Engineering/03_HCP_level_features/"],
+      "keep_combine": ["NBA 3.1 - Dev/03_Feature_Engineering/03_HCP_level_features/hcp_level_features/99 Combine Physician Data Files/"]
+    },
+    {
+      "branch": "dev/nbrx-nrx-trx-features",
+      "enabled": true,
+      "area": "NBRx / NRx / TRx and competitor share (_nba31), V7 product group mapping, NBRx analysis docs",
+      "include": [
+        "NBA 3.1 - Dev/03_HCP_Level_Features/*_nba31.ipynb",
+        "NBA 3.1 - Dev/Feature Analysis/",
+        "NBA 3.1 - Dev/Product_Group_Mapping/"
+      ],
+      "keep_combine": ["NBA 3.1 - Dev/00_Helper_Notebooks/00_cohort_generation.ipynb"]
+    },
+    {
+      "branch": "analysis/hcp-universe-revamp",
+      "enabled": true,
+      "area": "Veeva Link to People analysis and features",
+      "include": ["NBA 3.1 - Dev/Veeva Link To People Analysis/"],
+      "keep_combine": []
+    },
+    {
+      "branch": "dev/patient-features",
+      "enabled": true,
+      "area": "Patient features",
+      "include": ["NBA 3.1 - Dev/03_patient_features/"],
+      "keep_combine": []
+    },
+    {
+      "branch": "dev/mmit-features",
+      "enabled": true,
+      "area": "MMIT features",
+      "include": ["NBA 3.1 - Dev/04_MMIT_Features/"],
+      "keep_combine": []
+    },
+    {
+      "branch": "dev/stage-branch",
+      "enabled": false,
+      "area": "Not synced",
+      "include": [],
+      "keep_combine": []
+    },
+    {
+      "branch": "main",
+      "enabled": false,
+      "area": "Not synced",
+      "include": [],
+      "keep_combine": []
+    }
+  ]
+}

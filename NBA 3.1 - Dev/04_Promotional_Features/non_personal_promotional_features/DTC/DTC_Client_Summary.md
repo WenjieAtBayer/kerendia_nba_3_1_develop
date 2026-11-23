@@ -4,7 +4,7 @@
 **Scope:** Family 4, DTC (direct-to-consumer) media: Kerendia ads shown to **patients** in the doctor's area (Facebook + Instagram, patient branded search)  
 **Notebook:** `DTC/34_promotional_features_DTC` (rewrite of NBA 3.0 `03_HCP_Level_Features/34_promotional_features_DTC`)  
 **Based on:** sections 1 and 3.4 of `52_digital_feature_families_nba30_vs_nba31.md`, `21_dtc_data_findings_2024_2026_and_open_questions.md`, the NBA 3.1 notebook code and its run on 6 November 2026 (team cohorts, team output layout)  
-**Date:** 6 November 2026
+**Date:** 6 November 2026, updated 23 November 2026 (QC fix P1: ZIP table keyed on postal ZIP; notebook re-run, `PULL_DT` 2026_11_23)
 
 > HCP paid media (ads shown to doctors), HQ email, iRep email and all rep activity are **not** in this family. DTC is **market background** (a control variable): it describes the doctor's area and is never an action or a reason shown in NBA.
 
@@ -15,7 +15,7 @@
 * **The problem.** In NBA 3.0, DTC features ranked high (Health Union impressions was the **best non-personal feature, rank 32 of 752**; Facebook + Instagram clicks and impressions ranks 93 and 124; WebMD rank 107). But the four direct-buy publishers have been **zero since early 2025** and their input files no longer exist, so at prediction time these features only tell the model "old period".
 * **Why else.** (1) Raw totals mostly measured **region size**: regions rank almost the same every year (rank correlation 0.98). (2) The doctor's **same** month was used, which can include days after the prediction date. (3) Months without data were left empty (NULL) instead of 0. (4) Columns came from a dynamic pivot by vendor. (5) Patient search (SA360) was never used.
 * **What NBA 3.1 does.** It keeps **Facebook + Instagram by DMA** (media region) and adds **SA360 patient branded search by state**, scales both **per 1,000 adults**, uses only **complete months up to the cohort month**, fixes a click-tracking outlier, and keeps the block to **8 fixed features**. The output has one row per **ZIP x cohort**, ready to join on the doctor's practice ZIP.
-* **Result.** The team's 28 promotional cohorts c1 to c28 (lookback ends 17 Jun 2024 to 17 Sep 2026): 5,880 DMA x cohort rows (210 x 28), 1,020 state x cohort rows (51 states x 20 cohorts, c9 to c28, because search starts in January 2025) and **904,540 ZIP x cohort rows**. All quality checks pass, including the national check (adult-weighted DMA rate = national rate, 32.324 vs 32.324 for c6).
+* **Result.** The team's 28 promotional cohorts c1 to c28 (lookback ends 17 Jun 2024 to 17 Sep 2026): 5,880 DMA x cohort rows (210 x 28), 1,020 state x cohort rows (51 states x 20 cohorts, c9 to c28, because search starts in January 2025) and **1,142,904 ZIP x cohort rows** (40,818 postal ZIPs x 28; was 904,540 = 32,305 ZCTAs x 28 before the 23 Nov 2026 fix). All quality checks pass, including the national check (adult-weighted DMA rate = national rate, 32.324 vs 32.324 for c6).
 * **Aligned with the team (6 Nov 2026).** Same cohorts, cohort columns (`COHORT`, `DATASET`, `PREDICTION_MONTH`, `SVC_DT`) and output folder / format as the Digital Engagement and High-Intent blocks. DTC has no doctor key (it is built by area), so the `PROVIDER_ID` change does not apply here.
 * **What this gives the business.** The model can account for how much Kerendia patient advertising and patient search there is around each doctor, on a scale that compares a large and a small region fairly, without mistaking it for something a rep did.
 * **Main open point.** Facebook + Instagram data ends on **22 June 2026**: social volume features are empty from cohort c26 (cohort month June 2026) until we know whether the campaign stopped or the feed is late.
@@ -90,7 +90,8 @@ Where the DTC features ranked in NBA 3.0 (out of 752 features; rank 1 = most use
 **Done.** Every DMA (social) and state (search) is crossed with every cohort, then spread to ZIPs.
 
 * **Cohorts:** the 28 team promotional cohorts, c1 (lookback end 17 Jun 2024, cohort month May 2024) to c28 (17 Sep 2026, cohort month Aug 2026). All 28 are built.
-* **Rows:** 5,880 DMA x cohort (210 x 28), 1,020 state x cohort (51 x 20) and **904,540 ZIP x cohort** (every ZIP x 28 cohorts).
+* **Rows:** 5,880 DMA x cohort (210 x 28), 1,020 state x cohort (51 x 20) and **1,142,904 ZIP x cohort** (40,818 postal ZIPs x 28 cohorts).
+* **ZIP keying (QC fix, 23 Nov 2026):** the table is keyed on every postal ZIP in the ACS file (US states + DC), not only on census ZCTAs. Hospital and PO-box ZIPs that are not ZCTAs (e.g. 44195 Cleveland Clinic, 94143 UCSF) take the DMA and state of their ZCTA; ZCTA is used only for population. Before the fix, 4,397 universe doctors in 236 such ZIPs had no row. Using the MDM best-affiliation practice ZIP, 280,676 of 294,726 universe doctors now find a row (11,845 have no ZIP, 2,181 are in US territories, 24 have a ZIP missing from ACS).
 * **Doctor link:** each doctor gets the row of their practice ZIP for the cohort. DMA 646 (`No DMA`) has no population and gets NULL.
 * **Empty vs zero:** a month with no campaign is 0; a month after the source's last complete month is NULL.
   * **Social** (data 1 Jan 2024 to 22 Jun 2026): built for all 28 cohorts; volume features NULL from c26 (cohort month June 2026).

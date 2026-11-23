@@ -46,7 +46,7 @@ Volume root (`V31`): `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerend
 | 4 | Primary ID mapping | `` `{CATALOG}`.kerendia_nba_3.SOURCE_PROVIDER_BHID_NPI_MAPPING `` | BH_ID to PROVIDER_ID | `PROVIDER_ID`, `BH_ID`, `NPI_NUMBER` |
 | 5 | OE fallback ID mapping | `` `{CATALOG}`.kerendia_oe_journey.kerendia_oe_npi_bhid_mapping_inference `` | Newer BH_IDs (BH_ID to NPI) | `BH_ID`, `NPI_NUMBER` |
 | 6 | R/I/E metric mapping | `helper_files/mdb_prep_config.xlsx`, sheet `Metric Mappings` (in this OE folder) | Exposure, engagement and action flags | `Category` (R/I/E), `Event Type` (= channel), `Mapped Metric` (= `MTR_NM`) |
-| 7 | Content tagging | `/Workspace/Users/wenjie.chen@bayer.com/OE/GA Run/Data_for_production/Content_tagging_6_5.xlsx` | Message category per creative | 14 merge columns + `Content Category` |
+| 7 | Content tagging | `helper_files/Content_tagging_6_5.xlsx` (in this OE folder; byte-identical copy of `/Workspace/Users/wenjie.chen@bayer.com/OE/GA Run/Data_for_production/Content_tagging_6_5.xlsx`) | Message category per creative | 14 merge columns + `Content Category` |
 
 Cohort facts: every `lookback_end_date` falls on the 17th. c1 = 2024-06-17 and c28 = 2026-09-17. c1-c24 are Training, c25-c26 Testing, and c27-c28 Holdout (Backtesting).
 
@@ -68,7 +68,7 @@ Out of scope: FACT_CALL and EVNT_PRSNL_PROM (calls and personal events) are not 
 | Valid NPI | `^[0-9]{10}$` | Used in the fallback ID mapping |
 | Output path | `{V31}/notebook_output/oe_nba_3_1/kerendia_nba_3_1_oe_promotional_features.parquet` | |
 
-Implementation constraint: in the latest NBA 3.1 run (2026-11-13) the full history was about 68M NPP rows and about 7.8M interactions. Keep the processing in Spark; converting the interaction table to pandas runs out of memory.
+Implementation constraint: in the latest NBA 3.1 run (2026-11-23) the full history was 68,194,873 NPP rows and 7,853,188 interactions. Keep the processing in Spark; converting the interaction table to pandas runs out of memory.
 
 ---
 
@@ -81,10 +81,10 @@ The NPP table identifies HCPs by `CUST_ID` (a BH_ID). The NBA 3.1 model uses `PR
 
 1. **Primary:** `SOURCE_PROVIDER_BHID_NPI_MAPPING` gives BH_ID to PROVIDER_ID (both trimmed, not null).
 2. **Fallback for newer BH_IDs:** `kerendia_oe_npi_bhid_mapping_inference` gives BH_ID to NPI (10-digit NPIs only). That NPI is mapped to PROVIDER_ID through `SOURCE_PROVIDER_BHID_NPI_MAPPING.NPI_NUMBER`.
-3. **Combine:** take the union of both, keep only PROVIDER_IDs in `HCP_Universe_without_call_hcps`, and keep one PROVIDER_ID per BH_ID: `PROVIDER_ID = min(PROVIDER_ID)` per BH_ID.
+3. **Combine:** take the union of both, keep only PROVIDER_IDs in `HCP_Universe_without_call_hcps` (the placeholder `PROVIDER_ID = '0'` is excluded), and keep one PROVIDER_ID per BH_ID: `PROVIDER_ID = min(PROVIDER_ID)` per BH_ID.
 4. Only NPP records whose `CUST_ID` is in this map are used.
 
-Latest NBA 3.1 run (2026-11-13): 296,296 BH_IDs mapped.
+Latest NBA 3.1 run (2026-11-23): 296,295 BH_IDs mapped.
 
 ### 4.2 Event selection
 A source record is kept when all of the following hold:
@@ -114,12 +114,14 @@ Each record gets a message category (`CONTENT_TAG`) from `Content_tagging_6_5.xl
 
 Within each vendor the first matching rule wins.
 
+PeerDirect note: all 2025 PeerDirect records have `TACT_NM` = NULL; their placement is in `TACT_TYP` (for example `MD Minute - Email`, or a bare `MD Minute` / `MDFI`). The format pairing comes from the 2026 records, which carry both. Records with `TACT_NM` are unaffected. `TACT_TYP` is kept in its raw form through content tagging for this rule.
+
 | Vendor | Rule | Sub-channel |
 | --- | --- | --- |
 | DOXIMITY | T contains DOCNEWS / DOCSPOT / DOCPOINT / FORMULARY / ANNOUNCE | DocNews / DocSpot / DocPoint / FormularyOne / Announcement |
 | DOXIMITY | otherwise, word `DN` / `F1` / `AN` in T | DocNews / FormularyOne / Announcement |
 | MEDSCAPE | code = EA / BA / BS / PP / FFQ / RECAP / TLM / PPEHR / FAP / DDTRD | 3rd Party Email / BrandAlert / BrandSpot / PulsePoint Banner / FFQ / RECAP / BANNER / EHR / FAP / DDTRD |
-| PEERDIRECT | T contains `MDFI - EMAIL` / `MDFI - WEB` / `MDFI - BANNER` / `MD MINUTE - EMAIL` / `MD MINUTE - WEB` / `MD MINUTE - BANNER` | the same label |
+| PEERDIRECT | `T' = upper(coalesce(TACT_NM, TACT_TYP))`; if T' has no ` - <format>` suffix, append it from `CHNL_NM` (`3rd Party Email` -> ` - EMAIL`, `BANNER` -> ` - BANNER`, `CUSTOM` -> ` - WEB`). Then T' contains `MDFI - EMAIL` / `MDFI - WEB` / `MDFI - BANNER` / `MD MINUTE - EMAIL` / `MD MINUTE - WEB` / `MD MINUTE - BANNER` | the same label |
 | PULSEPOINT | always | Banner |
 | any other, or no rule matched | | none: the record is dropped |
 
@@ -136,6 +138,7 @@ An **interaction** is one HCP x vendor x sub-channel x content tag x product x `
 * `EXPOSED_ON = min(date)` over the interaction's R records
 * `ENGAGED_ON = min(date)` over its I records
 * `ACTED_ON = min(date)` over its E records
+* I and E records are attached to the exposure on HCP x vendor x sub-channel x product x `UNIQ_NPP_ID`, **without** the content tag: records of one interaction can carry different LITCODE / CF_* values and so different tags, and must still count as one engagement
 * `INDICATION` = `CF_INDICATION` of the earliest R record
 
 The interaction exists only if it has an R record; I and E records without one are dropped. Each interaction therefore gives exactly 1 exposure, at most 1 engagement and at most 1 action. An email opened 3 times in one day, or on several days, counts as one engagement.
@@ -168,7 +171,7 @@ For HCP h, cohort c and window W, let `X(h, c, W)` be the set of interactions of
 Naming: `OE_` + the standardised name (`[A-Z0-9_]`), with the window as suffix. A feature column exists only if at least one interaction produces it.
 
 ### 4.10 Output grid and fill
-* Grid = every `PROVIDER_ID` in the universe x every cohort (with its `DATASET` label). `HCP_COHORT_ID = PROVIDER_ID + "_" + COHORT`.
+* Grid = every `PROVIDER_ID` in the universe (except the placeholder `0`) x every cohort (with its `DATASET` label). `HCP_COHORT_ID = PROVIDER_ID + "_" + COHORT`.
 * Feature rows are mapped from BH_ID to PROVIDER_ID (4.1) and left-joined to the grid.
 * Missing values are 0. Features are stored as double.
 
@@ -181,11 +184,11 @@ Naming: `OE_` + the standardised name (`[A-Z0-9_]`), with the window as suffix. 
 | 1 | Source scope | NPP table only; calls and personal events are out of scope |
 | 2 | Product | `PROD_BRAND_NM = 'KERENDIA'`, `BAYER_HCP_ID` not null |
 | 3 | Vendor exclusion | SFMC (HQ Email) is removed at load. Notebook 15 builds HQ email features, so keeping it would double count. This applies to all families |
-| 4 | HCP mapping | BH_ID to PROVIDER_ID through the primary mapping, with the OE BH_ID-to-NPI fallback. Keep the min PROVIDER_ID per BH_ID so each event counts once. Only HCPs in `HCP_Universe_without_call_hcps` |
+| 4 | HCP mapping | BH_ID to PROVIDER_ID through the primary mapping, with the OE BH_ID-to-NPI fallback. Keep the min PROVIDER_ID per BH_ID so each event counts once. Only HCPs in `HCP_Universe_without_call_hcps`, without the placeholder `0` |
 | 5 | Source dedup | One record per `UNIQ_NPP_ID, DATE_ID, CUST_ID, VEND_NM, CHNL_NM, MTR_NM` |
-| 6 | Channel | `VEND_NM` + sub-channel derived from `TACT_NM` (section 4.4), standardised to `[A-Z0-9_]` |
+| 6 | Channel | `VEND_NM` + sub-channel derived from `TACT_NM` (section 4.4), standardised to `[A-Z0-9_]`. PeerDirect uses `TACT_TYP` when `TACT_NM` is NULL |
 | 7 | R/I/E flags | From `mdb_prep_config.xlsx` `Metric Mappings`, plus the supplemental Medscape mappings in section 6.2: R = reach (exposure), I = engagement, E = action. Matched on (channel, metric). A pair can carry several flags. Unmatched records are dropped |
-| 8 | **Engagement never exceeds exposure** | Each interaction (HCP x channel x content x `UNIQ_NPP_ID`) is one exposure, dated on its first exposure record. It counts at most one engagement and one action, however many open, view or click records it has. For example, an email opened 3 times in one day, or on several days, is one engagement. Engagement and action are counted in the exposure's period, so I <= R and E <= R in every window. Engagement or action with no exposure is dropped |
+| 8 | **Engagement never exceeds exposure** | Each interaction (HCP x channel x content x `UNIQ_NPP_ID`) is one exposure, dated on its first exposure record. It counts at most one engagement and one action, however many open, view or click records it has. For example, an email opened 3 times in one day, or on several days, is one engagement. Engagement and action are counted in the exposure's period, so I <= R and E <= R in every window. Engagement or action is matched to the exposure on the interaction, ignoring content tag. Engagement or action with no exposure is dropped |
 | 9 | Content tag | Left join to `Content_tagging_6_5.xlsx` on 14 attributes. Untagged, `-` and `Not Needed` become GENERAL. `SAMPLES` columns are dropped, but those exposures still count in channel, indication and touchpoint totals |
 | 10 | Promo lag | +7 days on every event date before the period is assigned |
 | 11 | Periods | 18th-to-17th periods (cutoff = day of `lookback_end_date` = 17) |
@@ -227,29 +230,31 @@ These rows are an analyst assumption based on the data and the sheet's conventio
 
 ## 7. Features produced
 
-W is one of P3, P6, P9 or P12. The counts below are from the latest NBA 3.1 run (2026-11-13): 79 base features x 4 windows = 316 columns. They can change when the source data adds or drops channels or tags.
+W is one of P3, P6, P9 or P12. The counts below are from the latest NBA 3.1 run (2026-11-23, after QC fixes): 80 base features x 4 windows = 320 columns (output 324 columns with the 4 keys; 8,252,328 rows = 294,726 HCPs x 28 cohorts). The 2026-11-13 run had 79 base / 316 columns. They can change when the source data adds or drops channels or tags.
 
 | Family | Pattern | Base | Columns | Definition |
 | --- | --- | --- | --- | --- |
 | Channel reach | `OE_{CHANNEL}_R_{W}` | 22 | 88 | Exposed interactions on the channel |
-| Channel engagement | `OE_{CHANNEL}_I_{W}` | 15 | 60 | Exposed interactions with at least one engagement (<= R) |
-| Channel action | `OE_{CHANNEL}_E_{W}` | 13 | 52 | Exposed interactions with at least one action (<= R) |
+| Channel engagement | `OE_{CHANNEL}_I_{W}` | 16 | 64 | Exposed interactions with at least one engagement (<= R) |
+| Channel action | `OE_{CHANNEL}_E_{W}` | 14 | 56 | Exposed interactions with at least one action (<= R) |
 | Indication | `OE_IND_{HF,CKD,T2D}_{R,I,E}_{W}` | 9 | 36 | The same three counts, for records mentioning that indication |
-| Content category | `OE_{TAG}_COUNT_{W}` | 17 | 68 | Exposed interactions with that message category |
+| Content category | `OE_{TAG}_COUNT_{W}` | 16 | 64 | Exposed interactions with that message category |
 | Touchpoint totals | `OE_{EXPOSURE,ENGAGEMENT,ACTION}_TOUCHPOINT_{W}` | 3 | 12 | Sum of the channel R, I or E columns |
-| **Total** | | **79** | **316** | |
+| **Total** | | **80** | **320** | |
 
-**Channels in the latest NBA 3.1 run (2026-11-13) and which flags they have:**
+**Channels in the latest NBA 3.1 run (2026-11-23) and which flags they have:**
 
 | Channel | R | I | E |
 | --- | --- | --- | --- |
 | DOXIMITY_ANNOUNCEMENT, DOXIMITY_DOCNEWS, DOXIMITY_DOCPOINT, DOXIMITY_DOCSPOT, DOXIMITY_FORMULARYONE | Yes | Yes | Yes |
-| MEDSCAPE_3RD_PARTY_EMAIL, MEDSCAPE_BANNER, MEDSCAPE_DDTRD, MEDSCAPE_FAP, MEDSCAPE_FFQ, MEDSCAPE_PULSEPOINT_BANNER, MEDSCAPE_RECAP | Yes | Yes | Yes |
+| MEDSCAPE_3RD_PARTY_EMAIL, MEDSCAPE_BANNER, MEDSCAPE_DDTRD, MEDSCAPE_FAP, MEDSCAPE_FFQ, MEDSCAPE_PULSEPOINT_BANNER, MEDSCAPE_RECAP, PEERDIRECT_MDFI_EMAIL | Yes | Yes | Yes |
 | MEDSCAPE_BRANDALERT, PEERDIRECT_MD_MINUTE_EMAIL, PULSEPOINT_BANNER | Yes | Yes | |
 | MEDSCAPE_BRANDSPOT | Yes | | Yes |
-| MEDSCAPE_EHR, PEERDIRECT_MDFI_BANNER, PEERDIRECT_MDFI_EMAIL, PEERDIRECT_MDFI_WEB, PEERDIRECT_MD_MINUTE_BANNER, PEERDIRECT_MD_MINUTE_WEB | Yes | | |
+| MEDSCAPE_EHR, PEERDIRECT_MDFI_BANNER, PEERDIRECT_MDFI_WEB, PEERDIRECT_MD_MINUTE_BANNER, PEERDIRECT_MD_MINUTE_WEB | Yes | | |
 
-**Content tags (17):** ACCESS_COVERAGE, BASIC_PRODUCT_INFO, COST, DISEASE_AWARENESS_MANAGEMENT, DOSING_ADMINISTRATION, EFFICACY, EVENT, GENERAL, GUIDELINES, MECHANISM_OF_ACTION, MECHANISM_OF_DISEASE, PATIENT_ADHERENCE_SUPPORT, PATIENT_PROFILE, SAFETY_EFFICACY, SOCIAL_PROOF, STUDY_DESIGN, UNMET_NEED.
+`PEERDIRECT_MDFI_EMAIL` gained I and E with the 2025 PeerDirect records (section 4.4).
+
+**Content tags (16):** ACCESS_COVERAGE, BASIC_PRODUCT_INFO, COST, DISEASE_AWARENESS_MANAGEMENT, DOSING_ADMINISTRATION, EFFICACY, EVENT, GENERAL, GUIDELINES, MECHANISM_OF_ACTION, MECHANISM_OF_DISEASE, PATIENT_ADHERENCE_SUPPORT, PATIENT_PROFILE, SOCIAL_PROOF, STUDY_DESIGN, UNMET_NEED. `SAFETY_EFFICACY` (in the 2026-11-13 run) has no matching exposures since the 2026-11-19 source rebuild, so its 4 columns are not produced; the combine schema must tolerate this.
 
 The channel and tag lists come from the data, so new values in the source add columns. That is expected; report them.
 
@@ -300,6 +305,10 @@ Checks 3 and 4 must hold for **all** feature columns, and check 5 for **every** 
 * **No T1D.** There are no T1D records in `CF_INDICATION`.
 * **Engagement timing.** An engagement is counted in its exposure's period, even if the open happened a few days later.
 * **One exposure per interaction.** An interaction exposed on several days counts as one exposure, dated on its first day.
+* **Some PeerDirect placements are dropped:** `PV Compendium Quiz` (Series / Edition, Banner / Web; 13,478 records in 2025 plus some in 2026) and `MD Shuffle` (Banner / Web, 2026) have no channel rule or metric mapping. Accepted for NBA 3.1 (2026-11-23).
+* **Records without `UNIQ_NPP_ID` are dropped**, and engagement or action dated after the load end (section 4.2: last day of the last cohort's month minus 7 days, 2026-09-23 for c28) is not counted.
+* **Source is rebuilt weekly** (`CREATE OR REPLACE`, about 7 days of time travel), so channel and tag columns can change between runs.
+* **Content coverage:** GENERAL is 55.6% of c28 P12 content counts; `ACCESS_COVERAGE`, `MECHANISM_OF_DISEASE`, `PATIENT_PROFILE` and `STUDY_DESIGN` have no HCPs in c28 P12 (2026-11-23 run).
 
 ---
 

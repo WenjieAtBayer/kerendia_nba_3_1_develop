@@ -3,8 +3,8 @@
 **Parent plan:** `50_veeva_link_nba_3_1_readiness_plan.md`, section 5, Phase 1 (P1 to P5), section 6 (E0 to E4), gate G1  
 **Builds on:** Phase 0 (`51_veeva_link_phase0_working_plan.md`; notebooks `52_` to `57_`; acceptance run `20261119T103159`, 21 of 21 pass)  
 **Goal:** pass gate G1: T1 and T2 block built for all training instances, leakage check passed, fixed schema on two runs, spot-check done, E1 to E4 run and compared with E0  
-**Status:** working plan, ready to start  
-**Date:** November 19, 2026
+**Status:** in progress: P1, P2, P4 done; keyword_list_v2 applied (run `20261123T085209`); P3 and P5 manual review open; E0 to E4 waiting on I1 / I4  
+**Date:** November 19, 2026 (last update November 23, 2026)
 
 ---
 
@@ -136,10 +136,11 @@ If I1 or I4 are late, `71_` and `72_` still run; only the experiments wait.
 * [x] P1 coverage flags at NPI x cohort grain (`71_`, 294,542 NPIs x 43 cohorts)
 * [x] P2 T1 for C1 to C22 and C01 to C26, plus `t1_static` (23 window signatures)
 * [ ] P3 T2 built; specialty fallback column kept but null, waiting on I3
-* [x] P4 checks K1 to K7 pass (run `20261119T113924`); manifest written. K1 claims comparison not run (claims cohort output not readable)
-* [ ] P5 spot-check: 10 cards built by `72_` (`OUT/features_phase1/spot_check/`); manual Veeva Link web review and mismatch notes still to do
+* [x] P4 checks K1 to K7 pass (runs `20261119T113924` and `20261123T085209`); manifest written. K1 claims comparison not run (claims cohort output not readable)
+* [ ] P5 spot-check: 10 cards built by `72_` (`OUT/features_phase1/spot_check/`), re-run on v2 features (same 10 HCPs, 0 card values changed); manual Veeva Link web review and mismatch notes still to do. Review template exported to `72_veeva_link_review_template.csv` (this folder) and `OUT/features_phase1/spot_check/review_template.csv`; fill in `web_matches`, `mismatch_note`, `reviewer`, `review_date`
+  * MRA tag audit (2026-11-23): card 1's SZC trial is a real MRA-context hit (patients receiving spironolactone). A keyword screen for off-topic spironolactone uses (androgen excess, alopecia, transgender care, PAH) found trials 6 of 54 MRA rows, publications 4 of 407, events 1 of 138; the MRA flag flips for 4 / 4 / 1 experts. **Applied as `keyword_list_v2`** (section 10)
 * [ ] E0 to E4 run and compared; E2 vs E3 on NBA 3.0 cohorts reported
-* [ ] Fixed schema on two runs (K2)
+* [x] Fixed schema on two runs (K2): run `20261123T085209` columns equal the schema lock of run `20261119T113924`
 
 ## 9. Risks for Phase 1
 
@@ -151,3 +152,31 @@ If I1 or I4 are late, `71_` and `72_` still run; only the experiments wait.
 | R4 | Payment features are the same for every NBA 3.1 cohort (program years 2021 to 2023) | Treat as static; check importance stability across folds |
 | R5 | Cohort rules differ from `00_cohort_config` | Confirm with I2; self-test in P1.1 |
 | R6 | Model inputs (I1) not available in time | Build and checks continue; experiments move, G1 waits |
+
+## 10. Run log
+
+### 2026-11-23: keyword_list_v2 applied (`55_` -> `56_` -> `71_` -> `57_` -> `72_`)
+
+**Change.** `OUT/config/keyword_list_v2` (written by `53_`, cell "(d) keyword_list_v2") = the 86 v1 include patterns unchanged + 13 MRA exclude patterns (`%acne%`, `%androgen%`, `%hirsut%`, `%polycystic ovar%`, `%pcos%`, `%alopecia%`, `%hair loss%`, `%transgender%`, `%gender-affirming%`, `%gender affirming%`, `%feminiz%`, `%dermatolog%`, `%pulmonary arterial hypertension%`); new column `rule_type` (`include` / `exclude`). `55_` now reads v2: a tag is set when an include pattern matches and no exclude pattern of the same tag matches.
+
+**Effect on the activity tables** (before vs after, saved and compared outside the notebooks):
+
+| Measure | Trials | Publications | Events |
+| --- | --- | --- | --- |
+| `TAG_MRA` rows | 54 -> 48 | 407 -> 403 | 138 -> 137 |
+| `TAG_ANY_INSCOPE` rows | 12,232 -> 12,226 | 57,414 -> 57,410 | 42,487 -> 42,486 |
+| All other tags, row counts | unchanged | unchanged | unchanged |
+
+**Effect on `71_` features** (sum over NPIs, cohort 2025-02): `veeva_trial_mra_flag_5y` 159 -> 155; `veeva_trial_n_inscope_5y` -6; `veeva_pub_n_inscope_5y` -4; `veeva_event_n_inscope_3y` -1; payment features unchanged. Same pattern on cohort 2024-06.
+
+**Checks.**
+
+| Notebook | Run | Result |
+| --- | --- | --- |
+| `55_` | A7 totals vs assessment 8.1 | unchanged, within 0.05% |
+| `56_` | A8 fixed schema, row counts, missing rule | pass, both anchors |
+| `71_` | `20261123T085209` | K1 to K7 all pass; K2 now compared with the previous run |
+| `57_` | `20261123T085928` | 21 of 21 pass (checks do not use tags) |
+| `72_` | spot-check re-run | same 10 HCPs; MRA candidate pool 100 -> 98; 0 card values changed; KOL-list counts 0 differences |
+
+**Code fixes in this run.** `71_` write cell: the cohort-partition count used `os.listdir` on the volume, which failed on serverless (`Required key not available`); now counted with Spark. `53_` setup: documents path pointed to the old `kerendia_nba_3_1_develop` folder; now `_sm`. `72_`: new cell "Export review template to CSV" (refuses to overwrite a CSV that already has review entries).

@@ -30,14 +30,14 @@ The NBA 3.1 HCP model predicts which HCPs will write a **new paid Kerendia presc
 
 **Non-paid Writers (rejected or reversed NBRx)**
 
-| Month | Non-paid Writers | Non-paid NBRx | Type 1 Writers (mix of Paid and Non-paid NBRx) | Type 1 Writers NBRx | Type 2 Writers (only Non-paid NBRx) | Type 2 Writers NBRx |
-| --- | --- | --- | --- | --- | --- | --- |
-| Jan-26 | 8,521 | 14,431 | 3,097 | 7,261 | 5,424 | 7,170 |
-| Feb-26 | 7,833 | 12,759 | 3,052 | 6,644 | 4,781 | 6,115 |
-| Mar-26 | 8,069 | 12,990 | 3,264 | 6,975 | 4,805 | 6,015 |
-| Q1 distinct HCPs | 16,723 | 40,180 | 6,724 | 20,880 | 12,736 | 19,300 |
+| Month | Non-paid Writers | Non-paid NBRx | Type 1 Writers (mix of Paid and Non-paid NBRx) | Type 1 Writers Paid NBRx | Type 1 Writers Non-paid NBRx | Type 2 Writers (only Non-paid NBRx) | Type 2 Writers NBRx |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Jan-26 | 8,521 | 14,431 | 3,097 | 5,255 | 7,261 | 5,424 | 7,170 |
+| Feb-26 | 7,833 | 12,759 | 3,052 | 5,425 | 6,644 | 4,781 | 6,115 |
+| Mar-26 | 8,069 | 12,990 | 3,264 | 5,883 | 6,975 | 4,805 | 6,015 |
+| Q1 distinct HCPs | 16,723 | 40,180 | 6,724 | 16,563 | 20,880 | 12,736 | 19,300 |
 
-*Type 1 and Type 2 are set per month, and their NBRx columns count non-paid NBRx, so Type 1 + Type 2 = Non-paid NBRx. In the Q1 row, NBRx is the quarter total and writers are distinct HCPs. An HCP can be Type 1 in one month and Type 2 in another, so the Type 1 and Type 2 Q1 counts add up to more than 16,723.*
+*Type 1 and Type 2 are set per month. Type 1 Writers Paid NBRx is the paid NBRx those HCPs wrote in the same month. Type 1 Writers Non-paid NBRx and Type 2 Writers NBRx count non-paid NBRx, so together they equal Non-paid NBRx. In the Q1 row, NBRx is the quarter total and writers are distinct HCPs. An HCP can be Type 1 in one month and Type 2 in another, so the Type 1 and Type 2 Q1 counts add up to more than 16,723.*
 
 * **Target size:** about 2% of the universe are Paid Writers each month (12,815 distinct HCPs, 4.3%, over Q1).
 * **More HCPs have non-paid new patients than paid ones:** 7.8K to 8.5K per month, writing 12.8K to 14.4K non-paid NBRx, more than the 8.1K to 9.3K paid NBRx.

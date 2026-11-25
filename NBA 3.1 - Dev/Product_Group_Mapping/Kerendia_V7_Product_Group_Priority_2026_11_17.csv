@@ -1,0 +1,68 @@
+V7_PRODUCT_GROUP,V7_PRODUCT_CLASS,PRIORITY,ACTION,SOURCE,ADDED_IN_V7,TRX_OCT2024_SEP2026
+ACE,ACE,3,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,193793895
+ADLYXIN,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,0
+ADLYXIN STARTER PACK,GLP1,2,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,0
+ALDACTAZIDE,sMRA,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,9
+ALDACTONE,sMRA,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,5951
+ALISKIREN,DRI,4,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,92002
+ARB,ARB,3,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),True,250199855
+BASAL INSULIN,INSULIN,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,47213470
+BAXFENDY,BAXFENDY,3,KEEP_ALL_WINDOWS,"decision: new in V7, no v4 history -> 3 (keep full windows)",True,17713
+BB,BB,5,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,270973118
+BEXAGLIFLOZIN,SGLT2,1,DROP,v4 product-level (min priority of its products),False,250
+BRENZAVVY,SGLT2,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,39042
+BYDUREON,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,0
+BYDUREON BCISE,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,119447
+BYDUREON PEN,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,4
+BYETTA,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,26425
+CAROSPIR,sMRA,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,4124
+CCB,CCB,4,KEEP_ALL_WINDOWS,"user override 2026-11-17: keep full windows (v4 product-level priority was 5)",False,216603495
+CGM,CGM,6,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,52239150
+CKD SUPPORTIVE,CKD SUPPORTIVE,3,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,6795943
+DAPAGLIFLOZIN/METFORMIN H,SGLT2,1,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,248115
+DIURETICS,DIURETICS,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),True,167076514
+DPP4,DPP4,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,14319352
+ENTRESTO BRAND,ENTRESTO BRAND,3,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,7092442
+ENTRESTO GENERIC,ENTRESTO GENERICS,3,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,True,6637167
+EPLERENONE,sMRA,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,1576488
+EXENATIDE,GLP1,2,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,True,5465
+FARXIGA BRAND,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,17814828
+FARXIGA GENERIC,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,7263570
+GLYXAMBI,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,459906
+INPEFA,INPEFA,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,21104
+INSPRA,sMRA,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,2752
+INVOKAMET,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,42062
+INVOKAMET XR,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,34204
+INVOKANA,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,544312
+JARDIANCE,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,46711342
+KERENDIA,KERENDIA,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,1842563
+LIRAGLUTIDE,GLP1,2,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,True,980632
+METFORMIN,METFORMIN,6,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,145207078
+MOUNJARO,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,70191910
+OTHER INSULIN,INSULIN,6,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,31542814
+OTHERS,OTHERS,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,21348542
+OZEMPIC,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,59564448
+QTERN,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,2277
+RYBELSUS,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,5063559
+SAXENDA,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,55711
+SEGLUROMET,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,28534
+SOLIQUA 100/33,GLP1,2,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,615884
+SPIRONOLACTONE,sMRA,4,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,49929018
+STEGLATRO,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,450592
+STEGLUJAN,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,4070
+SULFONYLUREAS,SULFONYLUREAS,5,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,41444334
+SYMLINPEN 120,GLP1,6,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,1655
+SYMLINPEN 60,GLP1,6,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,3573
+SYNJARDY,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,1007402
+SYNJARDY XR,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,2061192
+TEKTURNA,DRI,4,DROP,v4 product-level (min priority of its products),False,2699
+TEKTURNA HCT,DRI,4,DROP,v4 product-level (min priority of its products),False,4
+TRIJARDY XR,SGLT2,1,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,511648
+TRULICITY,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,15432567
+VERQUVO,VERQUVO,4,KEEP_ALL_WINDOWS,"user override 2026-11-17: keep full windows (v4 product-level priority was 5)",False,157840
+VICTOZA,GLP1,2,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,418621
+WEGOVY,GLP1,2,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,11832372
+WEGOVY HD,GLP1,2,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,84617
+XIGDUO XR,SGLT2,1,KEEP_ALL_WINDOWS,v4 product-level (min priority of its products),False,1159447
+XULTOPHY 100/3.6,GLP1,2,KEEP_ALL_WINDOWS,v4 group-level via PRODUCT_GROUP_V6,False,93060
+ZEPBOUND,GLP1,6,PRUNE_3M_6M_RT,v4 product-level (min priority of its products),False,18489776

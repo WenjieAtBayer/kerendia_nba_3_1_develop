@@ -17,28 +17,26 @@ Snowflake Source Tables
         │
         ▼
 ┌─────────────────────────────────────────────────────┐
-│  Step 1: Raw Data Ingestion (3 tables)              │
-│  FACT_CALL · NPP · EVNT_PRSNL_PROM                  │
+│  Step 1: Raw Data Ingestion (1 table)               │
+│  NPP (ANLT_BASE_FACT_NONPERSONAL_PROMOTIONS)         │
 └──────────────────────┬──────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │  Step 2: Channel-Specific Processing                │
-│  calls_processing() · email_processing()            │
-│  pp_processing()                                    │
-│  → Each produces 8-col IDC DataFrame                │
+│  npp_processing()                                 │
+│  → Produces 8-col IDC DataFrame                     │
 └──────────────────────┬──────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────┐
-│  Step 3: Concatenation into proto_idc               │
-│  pd.concat([calls, emails, events])                 │
-│  ~1.95M rows                                        │
+│  Step 3: Build proto_idc                            │
+│  Single NPP IDC DataFrame (~1.73M rows)             │
 └──────────────────────┬──────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │  Step 4: Post-Processing (get_transaction_idc)      │
 │  +7 day promo lag · YRMO filter · standardize       │
 │  nan_handler · deduplication                        │
-│  → ~1.94M rows × 10 cols                            │
+│  → ~1.72M rows × 10 cols                            │
 └──────────────┬───────────────────┬──────────────────┘
                ▼                   ▼
 ┌──────────────────────┐  ┌───────────────────────────┐
@@ -65,10 +63,10 @@ Snowflake Source Tables
 
 | Step | Input | Operation | Output |
 |------|-------|-----------|--------|
-| 1 | Snowflake tables | Pull CALL, NPP, EVNT with 24-month DATE_ID filter | 3 raw Spark DataFrames |
-| 2 | Raw DFs + target universe + flag lookup + content tagging | Filter KERENDIA, join target HCPs, derive channels, tag content, map R/I/E flags | 3 pandas IDC DataFrames (8 cols each) |
-| 3 | 3 IDC DataFrames | `pd.concat` | Single proto_idc (~1.95M rows) |
-| 4 | proto_idc | Date conversion, +7 day promo lag, YRMO filter, standardize columns, handle NaNs, dedup | Cleaned transactions (~1.94M × 10) |
+| 1 | Snowflake tables | Pull NPP with 24-month DATE_ID filter | 1 raw Spark DataFrame |
+| 2 | Raw DF + target universe + flag lookup + content tagging | Filter KERENDIA, join target HCPs, derive channels, tag content, map R/I/E flags | 1 pandas IDC DataFrame (8 cols) |
+| 3 | NPP IDC DataFrame | Assign as proto_idc | proto_idc (~1.73M rows) |
+| 4 | proto_idc | Date conversion, +7 day promo lag, YRMO filter, standardize columns, handle NaNs, dedup | Cleaned transactions (~1.72M × 10) |
 | 5 | transactions | Pivot by CHANNEL_ID × R/I/E metric + pivot by CONTENT_TAG | R/I/E count matrix + content count matrix per CUSTOMER_ID × YRMO |
 | 6 | transactions | Daily sequences, integer encodings, gap-group classification | Sequence features per CUSTOMER_ID |
 | 7 | count matrices | Sum each metric into C1, C3, P3, P6, P12 time windows | Timeframe-aggregated features per CUSTOMER_ID |
@@ -78,7 +76,7 @@ Snowflake Source Tables
 
 ## 2. Vendors and Channels in the Data
 
-The pipeline processes **5 target digital vendors** (13 placements) plus **10 personal promo channels**.
+The pipeline processes **5 target digital vendors** (13 placements) from the NPP table only. FACT_CALL and EVNT_PRSNL_PROM are not used.
 
 ### Target Vendors (Non-Personal — Section 3.5 Scope)
 
@@ -90,22 +88,7 @@ The pipeline processes **5 target digital vendors** (13 placements) plus **10 pe
 | **Medscape** | 3rd Party Email, FFQ, RECAP, BrandAlert, EHR | 65,369 rows (3.8%) |
 | **PeerDirect** | MDFI - Email, MDFI - Web, MDFI - Banner | (included in NPP) |
 
-### Personal Promo Channels (from calls + events)
-
-| Channel | Source Table | Volume |
-|---------|-------------|--------|
-| F2F (Face-to-Face) | FACT_CALL | 213,936 rows |
-| Phone | FACT_CALL | included |
-| Group Call | FACT_CALL | included |
-| Remote Call | FACT_CALL | included |
-| Speaker Program | EVNT_PRSNL_PROM | 2,079 rows |
-| Advisory Board | EVNT_PRSNL_PROM | included |
-| Sponsorship | EVNT_PRSNL_PROM | included |
-| Scientific Presentation | EVNT_PRSNL_PROM | included |
-| Scientific Round Tables | EVNT_PRSNL_PROM | included |
-| Market Access / Formulary Assist | EVNT_PRSNL_PROM | included |
-
-> **Note for NBA 3.1:** Section 3.5 features use only the 5 target vendors. Personal channels belong to their own feature families.
+> **Note for NBA 3.1:** Only the 5 target digital vendors from the NPP table are included. Personal channels (calls, speaker programs, events) are not part of this feature family.
 
 ---
 
@@ -220,21 +203,7 @@ Capture the **temporal ordering** of promotional touches.
 
 ## 5. Source Table Preprocessing
 
-### 5.1 Calls Table (`FACT_CALL`)
-
-**Snowflake source:** `CPH_DB_PROD.MODEL_V2.FACT_CALL` joined with `MAP_CUSTOMER_XREF`
-
-| Step | What Happens |
-|------|-------------|
-| Join | Link `SOURCE_CUST_ID` → `BAYER_CUST_ID` (BH_ID) via `MAP_CUSTOMER_XREF` |
-| Channel mapping | Map `CALL_REC_TYP_NM` to standardized names: F2F, PHONE, GROUP_CALL, REMOTE_CALL |
-| Filter | `STAT = 'SUBMITTED_VOD'`, `DETL_PROD = 'KERENDIA'`, exclude `BHO%` IDs, 24-month lookback |
-| Target join | Inner join with modelling universe (`modelling_flag = 'Yes'`, 78,123 HCPs) |
-| Date derivation | `DATE_ID` → `EXPOSED_ON` date; `ENGAGED_ON` and `ACTED_ON` set equal to `EXPOSED_ON` (calls have no separate engagement event) |
-| Content tag | Hardcoded `CONTENT_TAG = 'General'` (calls carry no content metadata) |
-| Output | 8 columns: `CUSTOMER_ID, CHANNEL_ID, CONTENT_TAG, PRODUCT_ID, INTERACTION_ID, EXPOSED_ON, ENGAGED_ON, ACTED_ON` |
-
-### 5.2 NPP Table (`ANLT_BASE_FACT_NONPERSONAL_PROMOTIONS`)
+### 5.1 NPP Table (`ANLT_BASE_FACT_NONPERSONAL_PROMOTIONS`)
 
 **Snowflake source:** `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_NONPERSONAL_PROMOTIONS` (41 columns)
 
@@ -250,19 +219,6 @@ Capture the **temporal ordering** of promotional touches.
 | Event sequencing | Partition by customer × channel × content × interaction, order by date → separate exposure/engagement/action events |
 | Output | Same 8-column IDC schema |
 
-### 5.3 Events Table (`ANLT_BASE_FACT_EVNT_PRSNL_PROM`)
-
-**Snowflake source:** `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM` (11 columns)
-
-| Step | What Happens |
-|------|-------------|
-| Filter | `PROD_BRAND_NM = 'KERENDIA'`, `CUST_HCP_ID IS NOT NULL`, 24-month lookback |
-| Target join | Inner join on `CUST_HCP_ID = BH_ID` |
-| Dedup | Drop duplicates on `[EVNT_ID, DATE_ID, CUST_HCP_ID, EVNT_CAT, EVNT_TYP, EVNT_SUB_TYP, ATND]` |
-| Channel | `EVNT_TYP` becomes `CHANNEL_ID` (Speaker Program, Advisory Board, etc.) |
-| Content tag | Hardcoded `CONTENT_TAG = 'General'` |
-| Dates | `EXPOSED_ON = ENGAGED_ON = ACTED_ON` (single-event model) |
-| Output | Same 8-column IDC schema |
 
 ---
 
@@ -282,7 +238,7 @@ OE uses a **documented mapping of 160 rules** that classifies every vendor metri
 
 1. The mapping lives in **`5_5_2026_Bayer_OE_updated_channel_eng_exp_flag_latest.xlsx`** (`df_flag_new`)
 2. Each row in the lookup maps `(VEND_NM, CHNL_NM_NEW, MTR_NM)` → `(Exposure Flag, Engagement Flag, Acted Flag)` as 0/1
-3. During `email_processing()`, NPP records are joined to this lookup
+3. During `npp_processing()`, NPP records are joined to this lookup
 4. A single interaction can be:
    * Exposure only (R=1, I=0, E=0) — e.g., banner impression
    * Exposure + Interaction (R=1, I=1, E=0) — e.g., email opened
@@ -316,7 +272,6 @@ A lookup that maps each NPP record to a **content theme** based on the creative,
 ### Coverage
 
 * **50% of email rows** receive a specific (non-General) content tag
-* **Calls and events** are always `"General"` (no content metadata in those tables)
 * After standardization, 15 final content categories remain in the feature set
 
 ### What Content Tags Tell the Model
@@ -377,6 +332,4 @@ Each feature answers a specific business question about a doctor's digital promo
 
 | Snowflake Table | What It Contains | Volume |
 |----------------|-----------------|--------|
-| `CPH_DB_PROD.MODEL_V2.FACT_CALL` | Rep call records (F2F, phone, remote, group) | ~958K rows (24 months) |
 | `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_NONPERSONAL_PROMOTIONS` | Digital/email promotions (all vendors) | ~409M rows (24 months) |
-| `CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_EVNT_PRSNL_PROM` | Speaker programs, advisory boards, events | ~70K rows (24 months) |

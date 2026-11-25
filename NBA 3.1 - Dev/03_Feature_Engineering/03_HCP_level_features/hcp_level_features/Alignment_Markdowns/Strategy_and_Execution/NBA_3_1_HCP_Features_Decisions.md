@@ -1,9 +1,9 @@
 # NBA 3.1 – HCP-level features: decision log
 
-**Date:** 2026-11-03, updated 2026-11-11  
+**Date:** 2026-11-03, updated 2026-11-11 and 2026-11-16 (X5 final)  
 **Scope:** HCP feature notebooks NB01–NB07 (`hcp_level_features/`), their inputs from the 3.1 patient journey (PJ01–PJ06), and the run setup.  
 **How these were decided:** the project owner asked the team to make the open calls and document them. Each decision below gives the reason and how to reverse it.  
-**Latest full run:** `full_2026_11_11` (job 1010893614518587, run 441950237921, in progress): 28 cohorts c1–c28, offset 0, claims cohort file, Delta partitioned by COHORT_SET (X14). The previous run `full_2026_11_07` (run 477251413108207, Parquet) was cancelled before NB01 and NB04 finished.
+**Latest full run:** `full_2026_11_13` (job 1010893614518587, run 338478597334222, SUCCESS): 28 cohorts c1–c28, offset 0, claims cohort file, Delta partitioned by COHORT_SET (X14). Earlier runs: `full_2026_11_11` (run 441950237921, SUCCESS) and `full_2026_11_07` (run 477251413108207, Parquet, cancelled before NB01 and NB04 finished).
 
 ---
 
@@ -15,7 +15,7 @@
 | X2 | NB01, NB04, NB06 | Rx claims source | **3.1 HCP Rx pull** (PJ03 Step 4d, `<run folder>/_stage/rx_hcp_pull`) from `DATA_START_DATE`, `Rx_01_new` before | Same basket and rules as the 3.1 Rx journey | `HCP_RX_SOURCE = "3.0"` in `00_cohort_config` |
 | X3 | NB02, NB04 | Lab pull location | **Keep the pull in the run folder** (`<run folder>/_stage/lab_step4_pull`) | It is written by every PJ01 run, so each run folder is complete | `HCP_LAB_SOURCE = "3.0"` |
 | X4 | NB03 | Stage 5 columns | **Keep** (new 3.1 stage from the Dx codes) | Real patients in stage 5; dropping them would hide them in "unknown" | Column list in NB03 |
-| X5 | NB04 | 9 selected model features with DPP-IV / other glucose (family C) not in the 3.1 patient treatment table | **Keep the patient-journey rule; drop the 9 features from the model list.** The 3.1 model is retrained and its feature selection rerun on the 3.1 output | Changing PJ06 for the HCP features only would make the patient tables differ from the journey used everywhere else | Keep `Other- glucose mgmt` in PJ06's patient treatment table and rerun PJ06 + NB04 |
+| X5 | NB04 | 9 selected model features with DPP-IV / other glucose (family C) not in the 3.1 patient treatment table | **Keep the patient-journey rule; drop the 9 features from the model list.** The 3.1 model is retrained and its feature selection rerun on the 3.1 output. **Final (2026-11-16):** DPP-IV is on in the patient journey (Rx basket 2026-11-13), so NB04 builds its 90 stage columns (the 20 plain monthly copies are exact repeats) and 2 of the 9 features (`full_2026_11_13`). The other glucose drugs stay off in the journey and NB04 counts GLP-1 and DPP-IV only through their brand, so the 110 "other glucose mgmt" stage columns and their 7 features are not built | (1) The 7 hold 0.49% of the 3.0 model's total mean absolute SHAP (ranks 64–705 of 752). (2) Each correlates 0.77–0.89 with its GLP-1 version (3.0, August 2026), and 3 of their GLP-1 / DPP-IV versions are themselves model features. (3) Feature selection runs again, so 3.0 names don't need to be reproduced. (4) Switching the drugs on would change the shared patient journey for these HCP features only. Details: readiness plan, section 6 | – |
 | X6 | NB04 | 7 selected `..._WITH_GLP_1` features absent for the test HCPs | **No change**; checked in the full run | GLP-1 is in the 3.1 data, only the test HCPs have no such patients | – |
 | X7 | NB05 | Rx source for first starts | **Keep 3.0 `Rx_05`** (all HCPs since 2021) | A first start needs the full history of every HCP; the 3.1 pull starts at `DATA_START_DATE`. Output identical for the test HCPs | Revisit when new drugs join the basket |
 | X8 | NB06 | Window rule (`_IN_LAST_N_MONTH`) | **Sum of the last N monthly counts.** 3.0 stored the mean of N+1 monthly counts | Same rule as NB01–NB05 and the column names; base-month, `RUNNING_` and dialysis logic unchanged; the selected NB06 feature is a `RUNNING_` column | Average in NB06's window step |
@@ -49,7 +49,7 @@
 | Patient-journey decisions C1 (SGLT2) and C9 (diabetes) | Patient-journey owners; HCP notebooks only need a re-run |
 | `PROVIDER_ID` gaps (O2) | 105 HCPs without an ID, 52 with two IDs. Proposal: fill from the 3.1 Rx input. Not applied yet |
 | Null-count QC timing | On the Parquet output one 200-column pass took about 100 s per group; on Delta the same pass took 2 s in the test. Check the QC time in `full_2026_11_11`; skip the full null count in full runs only if it is still slow |
-| Update `HCP_LATEST_FULL_RUN` | Point to `full_2026_11_11` after the run finishes and passes its checks |
+| ~~Update `HCP_LATEST_FULL_RUN`~~ | **Done 2026-11-16**: default in `00_cohort_config` is `full_2026_11_13` |
 | Job 36449327509782 | Still points at the 3.0 volume; update or retire |
 
 ## 3. Jobs (created 2026-11-03, serverless)
@@ -66,17 +66,19 @@
 * NB04: `04 Monthly Cohort Claims Files/NBA_3_1_Claims_Features_Plan.md` (D2) and client summary
 * NB05: `05 Rx NPS Claims Files/NBA_3_1_Rx_NPS_Features_Plan.md` (D1)
 * NB06: `06 Eligible HCP Claims Files/NBA_3_1_Eligible_HCP_Features_Plan.md` (D1, F7), client summary, notebook cell "What this notebook does"
-* Feature comparison: `Review_and_Findings/NBA_3_1_HCP_Features_E2E_Full_Run_2026_11_07.md` (section 4)
+* Feature comparison: `Strategy_and_Execution/NBA_3_1_HCP_Level_Features_AI_Readiness.md` (sections 5 and 6, run `full_2026_11_13`)
 * Product mapping update: `Strategy_and_Execution/NBA_3_1_Product_Mapping_Change_Log_2026_11_05.md`
 
-## 5. Feature counts (full run `full_2026_11_07`, 28 cohorts)
+## 5. Feature counts (full run `full_2026_11_13`, 28 cohorts)
 
-| Notebook | Table | 3.0 features | 3.1 features | New | Dropped | Net |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| NB01 | `claim_rx_monthly_cohort` | 5,411 | 4,668 | +236 | −979 | −743 |
-| NB02 | `claim_lab_monthly_cohort` | 116 | 143 | +48 | −21 | +27 |
-| NB03 | `claim_diagnosis_monthly_cohort` | 104 | 113 | +9 | 0 | +9 |
-| NB04 | `claims_monthly_cohort` | 1,571 | 3,065 | +1,494 | 0 | +1,494 |
-| NB05 | `claim_rx_nps_monthly_cohort` | 154 | 154 | 0 | 0 | 0 |
-| NB06 | `claim_eligible_patient_cohort` | 84 | 217 | +148 | −15 | +133 |
-| **Total** | | **7,440** | **8,360** | **+1,935** | **−1,015** | **+920** |
+Against the 3.0 production tables (`ops_pipeline/notebook_output/`); feature columns without ID and date columns. Same numbers as the readiness plan, section 5.
+
+| Notebook | 3.0 | 3.1 | Kept | New | Not built |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| NB01 Rx claims | 5,411 | 4,672 | 4,436 | 236 | 975 |
+| NB02 Lab claims | 116 | 143 | 95 | 48 | 21 |
+| NB03 Diagnosis claims | 127 | 113 | 104 | 9 | 23 |
+| NB04 Combined claims | 3,691 | 3,155 | 2,930 | 225 | 761 |
+| NB05 New patient starts | 188 | 163 | 154 | 9 | 34 |
+| NB06 Eligible patients | 84 | 217 | 69 | 148 | 15 |
+| **Total** | **9,617** | **8,463** | **7,788** | **675** | **1,829** |

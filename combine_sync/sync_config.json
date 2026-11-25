@@ -2,7 +2,7 @@
   "_readme": "Config for combine_sync. Each branch may only change the paths in 'include' (a path ending with / is a folder, otherwise a glob). Changes outside 'include', in 'keep_combine' or in 'protected_paths' are reverted to the combine version. Edit this file on combine, never on a feature branch.",
   "target_branch": "combine",
   "remote": "origin",
-  "protected_paths": ["databricks-skills/", "Archived Skills/", "combine_sync/"],
+  "protected_paths": ["databricks-skills/", "Archived Skills/", "combine_sync/", "NBA 3.1 - Dev/99 Combine Physician Data Files/", "NBA 3.1 - Dev/10_Feature_Selection/"],
   "branches": [
     {
       "branch": "dev/promotional-features",
@@ -28,9 +28,9 @@
     {
       "branch": "dev/hcp-claims-features",
       "enabled": true,
-      "area": "HCP claims NB01-NB07, patient journey, FTP & copay docs, feature views",
+      "area": "HCP claims NB01-NB07, patient journey, feature views",
       "include": ["NBA 3.1 - Dev/03_Feature_Engineering/03_HCP_level_features/"],
-      "keep_combine": ["NBA 3.1 - Dev/03_Feature_Engineering/03_HCP_level_features/hcp_level_features/99 Combine Physician Data Files/"]
+      "keep_combine": []
     },
     {
       "branch": "dev/nbrx-nrx-trx-features",
@@ -38,6 +38,7 @@
       "area": "NBRx / NRx / TRx and competitor share (_nba31), V7 product group mapping, NBRx analysis docs",
       "include": [
         "NBA 3.1 - Dev/03_HCP_Level_Features/*_nba31.ipynb",
+        "NBA 3.1 - Dev/05_NBRx_NRx_TRx/",
         "NBA 3.1 - Dev/Feature Analysis/",
         "NBA 3.1 - Dev/Product_Group_Mapping/"
       ],

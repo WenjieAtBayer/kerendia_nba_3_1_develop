@@ -40,6 +40,7 @@ Status: `PASS` / `FAIL` / `OPEN` / `N/A`. Evidence goes in section 3.
 | Q11 | Invariants | Independent recount: nested windows, new-Rx <= fills, flag vs counts, cap / band, sentinel, ranges, zero when inactive | 0 violations (or explained) | |
 | Q12 | NBA 3.0 output comparison | Closest 3.0 output vs 3.1 c28 on common HCPs: HCPs > 0, totals, Spearman | Differences explained | |
 | Q13 | Reproducibility and docs | Output from the full run (row count, `PULL_DT`), QC log written, notebook header / decision log / readiness match the run; stale outputs in the folder | No stale text that changes meaning | |
+| Q14 | Program groups (O5) and data drift (owner: NBA team) | Distinct `GRP_NUM` in the source table vs the config group list (new / missing groups); per `DATASET`: active HCPs and 12M fills per cohort, % change of test and holdout vs training; QC log O3 / O5 rows | Groups = config (0 new, 0 missing); every drift change > 20% vs training is explained and signed off by the NBA team | |
 
 ## 3. Evidence log
 
@@ -105,7 +106,8 @@ Cases: high volume; window edge (fill on the last day in, on the 1st of next mon
 
 | Item | Value |
 | --- | --- |
-| Checks passed | <n> / 13 |
+| Checks passed | <n> / 14 |
 | QC by / date | |
+| O5 and drift review (NBA team) / date | |
 | Reviewed by / date | |
 | Next | |

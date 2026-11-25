@@ -2,7 +2,8 @@
 
 **QC status:** DONE, 24 Nov 2026 (claim type 1 of 2; next: 02 Copay)  
 **Verdict:** PASS with actions. The features are correct: the HCP trace matched 133 of 133 values (7 cases x 19 features), and 13 independent invariants found 0 violations once one invariant of mine was corrected (Q11). 1 fix, 4 documentation items and 4 notes are open (section 10).  
-**QC run:** 24 Nov 2026, serverless, on the output written 2026-11-24 (`PULL_DT`) by the claims-cohort run of `ftp_feature`. The notebook was not re-run during QC.
+**QC run:** 24 Nov 2026, serverless, on the output written 2026-11-24 (`PULL_DT`) by the claims-cohort run of `ftp_feature`. The notebook was not re-run during QC.  
+**QC update (25 Nov 2026):** Phase 2 X4 (8 patient-mix shares) and X5 (2 payer-mix shares) added to the output after the first QC; checked on the 25 Nov output (`PULL_DT` 2026-11-25, 8,252,328 rows x 29 features): fill rate (section 7), invariants (Q11) and an independent HCP trace (Q10: 70 / 70 values). V7 closed (section 6a).
 
 How to use: see `00_qc_template.md`. Rule source = `60_ftp_copay_nba_3_1_readiness_plan.md` ("readiness"). `<V31>` = `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_1_volume`.
 
@@ -16,7 +17,7 @@ How to use: see `00_qc_template.md`. Rule source = `60_ftp_copay_nba_3_1_readine
 | Universe | `<V31>/HCP_Universe_without_call_hcps`: 294,727 HCPs |
 | Cohorts | `<V31>/cohorts/claims/cohorts.parquet`: family `claims`, offset 0, c1 to c28 (c1-c24 train, c25-c26 test, c27-c28 holdout) |
 | Mapping | 3.0 volume `ops_pipeline/query_output/kerendia_nba_3_0_npi_bhid_mapping` (read only) |
-| Output | `<V31>/hcp_level_model/dev_pipeline/notebook_output/market_access_nba_3_1/kerendia_nba_3_1_hcp_model_ftp_features`: 8,252,328 rows after the F1 rerun (8,252,356 when QC ran) x 19 features (+ 6 keys, `PULL_DT`) |
+| Output | `<V31>/hcp_level_model/dev_pipeline/notebook_output/market_access_nba_3_1/kerendia_nba_3_1_hcp_model_ftp_features`: 8,252,328 rows after the F1 rerun (8,252,356 when QC ran) x 29 features since 25 Nov 2026 (19 at first QC + 8 X4 + 2 X5; + 6 keys, `PULL_DT`) |
 | Expected grain | One row per `PROVIDER_ID` x `COHORT` = 294,727 x 28 |
 | NBA 3.0 counterpart | 3.0 ops output `kerendia_nba_3_hcp_model_ftp_features_v2_for_inference` (cohort `I01`, `MONTH_ID` 2026-10-17) |
 | NBA 3.0 final model | `Final NBA 3.0 Modeling Features.xlsx` (752 features) |
@@ -38,6 +39,7 @@ How to use: see `00_qc_template.md`. Rule source = `60_ftp_copay_nba_3_1_readine
 | Q11 | Invariants | 0 violations | PASS |
 | Q12 | NBA 3.0 output comparison | Differences explained | PASS (not comparable value by value) |
 | Q13 | Reproducibility and docs | No stale text that changes meaning | PASS (readiness doc items in section 10) |
+| Q14 | Snapshot retention (O2), program groups (O5) and data drift, owned by the NBA team | O2: every monthly snapshot partition kept (none dropped, latest month present); O5: groups = config (0 new, 0 missing); drift: every change > 20% vs training explained and signed off by the NBA team | PASS (25 Nov 2026) |
 
 ## 3. Evidence log
 
@@ -47,15 +49,16 @@ How to use: see `00_qc_template.md`. Rule source = `60_ftp_copay_nba_3_1_readine
 | Q2 | `metadata.json`: family `claims`, offset 0, 28 cohorts, c1 2024-07-01 to c28 2026-10-01. Output vs file on `COHORT` / `DATASET` / `PREDICTION_MONTH` / `SVC_DT`: 28 cohorts, 0 mismatches; `SVC_DT` always the 1st of a month (0 promotional day-17 dates) | |
 | Q3 | E = last day of lookback end month (c28: 2026-08-31); 12M window (2025-08-31, 2026-08-31]. Trace: fill on 2026-08-31 counted (case 3a, recency 0); fill on 2026-09-01 not counted (case 3b); fill 2026-05-01 loaded 2026-11-15 not counted (case 4, the only late-loaded claim in the c28 window). Notebook S1 SQL recount c28 = output (9,279 fills / 3,951 HCPs); O4: 0 of 364 fills in the last 14 days loaded late | |
 | Q4 | Section 5 | Universe path name differs from readiness (same 294,727); universe HCPs with an NPI 294,553 vs readiness 294,578 |
-| Q5 | Section 6: 12 core + 7 extended = 19 columns = config; C5 / C6 are built in `copay_feature` (DEC-F07); X4 / X5 not built (privacy, V7 open) | |
+| Q5 | Section 6: 12 core + 17 extended = 29 columns = config (25 Nov 2026; first QC: 12 + 7 = 19); C5 / C6 are built in `copay_feature` (DEC-F07); X4 built after compliance sign-off (DEC-F09), X5 built after V7 profiling (DEC-F16) | Notebook S5: 29 columns from config, rebuild identical |
 | Q6 | Section 4 | |
-| Q7 | Section 7: 0 nulls in all 19; 0 constant; train-vs-holdout non-zero share differs by < 1 point for every feature | `FTP_DAYS_SINCE_LAST_FILL` sentinel 9999 in 95.59% of rows |
+| Q7 | Section 7: 0 nulls in all 19; 0 constant; train-vs-holdout non-zero share differs by < 1 point for every feature. X4 / X5 (25 Nov output): 0 nulls in all 10; all 10 > 99.5% zero; `FTP_PAT_GENDER_U_SHARE_12M` constant 0; `FTP_OTHER_CVRG_REJECTED_SHARE_12M` non-zero in training only (0.018%; 0 in test / holdout) | `FTP_DAYS_SINCE_LAST_FILL` sentinel 9999 in 95.59% of rows; X4 / X5 flags in F10 |
 | Q8 | 4 FTP features in the 752: ranks 467, 632, 662, 664; together 0.0986% of mean abs SHAP. 0 copay features | Readiness says ranks 500-661 (F3) |
-| Q9 | Section 8: 4 replaced, 0 dropped, 15 new | |
-| Q10 | Section 9: 7 HCP x cohort cases, 19 features each, recomputed in pandas from the source table: 0 mismatches | |
-| Q11 | 0 violations: nested 1 <= 3 <= 6 <= 12M (fills, new-Rx); new-Rx <= fills; flag = (12M fills > 0); cap = min(12M, 21); band edges 0/1/2/4/10/25; 1M fill => recency <= 30; extended = 0 when no 12M fill; shares in [0, 1]; pharmacies <= fills; fills per Rx >= 1 when active; trend within [-prior 3M, 3M]; flag = (recency < window days) | My first check "recency <= 365 iff flag" gave 118 rows (recency 365, flag 0). Cause: the window is 12 calendar months (365 or 366 days), recency is days; 127 rows have flag 1 at 365 (window with 29 Feb). Corrected check: 0 (F6) |
+| Q9 | Section 8: 4 replaced, 0 dropped, 25 new (15 at first QC + 8 X4 + 2 X5) | |
+| Q10 | Section 9: 7 HCP x cohort cases, 19 features each, recomputed in pandas from the source table: 0 mismatches. X4 / X5 (25 Nov): same 7 cases, 10 features each, recomputed in pandas from the raw `kerendia_ftp_claims` rows (own date parsing, 3.0 mapping file, cohort file): 70 / 70 match, 12M fills match in every case | The 7 cases have no code `01` / `03` fill, so X5 is 0 in all of them; X5 non-zero values are covered by the notebook c28 recount (297 code `01` fills / 0 code `03`, output = SQL) |
+| Q11 | 0 violations: nested 1 <= 3 <= 6 <= 12M (fills, new-Rx); new-Rx <= fills; flag = (12M fills > 0); cap = min(12M, 21); band edges 0/1/2/4/10/25; 1M fill => recency <= 30; extended = 0 when no 12M fill; shares in [0, 1]; pharmacies <= fills; fills per Rx >= 1 when active; trend within [-prior 3M, 3M]; flag = (recency < window days). X4 / X5 (25 Nov, 104,419 active rows): 5 age shares sum to 1: 0 violations; 3 gender shares sum to 1: 0; X5 `01` + `03` shares <= 1: 0; any of the 10 non-zero when no 12M fill: 0; all 10 within [0, 1] | My first check "recency <= 365 iff flag" gave 118 rows (recency 365, flag 0). Cause: the window is 12 calendar months (365 or 366 days), recency is days; 127 rows have flag 1 at 365 (window with 29 Feb). Corrected check: 0 (F6) |
 | Q12 | 3.0 `I01` (3,893 HCPs, written date, record grain, anchor 2026-10-17) vs 3.1 c28 (fill date, E 2026-08-31): HCPs > 0 1M 414 vs 547, 3M 1,188 vs 1,358, 6M 2,104 vs 2,318; Spearman (rows with either > 0) -0.628 / -0.091 / 0.322 | Windows end ~7 weeks apart and use a different date, so value-level agreement is not expected. 3.1 counts are higher on fewer days |
 | Q13 | Output = full universe run (8,252,356 rows), `PULL_DT` 2026-11-24, QC log `qc/ftp_feature_checks` written; notebook header and decision log describe the claims-cohort run | `23_ftp_copay_features` and `00_ftp_copay_config` (promotional-cohort build) are still in the folder (F5) |
+| Q14 | 25 Nov 2026 check on the source table and the current output (29 features). **O2:** `kerendia_ftp_claims_snapshot` has 1 partition (2026-11-01, 136,306 raw rows); nothing dropped; from now on one partition per month must be added and kept. **O5:** `GRP_NUM` in `kerendia_ftp_claims` = the 7 WF groups in config (0 new, 0 missing). **Drift** (per cohort, vs training): active HCPs training 3,711 / test 3,760 (+1%) / holdout 3,918 (+6%); 12M fills 9,002 / 8,926 (-1%) / 9,242 (+3%); new-Rx share 0.891 / 0.910 / 0.905 (notebook O3). All within 20% | Independent query on the source table and the output; notebook O3 / O5 rows in `qc/ftp_feature_checks` | Owner of O2, O5 and drift review: **NBA team** (user, 25 Nov 2026). Re-check on every refresh: the partition list only grows; a new or missing group fails O5 until the NBA team updates `PROGRAM_GROUPS` and notes it in the decision log |
 
 ## 4. Business rules (readiness vs notebook)
 
@@ -103,13 +106,30 @@ How to use: see `00_qc_template.md`. Rule source = `60_ftp_copay_nba_3_1_readine
 | X1 persistence | refill share, fills per Rx | `FTP_REFILL_SHARE_12M`, `FTP_FILLS_PER_RX_12M` | Made |
 | X2 dose mix | 20 / 40 mg share | `FTP_HIGH_DOSE_SHARE_12M` | Made |
 | X3 patient-days | days supply | `FTP_DAYS_SUPPLY_12M` | Made |
-| X4 patient mix | after privacy check | - | Not built (open) |
-| X5 payer mix | after V7 | - | Not built (V7 open) |
+| X4 patient mix | after privacy check | `FTP_PAT_AGE_18_44/45_64/65_74/75P/UNKNOWN_SHARE_12M`, `FTP_PAT_GENDER_MALE/FEMALE/U_SHARE_12M` | Made (8), 25 Nov 2026: compliance sign-off for age / gender share features; bands agreed with the user; claim-weighted shares of 12M fills, no patient IDs (DEC-F09) |
+| X5 payer mix | after V7 | `FTP_NO_OTHER_CVRG_SHARE_12M` (code `01`), `FTP_OTHER_CVRG_REJECTED_SHARE_12M` (code `03`) | Made (2), 25 Nov 2026: V7 closed (section 6a); `00` is the remainder, no column; no BIN feature (DEC-F16) |
 | X6 written-to-fill lag | 1 | `FTP_AVG_WRITTEN_TO_FILL_DAYS_12M` | Made |
 | X7 pharmacy breadth | 1 | `FTP_DISTINCT_PHARMACIES_12M` | Made |
 | X8 trend | 1 | `FTP_FILLS_3M_VS_PRIOR_3M` | Made |
 
-Types: counts long / int, shares and averages double; 0 unexpected columns.
+Types: counts long / int, shares and averages double; 0 unexpected columns. The 10 X4 / X5 columns are double.
+
+E8 (proxy model, 25 Nov): X4 +0.0000 / +0.0001 and X5 +0.0000 / +0.0000 test / holdout AUC vs E1, below the +0.002 keep rule: both DROP from the model, columns still written (DEC-F14).
+
+## 6a. V7 closure (payer codes, `OTHR_CVRG_CD`)
+
+| Item | Detail |
+| --- | --- |
+| Readiness V7 | Profile `OTHR_CVRG_CD` and agree the meaning of each code before X5 is built |
+| What was done (25 Nov 2026) | Every value profiled in both UC claims tables; counts add up to the row counts (FTP 106,211, copay 106,721); 0 nulls, 0 blanks |
+| FTP codes | `00` 101,332 claims (95.41%, 15,668 prescribers); `03` 2,483 (2.34%, 1,272); `01` 2,396 (2.26%, 853) |
+| Copay codes | `08` 87,788 (82.26%, 8,475); `03` 18,933 (17.74%, 2,495) |
+| Meanings used | NCPDP Telecommunication Standard, Other Coverage Code (308-C8): `00` not specified, `01` no other coverage, `03` other coverage billed, claim rejected, `08` billing for patient's share only |
+| Disclaimer | The meanings are an outside reference only: **not** derived from the data and **not** confirmed by the market access / data team (Q2 stays open for that confirmation). Codes and counts are from the data |
+| Primary-payer BIN | FTP: filled only on code `03` claims (2,482 of 2,483; 85 BINs), so no BIN feature for FTP. Copay: on every claim (268 BINs). Full list in `qc/v7_payer_bin_mapping_worksheet.csv` (354 rows, `PAYER_CATEGORY` empty for the market access team) |
+| Time pattern | FTP code `03` fills by year: 2021 170, 2022 1,648, 2023 604, 2024 61, 2025 0, 2026 0. Code `01` present through 2026. Cause of the change unknown (F10) |
+| Result | X5 built on codes `01` / `03` (DEC-F16); independent c28 recount 297 / 0 = output |
+| Status | **CLOSED** (25 Nov 2026, user decision) in the notebook header and decision log. Note: the V7 check in the notebook code still prints `OPEN`, so the QC log `qc/ftp_feature_checks` keeps P0 OPEN = 2 (V7, V10) until that check is changed |
 
 ## 7. Fill rate
 
@@ -139,6 +159,23 @@ Types: counts long / int, shares and averages double; 0 unexpected columns.
 
 Recency is non-zero for 4.4% of rows but only 1.3% have a 12M fill: recency looks back to 2021, the 12M features do not.
 
+X4 / X5 (added 25 Nov 2026): % over 8,252,328 rows of the 25 Nov output; 0 nulls in all 10; min / max 0 / 1 for all except U (0 / 0).
+
+| Feature | % zero | % non-zero | min / max | % non-zero train / test / holdout / c28 | Flag |
+| --- | --- | --- | --- | --- | --- |
+| `FTP_PAT_AGE_18_44_SHARE_12M` | 99.898 | 0.102 | 0 / 1 | 0.102 / 0.096 / 0.102 / 0.104 | > 99.5% zero |
+| `FTP_PAT_AGE_45_64_SHARE_12M` | 99.511 | 0.489 | 0 / 1 | 0.490 / 0.477 / 0.491 / 0.495 | > 99.5% zero |
+| `FTP_PAT_AGE_65_74_SHARE_12M` | 99.393 | 0.607 | 0 / 1 | 0.614 / 0.555 / 0.574 / 0.576 | |
+| `FTP_PAT_AGE_75P_SHARE_12M` | 99.683 | 0.317 | 0 / 1 | 0.315 / 0.324 / 0.333 / 0.337 | > 99.5% zero |
+| `FTP_PAT_AGE_UNKNOWN_SHARE_12M` | 99.712 | 0.288 | 0 / 1 | 0.280 / 0.324 / 0.353 / 0.358 | > 99.5% zero |
+| `FTP_PAT_GENDER_MALE_SHARE_12M` | 99.157 | 0.843 | 0 / 1 | 0.843 / 0.826 / 0.862 / 0.867 | |
+| `FTP_PAT_GENDER_FEMALE_SHARE_12M` | 99.304 | 0.696 | 0 / 1 | 0.691 / 0.707 / 0.735 / 0.743 | |
+| `FTP_PAT_GENDER_U_SHARE_12M` | 100.000 | 0.000 | 0 / 0 | 0 / 0 / 0 / 0 | constant (no U in FTP data) |
+| `FTP_NO_OTHER_CVRG_SHARE_12M` | 99.947 | 0.053 | 0 / 1 | 0.052 / 0.063 / 0.066 / 0.068 | > 99.5% zero |
+| `FTP_OTHER_CVRG_REJECTED_SHARE_12M` | 99.985 | 0.015 | 0 / 1 | 0.018 / 0.000 / 0.000 / 0.000 | > 99.5% zero; training only |
+
+65-74, male and female are 99.2 - 99.4% zero, just under the 99.5% flag line, so they are not flagged.
+
 ## 8. NBA 3.0 vs NBA 3.1 feature map
 
 | NBA 3.0 feature | In 752? (SHAP rank, % SHAP) | NBA 3.1 feature | Status | Reason |
@@ -149,7 +186,7 @@ Recency is non-zero for 4.4% of rows but only 1.3% have a 12M fill: recency look
 | `TOTAL_RX_FTP_IN_LAST_3_MONTH` | 664, 0.0159% | `FTP_FILLS_3M` | replaced | as 1M |
 | 3.0 `TOTAL_RX_FTP_IN_LAST_2/5_MONTH`, `PCT_*`, running total | not in 752 | - | dropped | not in D3 windows / readiness drop list |
 
-Summary: 4 FTP features in the 752 (0.0986% of SHAP): 4 replaced, 0 skipped. New in 3.1 (15): `FTP_HAS_ANY_12M`, `FTP_FILLS_12M` (+ cap, band), 4 new-Rx windows, recency, 7 extended (X1-X3, X6-X8). None is on the model-recommended list after G2 (F7).
+Summary: 4 FTP features in the 752 (0.0986% of SHAP): 4 replaced, 0 skipped. New in 3.1 (25): `FTP_HAS_ANY_12M`, `FTP_FILLS_12M` (+ cap, band), 4 new-Rx windows, recency, 7 extended (X1-X3, X6-X8), 8 X4 patient-mix shares and 2 X5 payer-mix shares (no 3.0 counterpart). None is on the model-recommended list after G2 (F7).
 
 ## 9. HCP trace (step-by-step recompute)
 
@@ -191,13 +228,16 @@ No universe HCP sharing an NPI has an FTP fill in the c28 window, so the shared-
 | F6 | 12M flag uses calendar months, recency uses days: a fill exactly 365 days back is in the window only when it contains 29 Feb (118 rows flag 0, 127 rows flag 1) | note | Keep; mention in feature docs | Accepted |
 | F7 | G2 = DROP on the proxy model (+0.0012 / +0.0018 AUC); 3.0 had 4 FTP features in the 752 | note | Modelling to confirm with the full 3.1 model; brand team on Q9 | OPEN |
 | F8 | 6 features > 99.5% zero (1M / 3M fills, 1M / 3M new-Rx, refill share, high-dose share) | note | Feature selection to filter | OPEN |
-| F9 | G3 fails: O2 retention and O5 group owner open; no scheduled job | note | Market access team (Q7, Q8) | OPEN |
+| F9 | G3 failed on O2 / O5 owners and no scheduled job. Now: O2 and O5 owned by the NBA team, which also checks data drift (Q14); the scheduled job is deferred to the ops phase of the project (user, 25 Nov 2026), so G3 closes on O1 - O5 | note | NBA team (O2, O5, drift); ops phase (job) | CLOSED |
+| F10 | X4 / X5 (25 Nov): 7 of the 10 columns > 99.5% zero (all except 65-74, male, female); `FTP_PAT_GENDER_U_SHARE_12M` is constant 0 (kept so FTP and copay share one schema); `FTP_OTHER_CVRG_REJECTED_SHARE_12M` is 0 in every test / holdout row because code `03` stops after 2024 (cause unknown); the unknown-age band likely holds most 80+ patients (ages stop at 79, not confirmed). E8: both DROP | note | Feature selection to drop the constant / training-only columns; ask the data team about code `03` and age 80+ with Q2 | OPEN |
 
 ## 11. Sign-off
 
 | Item | Value |
 | --- | --- |
-| Checks passed | 13 / 13 (with the actions above) |
+| Checks passed | 14 / 14 (with the actions above) |
+| O2, O5 and drift review (NBA team) / date | Owner: NBA team. First check run by Genie Code 25 Nov 2026 (Q14, PASS); NBA team review: pending |
+| Scheduled job | Deferred to the ops phase of the project (G3 closed without it) |
 | QC by / date | Genie Code for Wenjie Chen, 24 Nov 2026 |
 | Reviewed by / date | |
 | Next | 02 Copay (`copay_feature`) |

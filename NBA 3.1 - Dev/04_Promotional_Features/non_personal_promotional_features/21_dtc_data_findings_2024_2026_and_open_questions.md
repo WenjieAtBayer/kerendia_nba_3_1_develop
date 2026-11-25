@@ -35,12 +35,13 @@ This document is **not** a plan. It records the facts found in the data and the 
 | SA360 old | `CPH_DB_PROD.MODEL_V2.SA_360_FUNNEL` | Paid search on Google Ads and Bing Ads, by keyword and device | **No** | Jul 2021 – Sep 2024 (a few rows in Oct 2024) |
 | SA360 new | `CPH_DB_PROD.ENRICH_V2.FUNNEL_NEW_SA360` | Paid search (New Search Ads 360), by campaign, ad group, keyword and device | **No** | Jan 2024 – Oct 2026 |
 | SA360 DMA tab | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.SA_360_FUNNEL_DMA_TAB` | Paid search with region (`DMA_REGION_MATCHED__FILE_IMPORT`) | DMA (210) | Jan 2022 – Jan 2025 |
-| **SA360 region (new)** | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_NEW_SA360_REGION` | Paid search (New Search Ads 360) by campaign and region, per day, all Bayer brands (44 SA360 accounts; Kerendia in 4) | **State** (51 incl. DC) + 2 Google regions; not DMA | 13 Jul 2024 – 26 Oct 2026 |
+| **SA360 region (new)** | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_NEW_SA360_REGION` | Paid search (New Search Ads 360) by campaign and region, per day, all Bayer brands (44 SA360 accounts; Kerendia in 4) | **State** (51 incl. DC) + 2 Google regions; not DMA | 13 Jul 2024 – present |
+| **SA360 Metro (new, Nov 2026)** | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_NEW_SA360_METRO` | Paid search by campaign and Metro (DMA), per day, all Bayer brands; Metro column: `METRO__NEW_SEARCH_ADS_360` | **Metro / DMA (210)** — real DMA names | Jan 2025 – present. **Google data validated; Bing data not yet validated** (DTC team, Nov 2026) |
 | Facebook / Instagram | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.funnel_data_FacebookAds_Geo_dma` (`DATA_SOURCE_NAME = 'Bayer_Kerendia'`) | Social ads | DMA (210) | Feb 2023 – Jun 2026 (from the OE copy `kerendia_oe_journey.hcp_model_social_inference`) |
 | The Trade Desk (2022) | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.Tradedesk_Funnel_DMA` | Programmatic display, 2022 only | DMA | 2022 |
 | CM360 (2022) | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.CM_360` | Direct buys and PulsePoint, 2022 only | DMA | 2022 |
 
-As instructed: SA360 should be read from `SA_360_FUNNEL` up to 30 September 2024 and from `FUNNEL_NEW_SA360` from 1 October 2024; Flashtalking should be read from FT V1. For regional paid search, the new source to use is `FUNNEL_DATA_NEW_SA360_REGION` (given on 26 October 2026, profiled in section 4.3).
+As instructed: SA360 should be read from `SA_360_FUNNEL` up to 30 September 2024 and from `FUNNEL_NEW_SA360` from 1 October 2024; Flashtalking should be read from FT V1. For regional paid search: use `FUNNEL_DATA_NEW_SA360_REGION` (state-level) for the Jul–Dec 2024 period, and `FUNNEL_DATA_NEW_SA360_METRO` (Metro / DMA, section 4.4) from January 2025 onwards once Bing is also validated.
 
 ## 3. What ran, by year
 
@@ -84,11 +85,11 @@ The filter used was campaign name containing `KER` or data source name containin
 * **May 2026 looks wrong:** 105,591 clicks for 4.6 million impressions (2.3% clicked) against the usual 0.5 – 0.7%.
 * The copy used here (`hcp_model_social_inference`, pulled 1 October 2026) ends in **June 2026**.
 
-### 4.3 Paid search by region: `FUNNEL_DATA_NEW_SA360_REGION`
+### 4.3 Paid search by state: `FUNNEL_DATA_NEW_SA360_REGION`
 
 **What it is.** One line = one day, one campaign, one region, in New Search Ads 360. The table holds all Bayer brands; Kerendia is in 4 of the 44 SA360 accounts (`DATA_SOURCE`). Main columns: `DATE`, `CAMPAIGN__NEW_SEARCH_ADS_360`, `REGION__NEW_SEARCH_ADS_360`, `GEO_TARGET_TYPE__NEW_SEARCH_ADS_360`, `COUNTRY__NEW_SEARCH_ADS_360`, `IMPRESSIONS`, `CLICKS`, `COST`; there are also ad group, keyword, device, conversions and visits columns.
 
-**The region is a US state, not a DMA.** For Kerendia, `GEO_TARGET_TYPE` is `State` (51 values: 50 states + District of Columbia) or `Region` (2 values: "San Francisco Bay Area" and "Silicon Valley", about 2% of clicks). There is no DMA or Metro column, and `GEO_TARGETS__NEW_SEARCH_ADS_360` is empty for every Kerendia row. (SA360 no longer reports DMA; its **Metro** dimension holds the same values: in the old `SA_360_FUNNEL_DMA_TAB`, `METRO_AREA_MATCHED__FILE_IMPORT` equals `DMA_REGION_MATCHED__FILE_IMPORT` on all 4.7M Kerendia rows. Metro is the field to request going forward.) No current SA360 table in the Funnel schema has Metro for Kerendia: `SA_360_FUNNEL_DMA_TAB` stops in January 2025, `SA_360_FUNNEL_DMA` is empty, `BING_FUNNEL_DMA` (Bing only, Metro) stops in December 2024, and `FUNNEL_GOOGLE_ADWORDS_GEO` has Kerendia only for a 2023 YouTube campaign, with no Metro. Using the state table in NBA means giving each doctor the numbers of their **state**, or splitting each state across its DMAs (see Q-B7).
+**The region is a US state, not a DMA.** For Kerendia, `GEO_TARGET_TYPE` is `State` (51 values: 50 states + District of Columbia) or `Region` (2 values: "San Francisco Bay Area" and "Silicon Valley", about 2% of clicks). There is no DMA or Metro column, and `GEO_TARGETS__NEW_SEARCH_ADS_360` is empty for every Kerendia row. This table is now the preferred source for the **Jul–Dec 2024** period only; from January 2025 onwards use `FUNNEL_DATA_NEW_SA360_METRO` (section 4.4), which provides full Metro (DMA) coverage.
 
 **Period:** 13 July 2024 – 26 October 2026 (July 2024 is partial). Updated daily.
 
@@ -125,7 +126,24 @@ For comparison, national DTC paid search was 1.3 – 2.0M impressions and 200 �
 
 **Biggest states** (all Kerendia campaigns, clicks): Texas 216K, Florida 196K, California 192K, New York 174K, North Carolina 106K, Georgia 103K.
 
-### 4.4 Everything else
+### 4.4 Paid search by Metro (DMA): `FUNNEL_DATA_NEW_SA360_METRO` (new, November 2026)
+
+**What it is.** The DTC team delivered a new Metro-level SA360 table in November 2026. It has the same structure as the state table (section 4.3) but uses Metro (DMA) instead of state as the geographic dimension. The Metro column is `METRO__NEW_SEARCH_ADS_360` and contains real DMA names (for example "Charlotte, NC", "Detroit, MI"). The table covers all Bayer brands across 46 SA360 accounts.
+
+**Coverage for Kerendia DTC (from profiling, November 2026):**
+
+| Engine | Rows | Period | Metros per month | Impressions | Clicks | Validation |
+| --- | --- | --- | --- | --- | --- | --- |
+| Google | 267,718 | Jan 2025 – Nov 24, 2026 | 207 – 210 | 2.2M | 294,744 | **Validated by DTC team** |
+| Bing | 109,631 | Jan 2025 – Nov 24, 2026 | 207 – 210 | 774k | 53,696 | **Not yet validated** (DTC team working on it) |
+
+Kerendia DTC campaigns present: 6 established branded campaigns (from January 2025) plus 6 new `KER_DTC_..._NewIndication` campaigns that started November 17, 2026. KER_HCP_ campaigns are also present in the table.
+
+**What this resolves.** The key gap from Q-B1 and Q-B7 is now answered: Metro (DMA) paid-search data exists for Kerendia DTC from January 2025 onwards. The state table (section 4.3) remains the source for July – December 2024 only.
+
+**How to filter.** To restrict to Google DTC only while Bing is under validation: `CAMPAIGN ILIKE 'KER\_DTC\_%' AND CAMPAIGN ILIKE '%\_google\_%'`.
+
+### 4.5 Everything else
 
 * WebMD: 1 – 9 thousand impressions a month, in 80 – 150 regions. Too small to be useful.
 * Health Union, Sharecare and GoodRx have a few rows in January 2025, then nothing.
@@ -134,7 +152,7 @@ For comparison, national DTC paid search was 1.3 – 2.0M impressions and 200 �
 ## 5. What this means for NBA (facts, not decisions)
 
 * **NBA 3.0 DTC features no longer carry information.** At the next prediction (anchor 1 November 2026, looking back to 30 September 2026) the direct-buy features are zero and Facebook / Instagram stops in June 2026. In training, the direct-buy features mainly tell the model whether a row is from before or after 2025.
-* **Paid search now has regional data, by state.** `FUNNEL_DATA_NEW_SA360_REGION` gives state-level paid search from July 2024 onwards. For DTC, NBA would either use the doctor's state, or split each state's numbers across its DMAs (for example by population). History before July 2024 is only in the DMA tab (to January 2025, with the 2023 issue in Q-D3).
+* **Paid search now has Metro (DMA) data from January 2025.** `FUNNEL_DATA_NEW_SA360_METRO` (section 4.4) gives Metro-level paid search from January 2025 onwards, with 207–210 metros per month for Kerendia DTC. Google data is validated; Bing data is under validation by the DTC team (Nov 2026). For Jul–Dec 2024 the state table (`FUNNEL_DATA_NEW_SA360_REGION`) remains the only regional source.
 * **DTC paid search is small and branded only.** About 0.1 – 0.2M impressions and 12 – 18K clicks a month. HCP paid search is about five times bigger and belongs with the HCP digital features, not DTC.
 * **Facebook / Instagram behaves like a region-size measure.** If kept, it would need to be per person (for example impressions per 1,000 adults) to say anything about Kerendia pressure.
 * **Data delay.** The copied DTC data is about three months behind the prediction date.
@@ -166,7 +184,7 @@ Each question has a code so the answers can be recorded in section 7.
 | Q-B4 | What do the campaign codes mean (`BRN` / `UNBR` = branded / unbranded; `GEN`, `SYM`, `TRE`, `DIA`, `MAN`, `COM`, `FIN`; `DK` / `MB` / `TB` = desktop / mobile / tablet)? | Lets features separate branded from disease-awareness search |
 | Q-B5 | Why do Google / Bing rows in Flashtalking have clicks but no impressions, and why do they stop in October 2025 (Bing) and January 2026 (Google)? | Decides whether Flashtalking search clicks can be used at all |
 | Q-B6 | Why did the number of campaigns rise from 36 to more than 100 from July 2025? New campaigns or a naming / structure change? | A structure change could look like a jump in activity |
-| Q-B7 | `FUNNEL_DATA_NEW_SA360_REGION` is by **state** and has no Metro column (`GEO_TARGETS__NEW_SEARCH_ADS_360` is empty). Can the agency add the SA360 **Metro** dimension to this feed? If not, is state level, or a split of states into Metros by population, acceptable? | NBA 3.0 DTC features are per DMA (= Metro) |
+| Q-B7 | **Answered:** `FUNNEL_DATA_NEW_SA360_METRO` now delivers Metro-level data (Jan 2025 onwards). `FUNNEL_DATA_NEW_SA360_REGION` (state) covers Jul–Dec 2024 only. | DTC team email, Nov 2026 |
 | Q-B8 | Are "San Francisco Bay Area" and "Silicon Valley" counted **in addition** to California, or inside it? | Avoid double counting California |
 | Q-B9 | Why does the state table find only 64 – 78% of HCP search clicks from June 2026 (against 83 – 98% before)? | Missing rows would understate recent HCP search |
 | Q-B10 | Why did DTC search run in only 6 states (TX, CA, FL, NY, GA, NC) from July to December 2024? Was it a planned regional test? | A planned regional test is the best way to learn the effect of DTC |
@@ -200,7 +218,7 @@ Each question has a code so the answers can be recorded in section 7.
 | Q-A4 | | |
 | Q-A5 | | |
 | Q-A6 | | |
-| Q-B1 | Partly answered: use `FUNNEL_DATA_NEW_SA360_REGION` for regional SA360 (Jul 2024 – present). It is by **state**, not DMA (see Q-B7). | User, 26 Oct 2026; profiled the same day |
+| Q-B1 | **Answered:** `FUNNEL_DATA_NEW_SA360_METRO` now provides Metro (DMA) paid-search data from Jan 2025 (Google validated; Bing pending). Use `FUNNEL_DATA_NEW_SA360_REGION` (state) for Jul–Dec 2024. | DTC team email, Nov 2026; profiled Nov 2026 |
 | Q-B2 | | |
 | Q-B3 | Partly answered from the data: campaign names start with `KER_DTC_` (6 campaigns, branded only) or `KER_HCP_` (147). To confirm with the search team that this rule is reliable. | Profiling of `FUNNEL_DATA_NEW_SA360_REGION`, 26 Oct 2026 |
 | Q-B4 | | |

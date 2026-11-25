@@ -12,7 +12,7 @@
 ## 1. In short
 
 * **Today digital adds little to NBA 3.0.** The model keeps 18 non-personal digital features out of 752. The best DTC feature (rank 32) is a direct-buy vendor that stopped running in early 2025. The best HCP digital feature (rank 68) mostly marks the period after April 2025. No feature names a media-partner placement, and none of the 24 CLM features was kept.
-* **The data has changed since NBA 3.0.** DTC direct buys have stopped. SA360 no longer delivers Metro. New vendors started in April 2025. OE has been fully rolled out since 18 September 2026. New signals exist: Request-a-Rep, New Writers, Impiricus SMS, health-system formulary wins, the new iVA campaign and dynamically refreshed target lists.
+* **The data has changed since NBA 3.0.** DTC direct buys have stopped. New vendors started in April 2025. OE has been fully rolled out since 18 September 2026. New signals exist: Request-a-Rep, New Writers, Impiricus SMS, health-system formulary wins, the new iVA campaign and dynamically refreshed target lists. **SA360 Metro (DMA) data is now available** from January 2025 (`FUNNEL_DATA_NEW_SA360_METRO`; Google validated, Bing pending).
 * **What we propose for NBA 3.1:** five feature families: (1) HCP paid media by vendor and placement, every vendor kept on its own; (2) HQ email from one source; (3) **high-intent signals** (new), with Request-a-Rep first; (4) DTC market context rebuilt on what still runs; (5) engagement depth and content, reusing OE (later). **Indication** (HF / T1D / CKD) is kept as a dimension. They are built in five phases, each tested against the NBA 3.0 digital block in a fixed set of experiments.
 * **NBA and OE stay complementary.** NBA = **who and why** (monthly target list and drivers); OE = **when, what and how** (weekly sequencing, content, channel, cadence).
 
@@ -34,7 +34,7 @@
 | OE roll-out | 3-month pilot with test and control; fully rolled out after 18 September 2026; no control group after that | Check whether digital features shift after the roll-out; no per-doctor OE flag | `12_...`, `13_...` O1 |
 | DTC direct buys | Health Union, Healthline, Sharecare, WebMD stopped by early 2025 | 4 of the 9 kept DTC features describe channels that no longer run | `21_...` |
 | DTC still running | Facebook + Instagram; SA360 paid search (6 branded DTC campaigns, about 12 to 18k clicks a month) | Rebuild DTC on what still runs | `21_...` |
-| SA360 geography | Regional data by **US state** only; Metro (= DMA) not available for Kerendia after January 2025; region table misses 22 to 36% of HCP-campaign clicks from June 2026 | DTC search can only enter at state level | `21_...` |
+| SA360 geography | **New Metro table** (`FUNNEL_DATA_NEW_SA360_METRO`, Nov 2026): Metro (DMA) data from Jan 2025, 210 metros, 207–210 per month for Kerendia DTC — Google validated. Bing not yet validated. State table (`FUNNEL_DATA_NEW_SA360_REGION`) still needed for Jul–Dec 2024. HCP-campaign click gap from Jun 2026 is an HCP-campaign issue, not DTC | DTC search can now enter at **Metro (DMA) level** from Jan 2025 (Google only until Bing confirmed) | `21_...` section 4.4 |
 | CLM | Below 1% of submitted Kerendia calls; mostly one standalone deck; last iVAs ended July 2025; new iVA campaign (about September 2026) not yet visible | CLM stays in the personal block; iVA needs campaign and content IDs | `clickstream_clm_data_review_2024_2026.md` |
 | Request-a-Rep | Found in `PHCDW.PHCDW_CDM.RPT_DIGITAL_RAR_TAB`: 1,218 Kerendia requests January 2025 to October 2026, of which 340 followed by a rep call (median 7 to 9 days) | Strong intent signal, but rare; also a direct field action | Snowflake check, `40_...` section 4.4 |
 
@@ -88,7 +88,7 @@ These signals are rare (about 1,200 Request-a-Rep requests in 22 months, against
 
 * **Drop** the direct-buy vendor columns (Health Union, Healthline, Sharecare, WebMD). Their source has stopped, so at inference they are zero or stale; in NBA 3.0 they mostly carry a period effect.
 * **Keep** Facebook + Instagram at DMA × month, lagged by one month and expressed per 1,000 adults.
-* **Add** SA360 DTC branded search at **state** × month (Metro / DMA is not delivered for Kerendia after January 2025).
+* **Add** SA360 DTC branded search at **Metro (DMA)** × month from January 2025, using `FUNNEL_DATA_NEW_SA360_METRO` (Google campaigns validated; Bing under validation). Use the state table for Jul–Dec 2024 only.
 * **Optional:** HCP paid search (`KER_HCP_` campaigns, about 85% of Kerendia SA360 clicks) at state level as market context, only if the region-table gap from June 2026 is explained.
 * Keep the block small (4 to 8 features): there are about 210 DMAs and 50 states.
 * Answer the open questions Q-A1 to Q-D6 and Q-B7 to Q-B10 in `21_...` first.
@@ -116,7 +116,8 @@ These signals are rare (about 1,200 Request-a-Rep requests in 22 months, against
 | OE content mapping / message arc | OE content tagging; message-arc / content ID document (OE SOW) | Content ID, category | **In progress (OE SOW)** | Bayer stakeholder validation of historical content mapping | OE team, digital team |
 | iVA engagement | Veeva / clickstream, once tagged | Campaign and content IDs | **Missing** | Get campaign and content IDs for the new iVA campaign | Digital team |
 | DTC social | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.funnel_data_FacebookAds_Geo_dma` | DMA × day | **Ready** | Open questions in `21_...` | NBA team, DTC team |
-| DTC search | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_NEW_SA360_REGION` | State × day, from July 2024 | **Ready (state only)** | No Metro; HCP-campaign click gap from June 2026 | NBA team, media agency |
+| DTC search (Metro, Jan 2025+) | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_NEW_SA360_METRO` | Metro (DMA) × day; 210 metros; Jan 2025 – present | **Google: Ready. Bing: pending validation** (DTC team, Nov 2026) | Use Google (`CAMPAIGN ILIKE '%_google_%'`) until Bing validated; for Jul–Dec 2024 fall back to state table | NBA team |
+| DTC search (state, Jul–Dec 2024) | `FUNNEL_PROD_INB2.FUNNEL__MK7FZ_CN_UWQY_VMROR.FUNNEL_DATA_NEW_SA360_REGION` | State × day | **Ready** | Jul–Dec 2024 period only; HCP-campaign click gap from Jun 2026 is not a DTC issue | NBA team |
 | Population denominator | ACS / SDOH tables already used in Kerendia pipelines | DMA, state | **Ready** | Pick one vintage | NBA team |
 
 ---
@@ -206,7 +207,7 @@ Following A7: the digital / OE team owns the **definitions**, the NBA / data tea
 | Vendors rename tactics | Activity moves to unmapped | Pattern-based dictionary, unmapped report and alert |
 | PulsePoint dominates volume | Totals reflect one vendor | Totals with and without programmatic display |
 | OE roll-out changes digital patterns | Training and inference differ | E8; period indicator or post-roll-out training |
-| DTC geography limited (no Metro, state-level search) | Weak DTC signal | Keep DTC small; treat it as a control |
+| Bing DTC Metro data not yet validated | Partial Metro coverage (Google only) until Bing confirmed | Use Google-only Metro for now; note the gap; re-add Bing once confirmed by DTC team |
 | Data not delivered (formulary wins, iVA IDs, SMS 2026) | Families 3 and 5 incomplete | Build what is ready; leave missing items out of the frozen schema |
 | Digital remains weak in NBA | Little model gain | Accept a small block; value can also come from the business rule and from OE |
 

@@ -1,0 +1,11 @@
+card,profile_type,NPI_NUMBER,LINK_ID,FIRST_NAME,LAST_NAME,web_matches,mismatch_note,reviewer,review_date
+1,MRA / finerenone trial investigator,1003076902,4or0,Anuradha,Lala-Trindade,,,,
+2,SGLT2 trial investigator,1003123415,2ghf,Gianluca,Iacobellis,,,,
+3,"Podium speaker, in-scope events",1003015439,51wd,Pietro,Canetta,,,,
+4,"Senior author, in-scope publications",1003043571,5j09,Meghan,Sise,,,,
+5,"Segment A, decile 10",1003014705,ckif,Ankur,Jindal,,,,
+6,"Non-target, decile 9 to 10",1003011800,1p17z,Herman,Blomeier,,,,
+7,"Scored, no trials / pubs / events",1003020645,1gk1,Marium,Ilahi,,,,
+8,"Paid by a competitor, speaker / consult",1003017112,o7ap,Rhea,Sancassani,,,,
+9,Kidney society role,1003893975,29id,Holly,Mattix-Kramer,,,,
+10,"Unscored, in Veeva",1669790119,36ud,Martin,Dietrich,,,,

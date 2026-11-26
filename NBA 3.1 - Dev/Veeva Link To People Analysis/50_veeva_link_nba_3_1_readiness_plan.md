@@ -6,7 +6,7 @@
 **Same structure as:** `04_Promotional_Features/non_personal_promotional_features/13_hcp_digital_nba_3_1_readiness_plan.md` and `50_digital_nba_3_1_readiness_plan.md`, and `personal_promotional_features/40_field_activity_nba_3_1_readiness_plan.md`  
 **Source:** Snowflake `CPH_DB_PROD.ANALYTICS_V2.ANLT_VEEVA_LINK_*` (17 tables)  
 **Status:** draft for discussion  
-**Date:** November 18, 2026
+**Date:** November 18, 2026 (cohort anchor updated November 25, 2026: principle 4, U7, P2)
 
 ---
 
@@ -71,10 +71,10 @@ NBA 3.0 has no Veeva Link feature block (to confirm against the NBA 3.0 final fe
 1. **Claims HCP Universe is the spine.** HCP Universe (`PROVIDER_ID`) to `kerendia_nba_3.SOURCE_PROVIDER_BHID_NPI_MAPPING` (NPI, BH_ID) to `SCIENTIFIC_EXPERT.NPI` (US, not deleted) to child tables on `SE_ID`. Every HCP keeps a row.
 2. **Three-state coverage, never silent zeros.** `veeva_coverage_status` = `NOT_IN_VEEVA` / `IN_VEEVA_UNSCORED` / `SCORED`. Count features are 0 only for HCPs in Veeva; for HCPs not in Veeva they stay null (or 0 plus the flag, depending on the model library).
 3. **Leakage tier on every feature.**
-   * **T1 (low)**: dated activity (trials, publications, events, payments). Windowed relative to the anchor month.
+   * **T1 (low)**: dated activity (trials, publications, events, payments). Windowed relative to the cohort anchor date (principle 4).
    * **T2 (medium)**: slow-moving profile (expert type, degree, academic affiliation, associations, sponsorship). Used as static attributes.
    * **T3 (high)**: vendor scores (`CLINICAL_LEADER`, `FOCUS_AREA`, `DIGITAL_REACH`, `INDEX`). Today's view only; used only if they pass E6, otherwise kept for business rules.
-4. **Windows respect the data cut-off.** For T1 features, the window ends at the earlier of the anchor month and the table's data cut-off (`veeva_data_cutoff`, today 2025-03-06). Windows are fixed (3 and 5 years), not running. A `veeva_data_age_months` value is logged per run (not a model feature) so stale loads are visible.
+4. **Windows respect the data cut-off.** The **anchor date** of each cohort is its `lookback_end_date` in the NBA 3.1 claims cohorts (`kerendia_nba_3_1_volume/cohorts/claims/cohorts.parquet`: 28 cohorts `c1` to `c28`, `offset_days = 0`, the same cohorts as the claims HCP features), e.g. c1 2024-05-01, c12 2025-04-01, c28 2026-08-01. For T1 features, the window ends at the earlier of the anchor date (inclusive) and the table's data cut-off (`veeva_data_cutoff`, today 2025-03-06); the window start is excluded. Payments use CMS program years: a year counts only if it was published (30 June of the following year) by the window end. Result (run of 25 Nov 2026): c1 to c11 (anchors 2024-05-01 to 2025-03-01) each have their own windows; from c12 (anchor 2025-04-01) every window is capped at 2025-03-06, so T1 values are the same for c12 to c28. Payment years are 2020 to 2022 for c1 and c2, 2021 to 2023 from c3. Windows are fixed (3 and 5 years), not running. A `veeva_data_age_months` value is logged per run (not a model feature) so stale loads are visible.
 5. **One focus-name dictionary.** The v2 curated lists (section 5.3 of the assessment) become a config table: table, `FOCUS_NAME`, theme (Kerendia / MRA, SGLT2, GLP-1, DPP-4, other T2D, ACE / ARB, hyperkalemia, hypertension, CKD, heart failure, T2D, T1D, diabetes general, cardiometabolic), indication (HF / T1D / CKD / other). Free-text scoping of trial, publication and event names uses one keyword list (feature plan section 7) with `ILIKE`, never `REGEXP_LIKE` through the Spark connector.
 6. **Indication as a dimension.** Same rule as the digital plan: keep the Kerendia total and add HF, T1D and CKD views where the data supports it (deciles and trials), not as filters.
 7. **Few, meaningful features.** Build a candidate set of about 60 to 80 columns from the 153 pilot features and 66 planned features, then select down (target 15 to 30 in the model). Prefer flags, log counts and bins.
@@ -115,7 +115,7 @@ The work is split into phases. Each phase ends with a gate (section 7).
 | U4 | Config tables v1 | (a) Focus-name dictionary from assessment 5.3 (17 / 147 / 135 names, theme, indication) plus `22_veeva_link_focus_name_taxonomy.csv`; (b) free-text keyword list from `33_...` section 7 with a talk-title stop-list; (c) window list (3 and 5 years) | Best-decile coverage reproduces 147,489 (64.4%) |
 | U5 | Data-quality rules in the copy step | Drop column-shifted `EVENT_TYPE` rows; ignore `PAST_POSITION`; drop orphan `ADDRESS` rows; normalise `PUBLICATION_TYPE`; `LPAD` ZIP; hardcode the 0 to 4 Scientific Reach lookup; keep 0 to 10 and 0 to 4 indices apart. Only rules that touch planned features; the rest are logged | DQ log written per run |
 | U6 | Pilot code fixes | Move disease deciles off `COMMUNITY_LEADER_FOCUS_AREA` to `CLINICAL_LEADER` and `FOCUS_AREA`; standardise composites on the full universe; one-day time-box for the `DIGITAL_REACH` ID check | Pilot sections A to K run on the spine |
-| U7 | As-of rule and fixed schema | T1 windows end at min(anchor month, table data cut-off); cut-off stored per table from U1; output columns generated from U4 and filled per principle 2 | Same columns on two consecutive runs |
+| U7 | As-of rule and fixed schema | T1 windows end at min(anchor date = claims cohort `lookback_end_date`, table data cut-off); cut-off stored per table from U1; output columns generated from U4 and filled per principle 2 | Same columns on two consecutive runs |
 | U8 | Acceptance checks | One notebook that re-computes the assessment's key numbers from the Delta copy (U1 counts, U2 match 77.7% / 83.2% for A to E, U4 coverage 64.4%, segment by decile table 7.2) and fails if any is more than 1 point off | All checks pass |
 
 Suggested order: U1 and U4 in parallel (days 1 to 3), then U2 and U5, then U3 and U6, then U7 and U8. U8 is the entry ticket to Phase 1.
@@ -185,7 +185,7 @@ Candidate set: about 60 to 80 columns. Feature selection (section 6) is expected
 | ID | Task | Detail | Dependency |
 | --- | --- | --- | --- |
 | P1 | Build coverage flags | Three-state status on the full HCP Universe | U2 |
-| P2 | Build T1 activity features | Trials, publications, events, payments with 3- and 5-year windows ending at min(anchor, data cut-off); PI role, senior author, podium role; in-scope versions from U4 | U3, U4, U7 |
+| P2 | Build T1 activity features | Trials, publications, events, payments with 3- and 5-year windows ending at min(anchor date, data cut-off), one row per NPI for each claims cohort c1 to c28; PI role, senior author, podium role; in-scope versions from U4 | U3, U4, U7 |
 | P3 | Build T2 profile features | Expert type, degree, academic affiliation, associations, sponsorship; Veeva specialty only where HCP Universe specialty is missing | U1, U5 |
 | P4 | Move pilot to production | Turn the pilot build (sections A to K of `11_veeva_link_data_sources_and_feature_feasibility`) into a feature notebook keyed on the spine, all 294,727 HCPs; drop features constant on the full population | P1 to P3, U6 |
 | P5 | Spot-check | Compare 10 known HCPs (from `31_veeva_kol_list.csv`) against their Veeva Link web profiles | P4 |

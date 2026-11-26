@@ -116,6 +116,31 @@ A random sample would again be mostly HCPs who never write. So we split the HCPs
 | S3 | Never wrote and never a writer | 250,129 | 3,000 | 83.38 |
 | **Total** | | **294,726** | **10,000** | |
 
+**How can an HCP be a writer without any NBRx in c1-c24 (group S2)?** Each month (cohort) looks at two different time windows:
+
+* The **writer flag looks back**: an NBRx in the 12-month lookback window before the month.
+* **"NBRx in c1-c24" looks forward**: NBRx in the prediction months only, which run from July 2024 (c1) to June 2026 (c24).
+
+The first lookback windows start before July 2024:
+
+| Month | Lookback window (writer flag) | Prediction month (NBRx count) |
+| --- | --- | --- |
+| c1 | Jun 2023 - May 2024 | Jul 2024 |
+| c2 | Jul 2023 - Jun 2024 | Aug 2024 |
+| c13 | Jun 2024 - May 2025 | Jul 2025 |
+
+(source: `cohorts/claims/cohorts.parquet`)
+
+Example: an HCP writes one NBRx in March 2024 and never again. In c1 the lookback includes March 2024, so the HCP is a writer. The HCP stays a writer until March 2024 leaves the lookback (c1 to c10), but has 0 NBRx in every prediction month. So S2 are **lapsed writers**: they wrote before our first prediction month and then stopped.
+
+The data agrees (source: target table x NBRx features table, all 6,666 S2 HCPs):
+
+* All are writers already in c1 (6,079) or c2 (587): their NBRx fell between June 2023 and June 2024.
+* None is a writer after c13, the last month whose lookback can still hold June 2024.
+* The middle S2 HCP is a writer for 8 months; the longest is 13.
+
+We keep S2 as its own group because it shows the "writer who stops writing" pattern, which the writer model needs. A random sample would hold only a few of them.
+
 **Why 10 months per HCP instead of all 24.** Two months next to each other share 11 of their 12 months of feature data, so extra months of the same HCP add little. For the same number of rows, 10,000 HCPs x 10 months teaches more than about 4,200 HCPs x 24 months. The 10 months are picked at random with a fixed seed, and each HCP keeps both test months c25-c26.
 
 **Weights.** Each sampled row stands for the rows we did not pick: the group weight times 2.4 for the 14 skipped training months. With weights, the sample adds up to the whole universe:
@@ -137,7 +162,16 @@ Combine joins the 44 feature tables into one row per HCP and month. It now accep
 | --- | --- | --- |
 | Rows | 28,000 | 120,000 |
 | Features | 17,238 | 17,238 |
+| Feature tables cut down to the sampled HCPs before joining | No | Yes |
+| Month groups built | 7 (c1-c28) | 6 (c1-c26) |
 | Run time | 137 minutes (job run `196650153984570`) | 73 minutes (job run `233237647200069`) |
+
+**Why is the 10,000-HCP run faster than the 1,000-HCP run?** Not because of the number of HCPs, but because the two runs worked differently:
+
+1. **Cut down first, then join.** Every feature table holds all 295,000 HCPs. The first run joined the full tables and kept the 1,000 sampled HCPs only at the end, so it did the work for all HCPs. The sample run first cuts each table down to the sampled HCPs and only then joins, so it only does the work for the rows it keeps. This saved most of the time, around 8 minutes per month group.
+2. **One month group less.** The backtesting months c27-c28 are not in the sample list, so the sample run skipped them (about 16 minutes).
+
+The cut-down now also applies to the 1,000-HCP test option, so a new 1,000-HCP run would be faster too. It does not help a run on all HCPs, because there is nothing to cut; making that run faster is a separate next step.
 
 Checks on the result (source: combined table for the sample):
 

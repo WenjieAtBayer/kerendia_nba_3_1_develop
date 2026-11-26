@@ -18,10 +18,10 @@ All paths below start at the volume root `/Volumes/ph-com-ai-us-prod-catalog-255
 | Sample list (10,000 HCPs, rows and weights) | `hcp_level_model/dev_pipeline/sample_lists/option_a_10k_hcps_10_months` |
 | Combine notebook | `NBA 3.1 - Dev/99 Combine Physician Data Files/NBA_3_1_Combine_Physician_Data` |
 | Combined table for the sample | `hcp_level_model/dev_pipeline/notebook_output/combined_2026_11_25/hcp_combined/_sample_option_a_10k_hcps_10_months/kerendia_nba_3_1_hcp_selected_features_data` |
-| Clean-up notebook | `NBA 3.1 - Dev/10_Feature_Selection/02_statistical_feature_selection` |
+| Clean-up notebook | `NBA 3.1 - Dev/10_Feature_Selection/02_nba_3_1_statistical_cleanup` |
 | Clean-up outputs | `hcp_level_model/dev_pipeline/notebook_output/combined_2026_11_25/feature_selection/_sample_option_a_10k_hcps_10_months/statistical/` |
 | **Lists for model-based selection** | clean-up outputs, `selected_features_writers.csv` and `selected_features_non_writers.csv` |
-| First (1,000-HCP) run and its readiness file | `.../combined_2026_11_24/feature_selection/_test_sample_1000/poisson/` and `NBA 3.1 - Dev/10_Feature_Selection/01_feature_selection_readiness.md` |
+| First (1,000-HCP) run and its readiness file | `.../combined_2026_11_24/feature_selection/_test_sample_1000/poisson/` and `NBA 3.1 - Dev/10_Feature_Selection/01_nba_3_0_method_shap_1000_hcps_readiness.md` (notebook: `01_nba_3_0_method_shap_1000_hcps`) |
 
 Files in the clean-up output folder:
 
@@ -41,7 +41,7 @@ Files in the clean-up output folder:
 
 In NBA 3.0 we chose features the way the OE reference notebook did: take a sample of **1,000 HCPs**, train **one model** on all of them, and keep the features the model finds most useful (ranked by SHAP, which measures how much each feature moves the predictions).
 
-For 3.1 we first ran exactly that method on the new feature tables, as a baseline (full details in `01_feature_selection_readiness.md`):
+For 3.1 we first ran exactly that method on the new feature tables, as a baseline (full details in `01_nba_3_0_method_shap_1000_hcps_readiness.md`):
 
 * 1,000 HCPs, picked by a fixed hash of the HCP id, x 28 months.
 * Training months c1-c24: 24,000 rows with **504 NBRx in 328 rows**. Test months c25-c26: 2,000 rows with 68 NBRx (source: `run_summary.json`, readiness file).

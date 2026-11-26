@@ -11,7 +11,7 @@ Status on 2026-11-24: Combine and feature selection both ran end to end on the 1
 | What | Where |
 | --- | --- |
 | Combine notebook | `NBA 3.1 - Dev/99 Combine Physician Data Files/NBA_3_1_Combine_Physician_Data` |
-| Feature selection notebook | `NBA 3.1 - Dev/10_Feature_Selection/01_feature_selection_lgbm_shap` |
+| Feature selection notebook | `NBA 3.1 - Dev/10_Feature_Selection/01_nba_3_0_method_shap_1000_hcps` |
 | Volume root (all paths below start here) | `/Volumes/ph-com-ai-us-prod-catalog-2553213839599380/kerendia_nba_3/kerendia_nba_3_1_volume/` |
 | HCP list used by Combine | `HCP_Universe_without_call_hcps` |
 | Cohort file (dates for c1-c28) | `cohorts/claims/cohorts.parquet` |
@@ -245,7 +245,7 @@ So, with 1,000 HCPs:
 ## How to run it again
 
 1. **Combine** with a sample: run the Combine notebook with the test sample set to 1,000 HCPs (0 = all HCPs). It writes to `_test_sample_1000/` under the chosen run folder. The 1,000-HCP run took 137 minutes.
-2. **Feature selection**: run `01_feature_selection_lgbm_shap` from the first cell (it installs LightGBM and SHAP), with the same run name and sample size. The 1,000-HCP run took 12 minutes.
+2. **Feature selection**: run `01_nba_3_0_method_shap_1000_hcps` from the first cell (it installs LightGBM and SHAP), with the same run name and sample size. The 1,000-HCP run took 12 minutes.
 
 The notebook stops on its own if an input is missing, if any HCP does not have all 28 cohorts, or if the target join gains or loses rows.
 
